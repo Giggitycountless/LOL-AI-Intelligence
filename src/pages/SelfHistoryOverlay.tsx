@@ -86,6 +86,9 @@ export function SelfHistoryOverlay() {
 
       if (!canOpen) {
         await destroySelfHistoryOverlayWindow();
+        if (wasCancelled) {
+          return;
+        }
         return;
       }
 

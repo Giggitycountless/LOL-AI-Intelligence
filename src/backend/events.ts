@@ -4,14 +4,19 @@ export function listenWithCleanup<T>(eventName: string, handler: EventCallback<T
   let isDisposed = false;
   let unlisten: (() => void) | undefined;
 
-  void listen<T>(eventName, handler).then((handlerCleanup) => {
-    if (isDisposed) {
-      handlerCleanup();
-      return;
-    }
+  listen<T>(eventName, handler).then(
+    (handlerCleanup) => {
+      if (isDisposed) {
+        handlerCleanup();
+        return;
+      }
 
-    unlisten = handlerCleanup;
-  });
+      unlisten = handlerCleanup;
+    },
+    () => {
+      // Listener registration failed; cleanup is a no-op.
+    },
+  );
 
   return () => {
     isDisposed = true;
