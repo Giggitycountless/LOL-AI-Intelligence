@@ -31,6 +31,17 @@ export function formatTimestamp(value: string | null | undefined, t: T): string 
   return date.toLocaleString();
 }
 
+export function formatDuration(value: number | null, t: T): string {
+  if (value === null || value < 0) {
+    return t("common.unavailable");
+  }
+
+  const minutes = Math.floor(value / 60);
+  const seconds = value % 60;
+
+  return `${minutes}:${String(seconds).padStart(2, "0")}`;
+}
+
 export function formatResult(result: MatchResult, t: T): string {
   switch (result) {
     case "win":

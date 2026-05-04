@@ -14,7 +14,7 @@ import type {
   PostMatchDetail,
   RecentMatchSummary,
 } from "../backend/types";
-import { formatTimestamp, formatResult, type T } from "../utils/formatting";
+import { formatDuration, formatTimestamp, formatResult, type T } from "../utils/formatting";
 
 type SelectedParticipant = {
   gameId: number;
@@ -296,14 +296,4 @@ function emptyMatchesBody(phase: string, t: T) {
   return t("matches.unavailableHint");
 }
 
-function formatDuration(value: number | null, t: T) {
-  if (!value || value < 0) {
-    return t("common.unavailable");
-  }
-
-  const minutes = Math.floor(value / 60);
-  const seconds = value % 60;
-
-  return `${minutes}:${String(seconds).padStart(2, "0")}`;
-}
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { TranslationKey } from "../../i18n";
-import { formatResult, formatTimestamp, initials, type T } from "../formatting";
+import { formatDuration, formatResult, formatTimestamp, initials, type T } from "../formatting";
 
 const t: T = (key: TranslationKey) => {
   const map: Record<string, string> = {
@@ -8,6 +8,7 @@ const t: T = (key: TranslationKey) => {
     "common.win": "Win",
     "common.loss": "Loss",
     "common.unknown": "Unknown",
+    "common.unavailable": "n/a",
   };
   return map[key] ?? key;
 };
@@ -43,6 +44,28 @@ describe("formatTimestamp", () => {
     const result = formatTimestamp("2024-01-15T10:30:00Z", t);
     const expected = new Date("2024-01-15T10:30:00Z").toLocaleString();
     expect(result).toBe(expected);
+  });
+});
+
+describe("formatDuration", () => {
+  it("returns unavailable for null", () => {
+    expect(formatDuration(null, t)).toBe("n/a");
+  });
+
+  it("returns unavailable for negative value", () => {
+    expect(formatDuration(-5, t)).toBe("n/a");
+  });
+
+  it("formats zero seconds as 0:00", () => {
+    expect(formatDuration(0, t)).toBe("0:00");
+  });
+
+  it("formats normal minutes and seconds", () => {
+    expect(formatDuration(125, t)).toBe("2:05");
+  });
+
+  it("formats exact minutes", () => {
+    expect(formatDuration(120, t)).toBe("2:00");
   });
 });
 

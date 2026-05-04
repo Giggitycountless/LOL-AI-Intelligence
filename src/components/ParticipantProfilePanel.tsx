@@ -5,7 +5,7 @@ import { ChampionImage, StatePanel, ResultBadge } from "./common";
 import { useAppCore, useLeagueAssets, type LeagueGameAssetView } from "../state/AppStateProvider";
 import type { PostMatchDetail, RecentMatchSummary } from "../backend/types";
 import { emitParticipantProfileChanged, openParticipantProfileWindow } from "../windows/participantProfileWindow";
-import { formatResult, formatTimestamp, initials, type T } from "../utils/formatting";
+import { formatDuration, formatResult, formatTimestamp, initials, type T } from "../utils/formatting";
 
 export type SelectedParticipant = {
   gameId: number;
@@ -378,17 +378,6 @@ function ChevronIcon({ expanded }: { expanded: boolean }) {
 
 function formatAverageKda(value: number | null | undefined, t: T) {
   return value === null || value === undefined ? t("common.unavailable") : value.toFixed(1);
-}
-
-function formatDuration(value: number | null, t: T) {
-  if (!value || value < 0) {
-    return t("common.unavailable");
-  }
-
-  const minutes = Math.floor(value / 60);
-  const seconds = value % 60;
-
-  return `${minutes}:${String(seconds).padStart(2, "0")}`;
 }
 
 function participantProfileKey(gameId: number, participantId: number) {
