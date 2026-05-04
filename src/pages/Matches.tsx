@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { PostMatchAnalysis } from "../components/PostMatchAnalysis";
 import { ChampionImage, StatePanel, ResultBadge, RefreshIcon } from "../components/common";
@@ -34,6 +34,8 @@ export function Matches() {
   const [expandedGameId, setExpandedGameId] = useState<number | null>(null);
   const matches = leagueSelfSnapshot?.recentMatches ?? [];
   const expandedDetail = expandedGameId ? postMatchDetails[expandedGameId] : undefined;
+  const postMatchDetailsRef = useRef(postMatchDetails);
+  postMatchDetailsRef.current = postMatchDetails;
 
   useEffect(() => {
     const championIds = new Set<number>();
@@ -97,13 +99,13 @@ export function Matches() {
 
   useEffect(() => {
     return listenWithCleanup<unknown>(PARTICIPANT_PROFILE_CHANGED_EVENT, (event) => {
-      if (!isSelectedParticipant(event.payload) || !postMatchDetails[event.payload.gameId]) {
+      if (!isSelectedParticipant(event.payload) || !postMatchDetailsRef.current[event.payload.gameId]) {
         return;
       }
 
       void loadPostMatchDetail(event.payload.gameId);
     });
-  }, [loadPostMatchDetail, postMatchDetails]);
+  }, [loadPostMatchDetail]);
 
   function selectParticipant(selection: SelectedParticipant) {
     void openParticipantProfileWindow(selection);
