@@ -12,6 +12,7 @@ import type { EffectiveLanguage } from "../i18n";
 import type { LeagueChampionAbilityView, LeagueChampionDetailsView } from "../state/AppStateProvider";
 import { useAppCore, useChampSelect, useLeagueAssets } from "../state/AppStateProvider";
 import { canOpenSelfHistoryOverlayWindow, destroySelfHistoryOverlayWindow } from "../windows/selfHistoryOverlayWindow";
+import { abilityStatText, abilityTooltipText } from "./selfHistoryOverlayAbilityView";
 import { initials, type T } from "../utils/formatting";
 
 const TEAM_SIZE = 5;
@@ -438,7 +439,7 @@ function ChampionDetailsPanel({
 }) {
   return (
     <aside
-      className="absolute right-2 top-12 z-20 flex max-h-[calc(100vh-3.5rem)] w-[22rem] flex-col overflow-hidden rounded-md border border-slate-200 bg-white shadow-2xl"
+      className="absolute right-2 top-12 z-20 flex max-h-[calc(100vh-3.5rem)] w-[38rem] max-w-[calc(100vw-1rem)] flex-col overflow-hidden rounded-md border border-slate-200 bg-white shadow-2xl"
       onClick={(event) => event.stopPropagation()}
     >
       <div className="flex items-center gap-3 border-b border-slate-200 bg-slate-50 px-3 py-3">
@@ -484,41 +485,64 @@ function ChampionDetailsPanel({
 }
 
 const AbilityCard = memo(function AbilityCard({ ability, t }: { ability: LeagueChampionAbilityView; t: T }) {
+  const tooltip = abilityTooltipText(ability.summaryDescription, ability.description);
+  const cooldown = abilityStatText(ability.cooldownValues, ability.cooldown);
+  const cost = abilityStatText(ability.costValues, ability.cost);
+  const range = abilityStatText(ability.rangeValues, ability.range);
+
   return (
-    <section className="rounded-md border border-slate-200 bg-white p-2 shadow-sm">
-      <div className="grid grid-cols-[2.75rem_minmax(0,1fr)] gap-2">
+    <section className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
+      <div className="grid grid-cols-[4.75rem_minmax(0,1fr)] gap-3">
         {ability.iconUrl ? (
-          <img alt="" className="h-11 w-11 rounded border border-slate-300 object-cover" src={ability.iconUrl} />
+          <img alt="" className="h-12 w-12 rounded border border-slate-300 object-cover shadow-sm" src={ability.iconUrl} />
         ) : (
-          <div className="flex h-11 w-11 items-center justify-center rounded border border-slate-300 bg-slate-100 text-sm font-black text-slate-500">
+          <div className="flex h-12 w-12 items-center justify-center rounded border border-slate-300 bg-slate-100 text-sm font-black text-slate-500 shadow-sm">
             {ability.slot}
           </div>
         )}
         <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="flex h-5 min-w-8 items-center justify-center rounded bg-sky-50 px-1 text-xs font-black text-sky-600">
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="flex h-6 min-w-11 shrink-0 items-center justify-center rounded border border-sky-100 bg-sky-50 px-2 text-xs font-black text-sky-600">
               {ability.slot}
             </span>
-            <h3 className="truncate text-sm font-black text-slate-900">{ability.name}</h3>
+            <div className="group relative min-w-0">
+              <button
+                className="truncate rounded px-1 text-left text-sm font-black text-slate-900 outline-none transition hover:bg-sky-50 hover:text-sky-700 focus-visible:bg-sky-50 focus-visible:text-sky-700"
+                title={tooltip}
+                type="button"
+              >
+                {ability.name}
+              </button>
+              <div
+                className="pointer-events-none absolute left-0 top-7 z-30 hidden w-[30rem] rounded border border-slate-200 bg-white px-3 py-2 text-xs font-semibold leading-relaxed text-slate-700 shadow-xl group-hover:block group-focus-within:block"
+                role="tooltip"
+              >
+                <p>{tooltip}</p>
+                <div className="mt-2 grid gap-1 rounded bg-slate-100 px-2 py-1.5 font-black text-slate-800">
+                  <AbilityStatRow label={t("overlay.cooldown")} value={cooldown} />
+                  <AbilityStatRow label={t("overlay.cost")} value={cost} />
+                  <AbilityStatRow label={t("overlay.range")} value={range} />
+                </div>
+              </div>
+            </div>
           </div>
-          <p className="mt-1 text-xs font-medium leading-snug text-slate-600">{ability.description}</p>
+          <div className="mt-2 rounded-md bg-slate-100 px-3 py-2 text-xs font-black leading-relaxed text-slate-800">
+            <AbilityStatRow label={t("overlay.cooldown")} value={cooldown} />
+            <AbilityStatRow label={t("overlay.cost")} value={cost} />
+            <AbilityStatRow label={t("overlay.range")} value={range} />
+          </div>
         </div>
-      </div>
-      <div className="mt-2 grid grid-cols-3 gap-1 text-[11px] font-bold">
-        <AbilityStat label={t("overlay.cooldown")} value={ability.cooldown} />
-        <AbilityStat label={t("overlay.cost")} value={ability.cost} />
-        <AbilityStat label={t("overlay.range")} value={ability.range} />
       </div>
     </section>
   );
 });
 
-function AbilityStat({ label, value }: { label: string; value: string | null }) {
+function AbilityStatRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="min-w-0 rounded bg-slate-50 px-1.5 py-1 text-center">
-      <p className="truncate text-slate-400">{label}</p>
-      <p className="truncate text-slate-700">{value ?? "-"}</p>
-    </div>
+    <p className="grid grid-cols-[4.5rem_minmax(0,1fr)] gap-2">
+      <span className="text-slate-500">{label}:</span>
+      <span className="min-w-0 truncate tabular-nums">{value}</span>
+    </p>
   );
 }
 

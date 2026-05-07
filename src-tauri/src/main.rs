@@ -94,9 +94,7 @@ fn can_open_self_history_overlay(state: State<'_, platform::AppState>) -> bool {
 
 #[tauri::command]
 fn destroy_self_history_overlay_window(app: tauri::AppHandle) {
-    if let Some(window) = app.get_webview_window(SELF_HISTORY_OVERLAY_WINDOW_LABEL) {
-        let _ = window.destroy();
-    }
+    platform::destroy_self_history_overlay_window(&app);
 }
 
 #[tauri::command]

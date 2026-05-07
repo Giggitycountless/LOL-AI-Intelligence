@@ -3,7 +3,9 @@ use std::{
     fmt, fs,
     path::PathBuf,
     pin::Pin,
+    sync::{Arc, Mutex},
     task::{Context, Poll},
+    time::{Duration, Instant},
 };
 
 use application::{
@@ -314,10 +316,23 @@ fn log_lcu_adapter_event(message: &str) {
     eprintln!("[lcu-adapter] {message}");
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Default)]
 pub struct LocalLeagueClient {
     lockfile_override: Option<PathBuf>,
     community_dragon: community_dragon::CommunityDragonClient,
+    cached_credentials: Arc<Mutex<Option<(Instant, LockfileCredentials)>>>,
+    session_cache: Arc<Mutex<Option<LcuSession>>>,
+}
+
+impl Clone for LocalLeagueClient {
+    fn clone(&self) -> Self {
+        Self {
+            lockfile_override: self.lockfile_override.clone(),
+            community_dragon: self.community_dragon.clone(),
+            cached_credentials: self.cached_credentials.clone(),
+            session_cache: self.session_cache.clone(),
+        }
+    }
 }
 
 impl LocalLeagueClient {
@@ -329,6 +344,8 @@ impl LocalLeagueClient {
         Self {
             lockfile_override: Some(path.into()),
             community_dragon: community_dragon::CommunityDragonClient::default(),
+            cached_credentials: Arc::default(),
+            session_cache: Arc::default(),
         }
     }
 
@@ -673,6 +690,16 @@ impl LocalLeagueClient {
     }
 
     fn open_session(&self) -> SessionOpenResult {
+        // Try cached session first
+        if let Some(session) = self.session_cache.lock().unwrap().as_ref() {
+            let alive = session
+                .get_json::<LcuSummoner>("/lol-summoner/v1/current-summoner")
+                .is_ok();
+            if alive {
+                return SessionOpenResult::Ready(session.clone());
+            }
+        }
+
         let credentials = match self.read_lockfile_credentials() {
             Ok(credentials) => credentials,
             Err(status) => return SessionOpenResult::Status(status),
@@ -681,10 +708,12 @@ impl LocalLeagueClient {
         match LcuSession::new(credentials) {
             Ok(session) => {
                 log_lcu_adapter_event("local session created");
+                *self.session_cache.lock().unwrap() = Some(session.clone());
                 SessionOpenResult::Ready(session)
             }
             Err(_) => {
                 log_lcu_adapter_event("local session creation failed");
+                *self.session_cache.lock().unwrap() = None;
                 SessionOpenResult::Status(unavailable_status(
                     true,
                     true,
@@ -696,6 +725,16 @@ impl LocalLeagueClient {
     }
 
     fn read_lockfile_credentials(&self) -> Result<LockfileCredentials, LeagueClientStatus> {
+        // Use cached credentials for up to 2 seconds to avoid repeated process scans.
+        {
+            let cache = self.cached_credentials.lock().unwrap();
+            if let Some((cached_at, cached)) = cache.as_ref() {
+                if cached_at.elapsed() < Duration::from_secs(2) {
+                    return Ok(cached.clone());
+                }
+            }
+        }
+
         let lockfile_path = match self.discover_lockfile_path() {
             LockfileDiscovery::Found(path) => {
                 log_lcu_adapter_event("lockfile discovered");
@@ -703,6 +742,7 @@ impl LocalLeagueClient {
             }
             LockfileDiscovery::NotRunning => {
                 log_lcu_adapter_event("league client process not detected");
+                *self.cached_credentials.lock().unwrap() = None;
                 return Err(unavailable_status(
                     false,
                     false,
@@ -712,6 +752,7 @@ impl LocalLeagueClient {
             }
             LockfileDiscovery::LockfileMissing => {
                 log_lcu_adapter_event("league client process detected without lockfile");
+                *self.cached_credentials.lock().unwrap() = None;
                 return Err(unavailable_status(
                     true,
                     false,
@@ -740,6 +781,7 @@ impl LocalLeagueClient {
         match parse_lockfile(lockfile_contents.as_str()) {
             Ok(credentials) => {
                 log_lcu_adapter_event("lockfile parsed");
+                *self.cached_credentials.lock().unwrap() = Some((Instant::now(), credentials.clone()));
                 Ok(credentials)
             }
             Err(_) => {
@@ -1322,9 +1364,19 @@ fn parse_lockfile(contents: &str) -> Result<LockfileCredentials, LcuAdapterError
     })
 }
 
+#[derive(Clone)]
 struct LcuSession {
     credentials: LockfileCredentials,
     http_client: Client,
+}
+
+impl fmt::Debug for LcuSession {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("LcuSession")
+            .field("port", &self.credentials.port)
+            .field("http_client", &self.http_client)
+            .finish()
+    }
 }
 
 impl LcuSession {
@@ -2258,6 +2310,7 @@ fn map_champion_ability(
         .unwrap_or_else(|| "No description available".to_string());
 
     // Resolve @Token@ placeholders using CommunityDragon bin data
+    let summary_description = raw_description.clone();
     let description = bin_spell
         .and_then(|spell| {
             community_dragon::resolve_tokens(&raw_description, &spell.data_values)
@@ -2275,6 +2328,10 @@ fn map_champion_ability(
         cooldown: ability.cooldown.as_ref().and_then(value_as_display_string),
         cost: ability.cost.as_ref().and_then(value_as_display_string),
         range: ability.range.as_ref().and_then(value_as_display_string),
+        summary_description,
+        cooldown_values: Vec::new(),
+        cost_values: Vec::new(),
+        range_values: Vec::new(),
     }
 }
 

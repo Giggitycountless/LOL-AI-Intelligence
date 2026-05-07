@@ -33,8 +33,12 @@ export function Activity() {
     [activityEntries, visibleCount],
   );
 
+  // Debounce activity load when limit/filter changes (avoids per-keystroke IPC calls)
   useEffect(() => {
-    void loadActivityEntries(query);
+    const timer = setTimeout(() => {
+      void loadActivityEntries(query);
+    }, 300);
+    return () => clearTimeout(timer);
   }, [loadActivityEntries, query]);
 
   useEffect(() => {

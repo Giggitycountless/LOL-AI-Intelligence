@@ -223,10 +223,14 @@ export type LeagueChampionAbility = {
   slot: string;
   name: string;
   description: string;
+  summaryDescription: string;
   icon: LeagueImageAsset | null;
   cooldown: string | null;
   cost: string | null;
   range: string | null;
+  cooldownValues: string[];
+  costValues: string[];
+  rangeValues: string[];
 };
 
 export type LeagueChampionDetails = {

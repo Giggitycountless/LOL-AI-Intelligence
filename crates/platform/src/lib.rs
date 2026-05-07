@@ -1,4 +1,4 @@
-use std::{
+﻿use std::{
     collections::HashMap,
     error::Error,
     path::Path,
@@ -15,10 +15,11 @@ use adapters::{
     RemoteRankedChampionJsonProvider,
 };
 use application::{
-    ActivityListInput, ActivityNoteInput, ApplicationError, LeagueChampionDetailsInput,
-    LeagueChampionIconInput, LeagueClientReadError, LeagueClientReader, LeagueGameAssetInput,
-    LeagueProfileIconInput, LeagueSelfSnapshotInput, ParticipantPublicProfileInput,
-    PostMatchDetailInput, RankedChampionRefreshInput, RankedChampionStatsInput, SettingsInput,
+    normalize_player_name, ActivityListInput, ActivityNoteInput, ApplicationError,
+    LeagueChampionDetailsInput, LeagueChampionIconInput, LeagueClientReadError, LeagueClientReader,
+    LeagueGameAssetInput, LeagueProfileIconInput, LeagueSelfSnapshotInput,
+    ParticipantPublicProfileInput, PostMatchDetailInput, RankedChampionRefreshInput,
+    RankedChampionStatsInput, SettingsInput,
 };
 use domain::{
     ActivityEntry, ActivityKind, AppSettings, AppSnapshot, AutoAcceptStatus, AutoAcceptStatusState,
@@ -525,10 +526,6 @@ fn recent_stats_cache_is_fresh(entry: &RecentStatsCacheEntry) -> bool {
     entry.cached_at.elapsed() < ttl
 }
 
-fn normalize_player_name(value: &str) -> String {
-    value.trim().to_ascii_lowercase()
-}
-
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SaveSettingsCommand {
@@ -923,9 +920,7 @@ fn handle_league_phase_change<R: Runtime + 'static>(
             if let Err(error) = run_champ_select_automation(state) {
                 emit_automation_feedback(app_handle, error.message);
             }
-            if phase == "ChampSelect" {
-                let _ = refresh_champ_select_from_event(app_handle, state);
-            }
+            let _ = refresh_champ_select_from_event(app_handle, state);
         }
         phase if should_clear_champ_select_cache_for_phase(phase) => {
             cancel_champ_select_hydration(state);
@@ -1051,7 +1046,7 @@ fn can_complete_champ_select_hydration_for_phase(phase: Option<&str>) -> bool {
     matches!(phase, Some("ChampSelect" | "GameStart" | "InProgress"))
 }
 
-fn destroy_self_history_overlay_window<R: Runtime>(app_handle: &AppHandle<R>) {
+pub fn destroy_self_history_overlay_window<R: Runtime>(app_handle: &AppHandle<R>) {
     if let Some(window) = app_handle.get_webview_window(SELF_HISTORY_OVERLAY_WINDOW_LABEL) {
         let _ = window.destroy();
     }
@@ -1312,6 +1307,12 @@ fn champ_select_fingerprint(snapshot: &domain::ChampSelectSnapshot) -> String {
     parts.join("|")
 }
 
+// Computes a stable fingerprint from champ select player identities (summoner_id,
+// display_name, champion_id, team, puuid). Used for hydration cache lookups on the
+// Rust side to determine whether the cached snapshot is still valid.
+// NOTE: The TypeScript-side champSelectFingerprint includes recentMatchIds for
+// change detection 鈥?these two fingerprints serve different purposes and are intentionally
+// not identical.
 fn champ_select_roster_fingerprint(snapshot: &domain::ChampSelectSnapshot) -> String {
     let mut parts: Vec<String> = snapshot
         .players
@@ -2531,6 +2532,7 @@ mod tests {
                 slot: "Q".to_string(),
                 name: "Orb of Deception".to_string(),
                 description: "Ahri sends out and pulls back her orb.".to_string(),
+                summary_description: "Ahri sends out and pulls back her orb.".to_string(),
                 icon: Some(LeagueImageAsset {
                     mime_type: "image/png".to_string(),
                     bytes: vec![4, 5, 6],
@@ -2538,6 +2540,9 @@ mod tests {
                 cooldown: Some("7".to_string()),
                 cost: Some("55".to_string()),
                 range: Some("880".to_string()),
+                cooldown_values: Vec::new(),
+                cost_values: Vec::new(),
+                range_values: Vec::new(),
             }],
         })
         .expect("champion details serializes");

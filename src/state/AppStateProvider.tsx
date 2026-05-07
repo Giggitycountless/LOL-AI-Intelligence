@@ -22,6 +22,7 @@ import { saveSettings } from "../backend/settings";
 import { createTranslator, resolveEffectiveLanguage, type EffectiveLanguage, type TranslationKey } from "../i18n";
 import { fetchAppState } from "../backend/system";
 import { listenWithCleanup } from "../backend/events";
+import { useAsyncAction } from "./useAsyncAction";
 import { openSelfHistoryOverlayWindow } from "../windows/selfHistoryOverlayWindow";
 import type {
   ActivityEntry,
@@ -156,6 +157,7 @@ export function AppStateProvider({ children, mode = "main" }: { children: ReactN
   const [isLeagueClientLoading, setIsLeagueClientLoading] = useState(false);
   const [isRankedChampionStatsLoading, setIsRankedChampionStatsLoading] = useState(false);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
+  const { run } = useAsyncAction(setFeedback);
   const languagePreference = snapshot?.settings.language ?? "system";
   const effectiveLanguage = useMemo(() => resolveEffectiveLanguage(languagePreference), [languagePreference]);
   const t = useMemo(() => createTranslator(effectiveLanguage), [effectiveLanguage]);
@@ -213,90 +215,46 @@ export function AppStateProvider({ children, mode = "main" }: { children: ReactN
   };
 
   const refresh = useCallback(async () => {
-    setIsLoading(true);
-
-    try {
-      setSnapshot(await fetchAppState());
-      return true;
-    } catch (caught: unknown) {
-      setFeedback({ kind: "error", message: errorMessage(caught) });
-      return false;
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
+    return run(() => fetchAppState(), setIsLoading, setSnapshot);
+  }, [run]);
 
   const loadActivityEntriesAction = useCallback(async (input: ActivityListInput) => {
-    setIsActivityLoading(true);
-
-    try {
-      const response = await listActivityEntries(input);
-      startTransition(() => {
-        setActivityEntries(response.records);
-      });
-      return true;
-    } catch (caught: unknown) {
-      setFeedback({ kind: "error", message: errorMessage(caught) });
-      return false;
-    } finally {
-      setIsActivityLoading(false);
-    }
-  }, []);
+    return run(
+      () => listActivityEntries(input),
+      setIsActivityLoading,
+      (response) => startTransition(() => setActivityEntries(response.records)),
+    );
+  }, [run]);
 
   const refreshLeagueClientAction = useCallback(async (input: LeagueSelfSnapshotInput = { matchLimit: 6 }) => {
-    setIsLeagueClientLoading(true);
-
-    try {
-      const response = await fetchLeagueSelfSnapshot(input);
-      startTransition(() => {
-        setLeagueSelfSnapshot(response);
-      });
-      return true;
-    } catch (caught: unknown) {
-      setFeedback({ kind: "error", message: errorMessage(caught) });
-      return false;
-    } finally {
-      setIsLeagueClientLoading(false);
-    }
-  }, []);
+    return run(
+      () => fetchLeagueSelfSnapshot(input),
+      setIsLeagueClientLoading,
+      (response) => startTransition(() => setLeagueSelfSnapshot(response)),
+    );
+  }, [run]);
 
   const loadRankedChampionStatsAction = useCallback(async (input: RankedChampionStatsInput) => {
-    setIsRankedChampionStatsLoading(true);
-
-    try {
-      const response = await fetchRankedChampionStats(input);
-      startTransition(() => {
-        setRankedChampionStats(response);
-      });
-      return true;
-    } catch (caught: unknown) {
-      setFeedback({ kind: "error", message: errorMessage(caught) });
-      return false;
-    } finally {
-      setIsRankedChampionStatsLoading(false);
-    }
-  }, []);
+    return run(
+      () => fetchRankedChampionStats(input),
+      setIsRankedChampionStatsLoading,
+      (response) => startTransition(() => setRankedChampionStats(response)),
+    );
+  }, [run]);
 
   const refreshRankedChampionStatsAction = useCallback(async (input: RankedChampionRefreshInput) => {
-    setIsRankedChampionStatsLoading(true);
-
-    try {
-      const response = await refreshRankedChampionStats(input);
-      startTransition(() => {
-        setRankedChampionStats(response);
-      });
-      setFeedback({
-        kind: response.dataStatus === "staleCache" ? "error" : "success",
-        message: response.statusMessage ?? "Ranked champion data refreshed",
-      });
-      return true;
-    } catch (caught: unknown) {
-      setFeedback({ kind: "error", message: errorMessage(caught) });
-      return false;
-    } finally {
-      setIsRankedChampionStatsLoading(false);
-    }
-  }, []);
+    return run(
+      () => refreshRankedChampionStats(input),
+      setIsRankedChampionStatsLoading,
+      (response) => {
+        startTransition(() => setRankedChampionStats(response));
+        setFeedback({
+          kind: response.dataStatus === "staleCache" ? "error" : "success",
+          message: response.statusMessage ?? "Ranked champion data refreshed",
+        });
+      },
+    );
+  }, [run]);
 
   useEffect(() => {
     void refresh();
@@ -520,13 +478,8 @@ export function AppStateProvider({ children, mode = "main" }: { children: ReactN
   }, [loadLeagueChampionIconAction]);
 
   const refreshChampSelectSnapshotAction = useCallback(async () => {
-    try {
-      applyChampSelectSnapshotAction(await fetchChampSelectSnapshot(6));
-      return true;
-    } catch {
-      return false;
-    }
-  }, [applyChampSelectSnapshotAction]);
+    return run(() => fetchChampSelectSnapshot(6), undefined, applyChampSelectSnapshotAction);
+  }, [run, applyChampSelectSnapshotAction]);
 
   const loadLeagueChampionDetailsAction = useCallback(async (championId: number | null | undefined) => {
     if (!championId || championDetailsRef.current[championId]) {
@@ -669,30 +622,20 @@ export function AppStateProvider({ children, mode = "main" }: { children: ReactN
   }, [enqueueAssetLoad, scheduleLeagueImagesUpdate]);
 
   const loadPostMatchDetailAction = useCallback(async (gameId: number) => {
-    try {
-      const detail = await fetchPostMatchDetail(gameId);
-      startTransition(() => {
-        setPostMatchDetails((current) => ({ ...current, [gameId]: detail }));
-      });
-      return true;
-    } catch (caught: unknown) {
-      setFeedback({ kind: "error", message: errorMessage(caught) });
-      return false;
-    }
-  }, []);
+    return run(
+      () => fetchPostMatchDetail(gameId),
+      undefined,
+      (detail) => startTransition(() => setPostMatchDetails((current) => ({ ...current, [gameId]: detail }))),
+    );
+  }, [run]);
 
   const loadParticipantProfileAction = useCallback(async (input: ParticipantPublicProfileInput) => {
-    try {
-      const profile = await fetchPostMatchParticipantProfile(input);
-      startTransition(() => {
-        setParticipantProfiles((current) => ({ ...current, [participantProfileKey(input.gameId, input.participantId)]: profile }));
-      });
-      return true;
-    } catch (caught: unknown) {
-      setFeedback({ kind: "error", message: errorMessage(caught) });
-      return false;
-    }
-  }, []);
+    return run(
+      () => fetchPostMatchParticipantProfile(input),
+      undefined,
+      (profile) => startTransition(() => setParticipantProfiles((current) => ({ ...current, [participantProfileKey(input.gameId, input.participantId)]: profile }))),
+    );
+  }, [run]);
 
   const savePlayerNoteAction = useCallback(async (input: SavePlayerNoteInput) => {
     try {
@@ -897,9 +840,13 @@ function championDetailsView(details: LeagueChampionDetails): LeagueChampionDeta
       slot: ability.slot,
       name: ability.name,
       description: ability.description,
+      summaryDescription: ability.summaryDescription,
       cooldown: ability.cooldown,
       cost: ability.cost,
       range: ability.range,
+      cooldownValues: ability.cooldownValues,
+      costValues: ability.costValues,
+      rangeValues: ability.rangeValues,
       iconUrl: ability.icon ? imageAssetUrl(ability.icon) : null,
     })),
   };
@@ -913,6 +860,9 @@ export function leagueGameAssetKey(kind: LeagueGameAssetKind, assetId: number) {
   return `${kind}:${assetId}`;
 }
 
+// Computes a fingerprint from player identities + recentMatchIds for change detection.
+// NOTE: The Rust-side champ_select_fingerprint omits recentMatchIds (it uses puuid for
+// cache identity instead). These serve different purposes and are intentionally divergent.
 function champSelectFingerprint(snapshot: ChampSelectSnapshot) {
   return snapshot.players
     .map((player) => {

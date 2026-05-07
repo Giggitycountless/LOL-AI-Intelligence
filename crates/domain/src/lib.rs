@@ -377,10 +377,14 @@ pub struct LeagueChampionAbility {
     pub slot: String,
     pub name: String,
     pub description: String,
+    pub summary_description: String,
     pub icon: Option<LeagueImageAsset>,
     pub cooldown: Option<String>,
     pub cost: Option<String>,
     pub range: Option<String>,
+    pub cooldown_values: Vec<String>,
+    pub cost_values: Vec<String>,
+    pub range_values: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]

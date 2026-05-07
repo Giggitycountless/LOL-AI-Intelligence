@@ -6,7 +6,7 @@ license.workspace = true
 
 [dependencies]
 application.workspace = true
-base64.workspace = true
+base64 = "0.22.1"
 domain.workspace = true
 futures-util.workspace = true
 native-tls.workspace = true
@@ -14,6 +14,6 @@ reqwest.workspace = true
 rayon.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-sysinfo.workspace = true
+sysinfo = { version = "0.38.4", default-features = false, features = ["system"] }
 tokio.workspace = true
 tokio-tungstenite.workspace = true
