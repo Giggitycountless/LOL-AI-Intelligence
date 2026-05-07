@@ -31,6 +31,7 @@ use tokio_tungstenite::{
     Connector, MaybeTlsStream, WebSocketStream,
 };
 
+mod community_dragon;
 mod constants;
 use constants::*;
 
@@ -316,6 +317,7 @@ fn log_lcu_adapter_event(message: &str) {
 #[derive(Debug, Clone, Default)]
 pub struct LocalLeagueClient {
     lockfile_override: Option<PathBuf>,
+    community_dragon: community_dragon::CommunityDragonClient,
 }
 
 impl LocalLeagueClient {
@@ -326,6 +328,7 @@ impl LocalLeagueClient {
     pub fn with_lockfile_path(path: impl Into<PathBuf>) -> Self {
         Self {
             lockfile_override: Some(path.into()),
+            community_dragon: community_dragon::CommunityDragonClient::default(),
         }
     }
 
@@ -426,7 +429,12 @@ impl LocalLeagueClient {
             .get_json::<LcuChampionDetails>(champion_details_path(champion_id).as_str())
             .map_err(read_error_from_request)?;
 
-        map_champion_details(&session, champion_id, details)
+        let bin_data = details
+            .name
+            .as_deref()
+            .and_then(|name| self.community_dragon.fetch_champion_bin(name));
+
+        map_champion_details(&session, champion_id, details, bin_data.as_ref())
     }
 
     fn read_game_asset(
@@ -2186,6 +2194,7 @@ fn map_champion_details(
     session: &LcuSession,
     champion_id: i64,
     details: LcuChampionDetails,
+    bin_data: Option<&community_dragon::BinChampionData>,
 ) -> Result<LeagueChampionDetails, LeagueClientReadError> {
     let champion_name = non_empty(details.name.as_deref())
         .map(str::to_string)
@@ -2202,7 +2211,8 @@ fn map_champion_details(
     let mut abilities = Vec::new();
 
     if let Some(passive) = details.passive {
-        abilities.push(map_champion_ability(session, "Passive", passive));
+        let passive_bin = bin_data.and_then(|bd| bd.get_spell("Passive"));
+        abilities.push(map_champion_ability(session, "Passive", passive, passive_bin));
     }
 
     for (index, spell) in details.spells.into_iter().take(4).enumerate() {
@@ -2212,7 +2222,8 @@ fn map_champion_details(
             .and_then(|value| non_empty(Some(value)))
             .map(str::to_string)
             .unwrap_or_else(|| ["Q", "W", "E", "R"][index].to_string());
-        abilities.push(map_champion_ability(session, slot.as_str(), spell));
+        let slot_bin = bin_data.and_then(|bd| bd.get_spell(slot.as_str()));
+        abilities.push(map_champion_ability(session, slot.as_str(), spell, slot_bin));
     }
 
     Ok(LeagueChampionDetails {
@@ -2228,6 +2239,7 @@ fn map_champion_ability(
     session: &LcuSession,
     slot: &str,
     ability: LcuChampionAbility,
+    bin_spell: Option<&community_dragon::BinSpellData>,
 ) -> LeagueChampionAbility {
     let icon = ability
         .ability_icon_path
@@ -2238,12 +2250,19 @@ fn map_champion_ability(
                 .get_image_asset(path.as_str(), CHAMPION_ICON_MIME)
                 .ok()
         });
-    let description = ability
+    let raw_description = ability
         .dynamic_description
         .or(ability.description)
         .map(clean_game_asset_text)
         .and_then(non_empty_owned)
         .unwrap_or_else(|| "No description available".to_string());
+
+    // Resolve @Token@ placeholders using CommunityDragon bin data
+    let description = bin_spell
+        .and_then(|spell| {
+            community_dragon::resolve_tokens(&raw_description, &spell.data_values)
+        })
+        .unwrap_or(raw_description);
 
     LeagueChampionAbility {
         slot: slot.to_string(),
