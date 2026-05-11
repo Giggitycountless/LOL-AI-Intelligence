@@ -5,6 +5,7 @@ import { Dashboard } from "./pages/Dashboard";
 import { Matches } from "./pages/Matches";
 import { ParticipantProfileWindow } from "./pages/ParticipantProfileWindow";
 import { Profile } from "./pages/Profile";
+import { Advisor } from "./pages/Advisor";
 import { RankedChampions } from "./pages/RankedChampions";
 import { SelfHistoryOverlay } from "./pages/SelfHistoryOverlay";
 import { Settings } from "./pages/Settings";
@@ -14,12 +15,13 @@ import { oppositeLanguage, type TranslationKey } from "./i18n";
 import { selectionFromParticipantProfileHash } from "./windows/participantProfileWindow";
 import { isSelfHistoryOverlayHash } from "./windows/selfHistoryOverlayWindow";
 
-type Page = StartupPage | "profile" | "matches" | "ranked";
+type Page = StartupPage | "profile" | "matches" | "ranked" | "advisor";
 
 const pages: Array<{ id: Page; labelKey: TranslationKey; icon: IconName }> = [
   { id: "dashboard", labelKey: "nav.dashboard", icon: "dashboard" },
   { id: "profile", labelKey: "nav.profile", icon: "profile" },
   { id: "matches", labelKey: "nav.matches", icon: "matches" },
+  { id: "advisor", labelKey: "nav.advisor", icon: "advisor" },
   { id: "ranked", labelKey: "nav.ranked", icon: "ranked" },
   { id: "activity", labelKey: "nav.activity", icon: "activity" },
   { id: "settings", labelKey: "nav.settings", icon: "settings" },
@@ -142,6 +144,7 @@ function AppShell() {
         {activePage === "dashboard" && <Dashboard />}
         {activePage === "profile" && <Profile />}
         {activePage === "matches" && <Matches />}
+        {activePage === "advisor" && <Advisor />}
         {activePage === "ranked" && <RankedChampions />}
         {activePage === "activity" && <Activity />}
         {activePage === "settings" && <Settings />}
@@ -150,7 +153,7 @@ function AppShell() {
   );
 }
 
-type IconName = "dashboard" | "profile" | "matches" | "ranked" | "activity" | "settings";
+type IconName = "dashboard" | "profile" | "matches" | "advisor" | "ranked" | "activity" | "settings";
 
 function Icon({ name }: { name: IconName }) {
   const paths: Record<IconName, string> = {
@@ -159,6 +162,8 @@ function Icon({ name }: { name: IconName }) {
       "M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm-8 8a8 8 0 0 1 16 0v1H4v-1Z",
     matches:
       "M5 4h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Zm2 4v3h4V8H7Zm0 5v3h4v-3H7Zm6-5v2h4V8h-4Zm0 5v2h4v-2h-4Z",
+    advisor:
+      "M12 3 4 7v5c0 5 3.3 8 8 9 4.7-1 8-4 8-9V7l-8-4Zm0 3.2 5 2.5V12c0 3.1-1.8 5.2-5 6-3.2-.8-5-2.9-5-6V8.7l5-2.5Zm-2.5 4.3h5v2h-5v-2Zm0 3.5h5v2h-5v-2Z",
     ranked:
       "M6 20V9h3v11H6Zm5 0V4h3v16h-3Zm5 0v-7h3v7h-3ZM4 20h17v2H4v-2Z",
     activity:

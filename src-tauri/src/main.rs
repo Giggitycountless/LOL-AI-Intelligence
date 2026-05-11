@@ -137,6 +137,37 @@ fn refresh_ranked_champion_stats(
 }
 
 #[tauri::command]
+fn get_advisor_data(
+    state: State<'_, platform::AppState>,
+    input: platform::AdvisorDataCommand,
+) -> Result<domain::AdvisorDataResponse, platform::CommandError> {
+    platform::get_advisor_data(state.inner(), input)
+}
+
+#[tauri::command]
+fn refresh_advisor_data(
+    state: State<'_, platform::AppState>,
+    input: platform::RefreshAdvisorDataCommand,
+) -> Result<domain::AdvisorDataResponse, platform::CommandError> {
+    platform::refresh_advisor_data(state.inner(), input)
+}
+
+#[tauri::command]
+fn get_champ_select_advisor_snapshot(
+    state: State<'_, platform::AppState>,
+    input: platform::ChampSelectSnapshotCommand,
+) -> Result<domain::ChampSelectAdvisorSnapshot, platform::CommandError> {
+    platform::get_champ_select_advisor_snapshot(state.inner(), input)
+}
+
+#[tauri::command]
+fn get_live_overlay_snapshot(
+    state: State<'_, platform::AppState>,
+) -> Result<domain::LiveOverlaySnapshot, platform::CommandError> {
+    platform::get_live_overlay_snapshot(state.inner())
+}
+
+#[tauri::command]
 fn get_league_profile_icon(
     state: State<'_, platform::AppState>,
     input: platform::LeagueProfileIconCommand,
@@ -272,6 +303,10 @@ fn main() {
             get_champ_select_snapshot,
             get_ranked_champion_stats,
             refresh_ranked_champion_stats,
+            get_advisor_data,
+            refresh_advisor_data,
+            get_champ_select_advisor_snapshot,
+            get_live_overlay_snapshot,
             get_league_profile_icon,
             get_league_champion_icon,
             get_league_champion_details,

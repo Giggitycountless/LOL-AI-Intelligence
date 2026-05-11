@@ -15,4 +15,12 @@ describe("self history overlay ability view helpers", () => {
     expect(abilityStatText([], "@Cooldown@")).toBe("-");
     expect(abilityTooltipText("@SpellModifierDescriptionAppend@", "Deals @Damage@ magic damage.")).toBe("Deals magic damage.");
   });
+
+  it("prefers resolved descriptions over unresolved summary text", () => {
+    expect(abilityTooltipText("Deals @Damage@ magic damage.", "Deals 35 magic damage.")).toBe("Deals 35 magic damage.");
+  });
+
+  it("removes inline LCU icon tokens from stat fallback text", () => {
+    expect(abilityStatText([], "@Cooldown@s %i:cooldown%")).toBe("-");
+  });
 });

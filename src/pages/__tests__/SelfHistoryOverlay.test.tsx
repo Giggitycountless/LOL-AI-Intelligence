@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import React from "react";
 import type { Mock } from "vitest";
 
@@ -23,8 +23,10 @@ vi.mock("../../windows/selfHistoryOverlayWindow", () => ({
 const mockUseAppCore = vi.fn();
 const mockUseChampSelect = vi.fn();
 const mockUseLeagueAssets = vi.fn();
+const mockUseAdvisor = vi.fn();
 
 vi.mock("../../state/AppStateProvider", () => ({
+  useAdvisor: () => mockUseAdvisor(),
   useAppCore: () => mockUseAppCore(),
   useChampSelect: () => mockUseChampSelect(),
   useLeagueAssets: () => mockUseLeagueAssets(),
@@ -65,6 +67,7 @@ function createPlayer(overrides: Record<string, unknown> = {}) {
     rankedQueues: [],
     recentMatchIds: [],
     recentStats: null,
+    recentStatsStatus: "notRequested",
     ...overrides,
   };
 }
@@ -91,17 +94,35 @@ function defaultLeagueAssets() {
   };
 }
 
+function defaultAdvisor() {
+  return {
+    advisorData: null,
+    champSelectAdvisorSnapshot: null,
+    liveOverlaySnapshot: null,
+    isAdvisorDataLoading: false,
+    loadAdvisorData: vi.fn().mockResolvedValue(true),
+    refreshAdvisorData: vi.fn().mockResolvedValue(true),
+    refreshChampSelectAdvisorSnapshot: vi.fn().mockResolvedValue(true),
+    refreshLiveOverlaySnapshot: vi.fn().mockResolvedValue(true),
+  };
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   mockCanOpen.mockResolvedValue(true);
   mockUseAppCore.mockReturnValue(defaultCore());
   mockUseChampSelect.mockReturnValue(defaultChampSelect());
   mockUseLeagueAssets.mockReturnValue(defaultLeagueAssets());
+  mockUseAdvisor.mockReturnValue(defaultAdvisor());
 });
 
 async function mountOverlay() {
   const { SelfHistoryOverlay } = await import("../SelfHistoryOverlay");
-  return render(React.createElement(SelfHistoryOverlay));
+  let view: ReturnType<typeof render> | undefined;
+  await act(async () => {
+    view = render(React.createElement(SelfHistoryOverlay));
+  });
+  return view!;
 }
 
 describe("SelfHistoryOverlay", () => {
@@ -115,6 +136,7 @@ describe("SelfHistoryOverlay", () => {
     mockUseChampSelect.mockReturnValue({
       ...defaultChampSelect(),
       champSelectSnapshot: { players: [createPlayer({ championId: 1, recentStats: null })] },
+      refreshChampSelectSnapshot: vi.fn(() => new Promise<boolean>(() => {})),
     });
     await mountOverlay();
     expect(await screen.findByText("Loading...")).toBeDefined();
@@ -158,7 +180,7 @@ describe("SelfHistoryOverlay", () => {
 
     await mountOverlay();
 
-    // Player names render as initials — verify the overlay structure renders
+    // Player names render as initials; verify the overlay structure renders.
     expect(await screen.findByText("Match History")).toBeDefined();
     expect(await screen.findByText("Ally Wins")).toBeDefined();
     expect(await screen.findByText("Enemy Wins")).toBeDefined();
@@ -180,5 +202,72 @@ describe("SelfHistoryOverlay", () => {
     });
     await mountOverlay();
     expect(await screen.findByLabelText("Hide")).toBeDefined();
+  });
+
+  it("renders advisor tags and live overlay item value", async () => {
+    const ally = createPlayer({
+      summonerId: 1,
+      displayName: "Ally One",
+      team: "ally",
+      championId: 86,
+      recentStats: {
+        matchCount: 1,
+        averageKda: 2.5,
+        recentChampions: ["Garen"],
+        recentMatches: [],
+      },
+      recentStatsStatus: "loaded",
+    });
+
+    mockUseChampSelect.mockReturnValue({
+      ...defaultChampSelect(),
+      champSelectSnapshot: { players: [ally] },
+    });
+    mockUseAdvisor.mockReturnValue({
+      ...defaultAdvisor(),
+      champSelectAdvisorSnapshot: {
+        cachedAt: "1",
+        advisorSource: "fixture",
+        advisorPatch: "26.08",
+        dataStatus: "cached",
+        players: [
+          {
+            summonerId: 1,
+            displayName: "Ally One",
+            championId: 86,
+            championName: "Garen",
+            team: "ally",
+            recentStats: ally.recentStats,
+            recentStatsStatus: "loaded",
+            tags: [{ label: "Strong pick", tone: "good" }],
+            advisor: null,
+            matchupAdvice: "Favorable into Champion 122: punish cooldowns.",
+          },
+        ],
+      },
+      liveOverlaySnapshot: {
+        gameTimeSeconds: 125,
+        gameMode: "CLASSIC",
+        mapName: "Summoner's Rift",
+        activePlayer: {
+          displayName: "Ally One",
+          level: 6,
+          currentGold: 742.4,
+          resourceType: "MANA",
+          resourceValue: 100,
+          resourceMax: 300,
+        },
+        players: [],
+        events: [{ eventId: 1, eventName: "ChampionKill", eventTime: 120, actor: "Ally One", victim: "Enemy", assistingParticipants: [] }],
+        gold: { allyItemValue: 3000, enemyItemValue: 2100, itemValueDiff: 900 },
+        refreshedAt: "1",
+      },
+    });
+
+    await mountOverlay();
+
+    expect(await screen.findByText("Strong pick")).toBeDefined();
+    expect(await screen.findByText("+900")).toBeDefined();
+    expect(await screen.findByText("742")).toBeDefined();
   });
 });

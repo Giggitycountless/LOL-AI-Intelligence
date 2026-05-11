@@ -11,7 +11,8 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "validate:ranked-data": "node tools/ranked-data/validate-ranked-data.mjs data/ranked-champions/latest.json"
+    "validate:ranked-data": "node tools/ranked-data/validate-ranked-data.mjs data/ranked-champions/latest.json",
+    "validate:advisor-data": "node tools/advisor-data/validate-advisor-data.mjs data/advisor/latest.json"
   },
   "dependencies": {
     "@tauri-apps/api": "2.10.1",

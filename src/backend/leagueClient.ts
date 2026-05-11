@@ -1,6 +1,10 @@
 import { callBackend } from "./commands";
 import type {
+  AdvisorDataInput,
+  AdvisorDataRefreshInput,
+  AdvisorDataResponse,
   ChampSelectSnapshot,
+  ChampSelectAdvisorSnapshot,
   ClearPlayerNoteInput,
   ClearPlayerNoteResult,
   AutoAcceptStatus,
@@ -12,6 +16,7 @@ import type {
   LeagueImageAsset,
   LeagueSelfSnapshot,
   LeagueSelfSnapshotInput,
+  LiveOverlaySnapshot,
   ParticipantPublicProfile,
   ParticipantPublicProfileInput,
   PlayerNoteView,
@@ -56,6 +61,28 @@ export function refreshRankedChampionStats(input: RankedChampionRefreshInput): P
   return callBackend<RankedChampionStatsResponse>("refresh_ranked_champion_stats", {
     input,
   });
+}
+
+export function fetchAdvisorData(input: AdvisorDataInput): Promise<AdvisorDataResponse> {
+  return callBackend<AdvisorDataResponse>("get_advisor_data", {
+    input,
+  });
+}
+
+export function refreshAdvisorData(input: AdvisorDataRefreshInput): Promise<AdvisorDataResponse> {
+  return callBackend<AdvisorDataResponse>("refresh_advisor_data", {
+    input,
+  });
+}
+
+export function fetchChampSelectAdvisorSnapshot(recentLimit: number = 6): Promise<ChampSelectAdvisorSnapshot> {
+  return callBackend<ChampSelectAdvisorSnapshot>("get_champ_select_advisor_snapshot", {
+    input: { recentLimit },
+  });
+}
+
+export function fetchLiveOverlaySnapshot(): Promise<LiveOverlaySnapshot> {
+  return callBackend<LiveOverlaySnapshot>("get_live_overlay_snapshot");
 }
 
 export function fetchLeagueProfileIcon(profileIconId: number): Promise<LeagueImageAsset> {

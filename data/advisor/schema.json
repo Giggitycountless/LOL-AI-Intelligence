@@ -1,0 +1,144 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/Giggitycountless/LOL-Desktop-Assistant/main/data/advisor/schema.json",
+  "title": "LoL Desktop Assistant Advisor Data",
+  "type": "object",
+  "required": ["formatVersion", "champions"],
+  "properties": {
+    "formatVersion": { "const": 1 },
+    "source": { "type": "string", "minLength": 1 },
+    "patch": { "type": "string", "minLength": 1 },
+    "region": { "type": "string", "minLength": 1 },
+    "queue": { "type": "string", "minLength": 1 },
+    "tier": { "type": "string", "minLength": 1 },
+    "generatedAt": { "type": "string", "minLength": 1 },
+    "champions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "championId",
+          "championName",
+          "lane",
+          "games",
+          "winRate",
+          "pickRate",
+          "banRate",
+          "runes",
+          "summonerSpells",
+          "skillOrder",
+          "itemBuild",
+          "strongAgainst",
+          "weakAgainst",
+          "powerSpikes",
+          "laneAdvice",
+          "teamfightAdvice"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "championId": { "type": "integer", "minimum": 1 },
+          "championName": { "type": "string", "minLength": 1 },
+          "championAlias": { "type": "string", "minLength": 1 },
+          "lane": { "enum": ["top", "jungle", "middle", "bottom", "support", "mid", "bot", "sup", "adc"] },
+          "games": { "type": "integer", "minimum": 0 },
+          "winRate": { "type": "number", "minimum": 0, "maximum": 100 },
+          "pickRate": { "type": "number", "minimum": 0, "maximum": 100 },
+          "banRate": { "type": "number", "minimum": 0, "maximum": 100 },
+          "overallScore": { "type": "number", "minimum": 0, "maximum": 100 },
+          "runes": { "$ref": "#/$defs/runes" },
+          "summonerSpells": { "$ref": "#/$defs/namedList" },
+          "skillOrder": { "$ref": "#/$defs/skillOrder" },
+          "itemBuild": { "$ref": "#/$defs/itemBuild" },
+          "strongAgainst": { "$ref": "#/$defs/matchups" },
+          "weakAgainst": { "$ref": "#/$defs/matchups" },
+          "powerSpikes": { "$ref": "#/$defs/powerSpikes" },
+          "laneAdvice": { "type": "string", "minLength": 1 },
+          "teamfightAdvice": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "named": {
+      "type": "object",
+      "required": ["name"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": ["integer", "null"], "minimum": 1 },
+        "name": { "type": "string", "minLength": 1 }
+      }
+    },
+    "namedList": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/named" }
+    },
+    "runes": {
+      "type": "object",
+      "required": ["primaryStyle", "primaryRunes", "secondaryStyle", "secondaryRunes", "statShards"],
+      "additionalProperties": false,
+      "properties": {
+        "primaryStyle": { "type": "string", "minLength": 1 },
+        "primaryRunes": { "$ref": "#/$defs/namedList" },
+        "secondaryStyle": { "type": "string", "minLength": 1 },
+        "secondaryRunes": { "$ref": "#/$defs/namedList" },
+        "statShards": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "skillOrder": {
+      "type": "object",
+      "required": ["maxOrder", "earlyOrder"],
+      "additionalProperties": false,
+      "properties": {
+        "maxOrder": { "type": "array", "minItems": 1, "items": { "enum": ["Q", "W", "E", "R"] } },
+        "earlyOrder": { "type": "array", "minItems": 1, "items": { "enum": ["Q", "W", "E", "R"] } }
+      }
+    },
+    "itemBuild": {
+      "type": "object",
+      "required": ["starter", "core", "boots", "late", "situational"],
+      "additionalProperties": false,
+      "properties": {
+        "starter": { "$ref": "#/$defs/namedList" },
+        "core": { "$ref": "#/$defs/namedList" },
+        "boots": { "$ref": "#/$defs/namedList" },
+        "late": { "$ref": "#/$defs/namedList" },
+        "situational": { "$ref": "#/$defs/namedList" }
+      }
+    },
+    "matchups": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["championId", "championName", "note"],
+        "additionalProperties": false,
+        "properties": {
+          "championId": { "type": "integer", "minimum": 1 },
+          "championName": { "type": "string", "minLength": 1 },
+          "note": { "type": "string", "minLength": 1 },
+          "winRateDelta": { "type": ["number", "null"] }
+        }
+      }
+    },
+    "powerSpikes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["timing", "label", "description"],
+        "additionalProperties": false,
+        "properties": {
+          "timing": { "type": "string", "minLength": 1 },
+          "label": { "type": "string", "minLength": 1 },
+          "description": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  }
+}

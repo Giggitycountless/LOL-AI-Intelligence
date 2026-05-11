@@ -5,17 +5,21 @@ import { isCommandError } from "../backend/commands";
 import { exportLocalData, importLocalData } from "../backend/dataTools";
 import {
   clearPlayerNote as clearPlayerNoteCommand,
+  fetchAdvisorData,
   fetchAutoAcceptStatus,
+  fetchChampSelectAdvisorSnapshot,
   fetchChampSelectSnapshot,
   fetchLeagueChampionDetails,
   fetchLeagueChampionIcon,
   fetchLeagueGameAsset,
   fetchLeagueProfileIcon,
   fetchLeagueSelfSnapshot,
+  fetchLiveOverlaySnapshot,
   fetchPostMatchDetail,
   fetchPostMatchParticipantProfile,
   fetchRankedChampionStats,
   refreshRankedChampionStats,
+  refreshAdvisorData,
   savePlayerNote as savePlayerNoteCommand,
 } from "../backend/leagueClient";
 import { saveSettings } from "../backend/settings";
@@ -28,10 +32,14 @@ import type {
   ActivityEntry,
   ActivityListInput,
   ActivityNoteInput,
+  AdvisorDataInput,
+  AdvisorDataRefreshInput,
+  AdvisorDataResponse,
   AppSnapshot,
   AppLanguagePreference,
   AutoAcceptStatus,
   ChampSelectSnapshot,
+  ChampSelectAdvisorSnapshot,
   Feedback,
   LeagueChampionAbility,
   LeagueChampionDetails,
@@ -40,6 +48,7 @@ import type {
   LeagueImageAsset,
   LeagueSelfSnapshot,
   LeagueSelfSnapshotInput,
+  LiveOverlaySnapshot,
   ParticipantPublicProfile,
   ParticipantPublicProfileInput,
   PlayerNoteView,
@@ -74,7 +83,7 @@ export type LeagueChampionDetailsView = Omit<LeagueChampionDetails, "squarePortr
 
 type AppStateContextValue = {
   // Compatibility hook shape. Prefer the narrower hooks below for new UI code.
-} & AppCoreContextValue & LeagueAssetsContextValue & ChampSelectContextValue;
+} & AppCoreContextValue & LeagueAssetsContextValue & ChampSelectContextValue & AdvisorContextValue;
 
 type AppCoreContextValue = {
   snapshot: AppSnapshot | null;
@@ -124,12 +133,25 @@ type ChampSelectContextValue = {
   refreshChampSelectSnapshot: () => Promise<boolean>;
 };
 
+type AdvisorContextValue = {
+  advisorData: AdvisorDataResponse | null;
+  champSelectAdvisorSnapshot: ChampSelectAdvisorSnapshot | null;
+  liveOverlaySnapshot: LiveOverlaySnapshot | null;
+  isAdvisorDataLoading: boolean;
+  loadAdvisorData: (input: AdvisorDataInput) => Promise<boolean>;
+  refreshAdvisorData: (input: AdvisorDataRefreshInput) => Promise<boolean>;
+  refreshChampSelectAdvisorSnapshot: () => Promise<boolean>;
+  refreshLiveOverlaySnapshot: () => Promise<boolean>;
+};
+
 const AppStateContext = createContext<AppStateContextValue | null>(null);
 const AppCoreContext = createContext<AppCoreContextValue | null>(null);
 const LeagueAssetsContext = createContext<LeagueAssetsContextValue | null>(null);
 const ChampSelectContext = createContext<ChampSelectContextValue | null>(null);
+const AdvisorContext = createContext<AdvisorContextValue | null>(null);
 const ASSET_LOAD_CONCURRENCY = 4;
 const ASSET_LOAD_DELAY_MS = 16;
+const CHAMP_SELECT_ADVISOR_REFRESH_DELAY_MS = 250;
 const SELF_HISTORY_OVERLAY_OPEN_DELAY_MS = 500;
 
 export function AppStateProvider({ children, mode = "main" }: { children: ReactNode; mode?: AppWindowMode }) {
@@ -137,7 +159,10 @@ export function AppStateProvider({ children, mode = "main" }: { children: ReactN
   const [activityEntries, setActivityEntries] = useState<ActivityEntry[]>([]);
   const [leagueSelfSnapshot, setLeagueSelfSnapshot] = useState<LeagueSelfSnapshot | null>(null);
   const [champSelectSnapshot, setChampSelectSnapshot] = useState<ChampSelectSnapshot | null>(null);
+  const [champSelectAdvisorSnapshot, setChampSelectAdvisorSnapshot] = useState<ChampSelectAdvisorSnapshot | null>(null);
+  const [liveOverlaySnapshot, setLiveOverlaySnapshot] = useState<LiveOverlaySnapshot | null>(null);
   const [rankedChampionStats, setRankedChampionStats] = useState<RankedChampionStatsResponse | null>(null);
+  const [advisorData, setAdvisorData] = useState<AdvisorDataResponse | null>(null);
   const [postMatchDetails, setPostMatchDetails] = useState<Record<number, PostMatchDetail>>({});
   const [participantProfiles, setParticipantProfiles] = useState<Record<string, ParticipantPublicProfile>>({});
   const [autoAcceptStatus, setAutoAcceptStatus] = useState<AutoAcceptStatus | null>(null);
@@ -156,6 +181,7 @@ export function AppStateProvider({ children, mode = "main" }: { children: ReactN
   const [isActivityLoading, setIsActivityLoading] = useState(false);
   const [isLeagueClientLoading, setIsLeagueClientLoading] = useState(false);
   const [isRankedChampionStatsLoading, setIsRankedChampionStatsLoading] = useState(false);
+  const [isAdvisorDataLoading, setIsAdvisorDataLoading] = useState(false);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const { run } = useAsyncAction(setFeedback);
   const languagePreference = snapshot?.settings.language ?? "system";
@@ -251,6 +277,28 @@ export function AppStateProvider({ children, mode = "main" }: { children: ReactN
         setFeedback({
           kind: response.dataStatus === "staleCache" ? "error" : "success",
           message: response.statusMessage ?? "Ranked champion data refreshed",
+        });
+      },
+    );
+  }, [run]);
+
+  const loadAdvisorDataAction = useCallback(async (input: AdvisorDataInput) => {
+    return run(
+      () => fetchAdvisorData(input),
+      setIsAdvisorDataLoading,
+      (response) => startTransition(() => setAdvisorData(response)),
+    );
+  }, [run]);
+
+  const refreshAdvisorDataAction = useCallback(async (input: AdvisorDataRefreshInput) => {
+    return run(
+      () => refreshAdvisorData(input),
+      setIsAdvisorDataLoading,
+      (response) => {
+        startTransition(() => setAdvisorData(response));
+        setFeedback({
+          kind: response.dataStatus === "staleCache" ? "error" : "success",
+          message: response.statusMessage ?? "Advisor data refreshed",
         });
       },
     );
@@ -481,6 +529,33 @@ export function AppStateProvider({ children, mode = "main" }: { children: ReactN
     return run(() => fetchChampSelectSnapshot(6), undefined, applyChampSelectSnapshotAction);
   }, [run, applyChampSelectSnapshotAction]);
 
+  const applyChampSelectAdvisorSnapshotAction = useCallback((snapshot: ChampSelectAdvisorSnapshot) => {
+    startTransition(() => {
+      setChampSelectAdvisorSnapshot(snapshot);
+    });
+    for (const player of snapshot.players) {
+      void loadLeagueChampionIconAction(player.championId);
+      for (const match of player.recentStats?.recentMatches ?? []) {
+        void loadLeagueChampionIconAction(match.championId);
+      }
+    }
+  }, [loadLeagueChampionIconAction]);
+
+  const refreshChampSelectAdvisorSnapshotAction = useCallback(async () => {
+    return run(() => fetchChampSelectAdvisorSnapshot(6), undefined, applyChampSelectAdvisorSnapshotAction);
+  }, [run, applyChampSelectAdvisorSnapshotAction]);
+
+  const refreshLiveOverlaySnapshotAction = useCallback(async () => {
+    try {
+      const snapshot = await fetchLiveOverlaySnapshot();
+      startTransition(() => setLiveOverlaySnapshot(snapshot));
+      return true;
+    } catch {
+      startTransition(() => setLiveOverlaySnapshot(null));
+      return false;
+    }
+  }, []);
+
   const loadLeagueChampionDetailsAction = useCallback(async (championId: number | null | undefined) => {
     if (!championId || championDetailsRef.current[championId]) {
       return true;
@@ -513,22 +588,54 @@ export function AppStateProvider({ children, mode = "main" }: { children: ReactN
       return;
     }
 
+    let advisorRefreshTimer: number | null = null;
+    const clearAdvisorRefreshTimer = () => {
+      if (advisorRefreshTimer !== null) {
+        window.clearTimeout(advisorRefreshTimer);
+        advisorRefreshTimer = null;
+      }
+    };
+    const scheduleAdvisorRefresh = () => {
+      clearAdvisorRefreshTimer();
+      advisorRefreshTimer = window.setTimeout(() => {
+        advisorRefreshTimer = null;
+        void refreshChampSelectAdvisorSnapshotAction();
+      }, CHAMP_SELECT_ADVISOR_REFRESH_DELAY_MS);
+    };
+
     const cleanupUpdate = listenWithCleanup<ChampSelectSnapshot>("champ-select-update", (event) => {
       applyChampSelectSnapshotAction(event.payload);
+      scheduleAdvisorRefresh();
     });
 
     const cleanupClear = listenWithCleanup<void>("champ-select-clear", () => {
       champSelectFingerprintRef.current = "";
       setChampSelectSnapshot(null);
+      setChampSelectAdvisorSnapshot(null);
+      setLiveOverlaySnapshot(null);
+      clearAdvisorRefreshTimer();
     });
 
     void refreshChampSelectSnapshotAction();
+    void refreshChampSelectAdvisorSnapshotAction();
+    void refreshLiveOverlaySnapshotAction();
+    const liveTimer = window.setInterval(() => {
+      void refreshLiveOverlaySnapshotAction();
+    }, 5000);
 
     return () => {
+      clearAdvisorRefreshTimer();
       cleanupUpdate();
       cleanupClear();
+      window.clearInterval(liveTimer);
     };
-  }, [applyChampSelectSnapshotAction, mode, refreshChampSelectSnapshotAction]);
+  }, [
+    applyChampSelectSnapshotAction,
+    mode,
+    refreshChampSelectAdvisorSnapshotAction,
+    refreshChampSelectSnapshotAction,
+    refreshLiveOverlaySnapshotAction,
+  ]);
 
   useEffect(() => {
     if (mode !== "main") {
@@ -758,20 +865,46 @@ export function AppStateProvider({ children, mode = "main" }: { children: ReactN
     [champSelectSnapshot, refreshChampSelectSnapshotAction],
   );
 
+  const advisorValue = useMemo<AdvisorContextValue>(
+    () => ({
+      advisorData,
+      champSelectAdvisorSnapshot,
+      liveOverlaySnapshot,
+      isAdvisorDataLoading,
+      loadAdvisorData: loadAdvisorDataAction,
+      refreshAdvisorData: refreshAdvisorDataAction,
+      refreshChampSelectAdvisorSnapshot: refreshChampSelectAdvisorSnapshotAction,
+      refreshLiveOverlaySnapshot: refreshLiveOverlaySnapshotAction,
+    }),
+    [
+      advisorData,
+      champSelectAdvisorSnapshot,
+      isAdvisorDataLoading,
+      liveOverlaySnapshot,
+      loadAdvisorDataAction,
+      refreshAdvisorDataAction,
+      refreshChampSelectAdvisorSnapshotAction,
+      refreshLiveOverlaySnapshotAction,
+    ],
+  );
+
   const legacyValue = useMemo<AppStateContextValue>(
     () => ({
       ...coreValue,
       ...assetsValue,
       ...champSelectValue,
+      ...advisorValue,
     }),
-    [assetsValue, champSelectValue, coreValue],
+    [advisorValue, assetsValue, champSelectValue, coreValue],
   );
 
   return (
     <AppCoreContext.Provider value={coreValue}>
       <LeagueAssetsContext.Provider value={assetsValue}>
         <ChampSelectContext.Provider value={champSelectValue}>
-          <AppStateContext.Provider value={legacyValue}>{children}</AppStateContext.Provider>
+          <AdvisorContext.Provider value={advisorValue}>
+            <AppStateContext.Provider value={legacyValue}>{children}</AppStateContext.Provider>
+          </AdvisorContext.Provider>
         </ChampSelectContext.Provider>
       </LeagueAssetsContext.Provider>
     </AppCoreContext.Provider>
@@ -810,6 +943,16 @@ export function useLeagueAssets() {
 
 export function useChampSelect() {
   const context = useContext(ChampSelectContext);
+
+  if (!context) {
+    throw new Error("AppStateProvider is missing");
+  }
+
+  return context;
+}
+
+export function useAdvisor() {
+  const context = useContext(AdvisorContext);
 
   if (!context) {
     throw new Error("AppStateProvider is missing");

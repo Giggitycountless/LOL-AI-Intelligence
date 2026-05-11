@@ -7,16 +7,19 @@ use std::{
 };
 
 use domain::{
-    ActivityEntry, ActivityKind, AppLanguagePreference, AppSettings, AppSnapshot,
+    ActivityEntry, ActivityKind, AdvisorDataResponse, AdvisorDataSnapshot, AdvisorItemBuild,
+    AdvisorMatchup, AdvisorNamedRef, AdvisorPlayerTag, AdvisorPowerSpike, AdvisorRecord,
+    AdvisorRunePage, AdvisorSkillOrder, AdvisorTagTone, AppLanguagePreference, AppSettings,
+    AppSnapshot, ChampSelectAdvisorPlayer, ChampSelectAdvisorSnapshot,
     ChampSelectRecentStatsStatus, ClearActivityResult, ClearPlayerNoteResult, DatabaseStatus,
     HealthReport, ImportLocalDataResult, KdaTag, LeagueChampionDetails, LeagueChampionSummary,
     LeagueClientStatus, LeagueDataSection, LeagueDataWarning, LeagueGameAsset, LeagueGameAssetKind,
-    LeagueImageAsset, LeagueSelfData, LeagueSelfSnapshot, LocalActivityEntry, LocalDataExport,
-    MatchResult, NewActivityEntry, ParticipantMetricLeader, ParticipantPublicProfile,
-    ParticipantRecentStats, PlayerNoteSummary, PlayerNoteView, PostMatchComparison, PostMatchDetail,
-    PostMatchParticipant, PostMatchTeam, PostMatchTeamTotals, RankedChampionDataSnapshot,
-    RankedChampionDataStatus, RankedChampionLane, RankedChampionSort, RankedChampionStat,
-    RankedChampionStatsResponse, RecentChampionSummary, RecentMatchSummary,
+    LeagueImageAsset, LeagueSelfData, LeagueSelfSnapshot, LiveOverlaySnapshot, LocalActivityEntry,
+    LocalDataExport, MatchResult, NewActivityEntry, ParticipantMetricLeader,
+    ParticipantPublicProfile, ParticipantRecentStats, PlayerNoteSummary, PlayerNoteView,
+    PostMatchComparison, PostMatchDetail, PostMatchParticipant, PostMatchTeam, PostMatchTeamTotals,
+    RankedChampionDataSnapshot, RankedChampionDataStatus, RankedChampionLane, RankedChampionSort,
+    RankedChampionStat, RankedChampionStatsResponse, RecentChampionSummary, RecentMatchSummary,
     RecentPerformanceSummary, ServiceStatus, SettingsValues, StartupPage,
 };
 
@@ -60,6 +63,11 @@ pub trait AppStore {
         &self,
         snapshot: RankedChampionDataSnapshot,
     ) -> Result<RankedChampionDataSnapshot, String>;
+    fn latest_advisor_snapshot(&self) -> Result<Option<AdvisorDataSnapshot>, String>;
+    fn replace_advisor_snapshot(
+        &self,
+        snapshot: AdvisorDataSnapshot,
+    ) -> Result<AdvisorDataSnapshot, String>;
 }
 
 pub trait LeagueClientReader {
@@ -103,6 +111,7 @@ pub trait LeagueClientReader {
         champion_id: i64,
     ) -> Result<LeagueChampionDetails, LeagueClientReadError>;
     fn gameflow_phase(&self) -> Result<String, LeagueClientReadError>;
+    fn live_overlay(&self) -> Result<LiveOverlaySnapshot, LeagueClientReadError>;
     fn accept_ready_check(&self) -> Result<(), LeagueClientReadError>;
     fn apply_champ_select_preferences(
         &self,
@@ -116,6 +125,13 @@ pub trait RankedChampionDataProvider {
         &self,
         input: RankedChampionRefreshInput,
     ) -> Result<RankedChampionDataSnapshot, RankedChampionDataError>;
+}
+
+pub trait AdvisorDataProvider {
+    fn fetch_advisor_snapshot(
+        &self,
+        input: AdvisorDataRefreshInput,
+    ) -> Result<AdvisorDataSnapshot, RankedChampionDataError>;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -223,6 +239,17 @@ pub struct RankedChampionStatsInput {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RankedChampionRefreshInput {
+    pub url: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AdvisorDataInput {
+    pub lane: Option<RankedChampionLane>,
+    pub champion_id: Option<i64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AdvisorDataRefreshInput {
     pub url: Option<String>,
 }
 
@@ -683,6 +710,152 @@ pub fn refresh_ranked_champion_stats(
         RankedChampionDataStatus::Fresh,
         Some("Ranked champion data refreshed".to_string()),
     ))
+}
+
+pub fn get_advisor_data_from_store(
+    store: &impl AppStore,
+    input: AdvisorDataInput,
+) -> Result<AdvisorDataResponse, ApplicationError> {
+    let snapshot = store
+        .latest_advisor_snapshot()
+        .map_err(|error| storage_failure("load advisor data", error))?
+        .unwrap_or_else(sample_advisor_snapshot);
+
+    Ok(advisor_response_from_snapshot(
+        snapshot,
+        input,
+        true,
+        RankedChampionDataStatus::Cached,
+        None,
+    ))
+}
+
+pub fn refresh_advisor_data(
+    store: &impl AppStore,
+    provider: &impl AdvisorDataProvider,
+    input: AdvisorDataRefreshInput,
+    data_input: AdvisorDataInput,
+) -> Result<AdvisorDataResponse, ApplicationError> {
+    let mut snapshot = match provider.fetch_advisor_snapshot(input) {
+        Ok(snapshot) => snapshot,
+        Err(error) => {
+            let cached_snapshot = store
+                .latest_advisor_snapshot()
+                .map_err(|error| storage_failure("load cached advisor data", error))?;
+
+            return cached_snapshot.map_or_else(
+                || {
+                    Err(match error {
+                        RankedChampionDataError::Unavailable(message)
+                        | RankedChampionDataError::InvalidData(message) => {
+                            ApplicationError::Integration(message)
+                        }
+                    })
+                },
+                |snapshot| {
+                    Ok(advisor_response_from_snapshot(
+                        snapshot,
+                        data_input,
+                        true,
+                        RankedChampionDataStatus::StaleCache,
+                        Some(
+                            "Remote advisor data could not be refreshed; showing cached data"
+                                .to_string(),
+                        ),
+                    ))
+                },
+            );
+        }
+    };
+    snapshot.imported_at = unix_timestamp_seconds();
+
+    let saved = store
+        .replace_advisor_snapshot(snapshot)
+        .map_err(|error| storage_failure("save advisor data", error))?;
+
+    Ok(advisor_response_from_snapshot(
+        saved,
+        data_input,
+        true,
+        RankedChampionDataStatus::Fresh,
+        Some("Advisor data refreshed".to_string()),
+    ))
+}
+
+pub fn get_champ_select_advisor_snapshot(
+    store: &impl AppStore,
+    reader: &(impl LeagueClientReader + Sync),
+    recent_limit: i64,
+) -> Result<ChampSelectAdvisorSnapshot, ApplicationError> {
+    let snapshot = get_champ_select_snapshot(reader, recent_limit)?;
+    let advisor_snapshot = store
+        .latest_advisor_snapshot()
+        .map_err(|error| storage_failure("load advisor data", error))?
+        .unwrap_or_else(sample_advisor_snapshot);
+    let advisors_by_champion: HashMap<i64, AdvisorRecord> = advisor_snapshot
+        .records
+        .iter()
+        .map(|record| (record.champion_id, record.clone()))
+        .collect();
+    let mut advisor_players: Vec<ChampSelectAdvisorPlayer> = snapshot
+        .players
+        .into_iter()
+        .map(|player| {
+            let advisor = player
+                .champion_id
+                .and_then(|champion_id| advisors_by_champion.get(&champion_id).cloned());
+            let tags = player_advisor_tags(&player.recent_stats, advisor.as_ref());
+
+            ChampSelectAdvisorPlayer {
+                summoner_id: player.summoner_id,
+                display_name: player.display_name,
+                champion_id: player.champion_id,
+                champion_name: player.champion_name,
+                team: player.team,
+                recent_stats: player.recent_stats,
+                recent_stats_status: player.recent_stats_status,
+                tags,
+                advisor,
+                matchup_advice: None,
+            }
+        })
+        .collect();
+
+    let matchups: Vec<(usize, String)> = advisor_players
+        .iter()
+        .enumerate()
+        .filter_map(|(index, player)| {
+            let advisor = player.advisor.as_ref()?;
+            let opponent = advisor_players.iter().find(|candidate| {
+                candidate.team != player.team
+                    && candidate
+                        .advisor
+                        .as_ref()
+                        .is_some_and(|candidate_advisor| candidate_advisor.lane == advisor.lane)
+            })?;
+            matchup_advice(advisor, opponent).map(|advice| (index, advice))
+        })
+        .collect();
+
+    for (index, advice) in matchups {
+        if let Some(player) = advisor_players.get_mut(index) {
+            player.matchup_advice = Some(advice);
+        }
+    }
+
+    Ok(ChampSelectAdvisorSnapshot {
+        players: advisor_players,
+        cached_at: unix_timestamp_seconds(),
+        advisor_source: advisor_snapshot.source,
+        advisor_patch: advisor_snapshot.patch,
+        data_status: RankedChampionDataStatus::Cached,
+    })
+}
+
+pub fn get_live_overlay_snapshot(
+    reader: &impl LeagueClientReader,
+) -> Result<LiveOverlaySnapshot, ApplicationError> {
+    reader.live_overlay().map_err(ApplicationError::from)
 }
 
 pub fn get_league_profile_icon(
@@ -1468,6 +1641,305 @@ fn ranked_response_from_snapshot(
         status_message,
     }
 }
+
+fn advisor_response_from_snapshot(
+    snapshot: AdvisorDataSnapshot,
+    input: AdvisorDataInput,
+    is_cached: bool,
+    data_status: RankedChampionDataStatus,
+    status_message: Option<String>,
+) -> AdvisorDataResponse {
+    let records = snapshot
+        .records
+        .into_iter()
+        .filter(|record| input.lane.is_none_or(|lane| record.lane == lane))
+        .filter(|record| {
+            input
+                .champion_id
+                .is_none_or(|champion_id| record.champion_id == champion_id)
+        })
+        .collect();
+
+    AdvisorDataResponse {
+        lane: input.lane,
+        champion_id: input.champion_id,
+        records,
+        source: snapshot.source,
+        updated_at: snapshot
+            .generated_at
+            .clone()
+            .unwrap_or_else(|| snapshot.imported_at.clone()),
+        generated_at: snapshot.generated_at,
+        imported_at: Some(snapshot.imported_at),
+        patch: snapshot.patch,
+        region: snapshot.region,
+        queue: snapshot.queue,
+        tier: snapshot.tier,
+        is_cached,
+        data_status,
+        status_message,
+    }
+}
+
+fn player_advisor_tags(
+    recent_stats: &Option<ParticipantRecentStats>,
+    advisor: Option<&AdvisorRecord>,
+) -> Vec<AdvisorPlayerTag> {
+    let mut tags = Vec::new();
+
+    if let Some(recent_stats) = recent_stats {
+        let mut counts: HashMap<String, usize> = HashMap::new();
+        for match_summary in recent_stats
+            .recent_matches
+            .iter()
+            .take(PERFORMANCE_MATCH_COUNT)
+        {
+            *counts
+                .entry(match_summary.champion_name.to_ascii_lowercase())
+                .or_default() += 1;
+        }
+        if counts.values().copied().max().unwrap_or(0) >= 3 {
+            tags.push(AdvisorPlayerTag {
+                label: "One-trick".to_string(),
+                tone: AdvisorTagTone::Good,
+            });
+        }
+
+        let loss_streak = recent_stats
+            .recent_matches
+            .iter()
+            .take(PERFORMANCE_MATCH_COUNT)
+            .take_while(|match_summary| match_summary.result == MatchResult::Loss)
+            .count();
+        if loss_streak >= 3 {
+            tags.push(AdvisorPlayerTag {
+                label: format!("{loss_streak} loss streak"),
+                tone: AdvisorTagTone::Warn,
+            });
+        }
+    }
+
+    if let Some(advisor) = advisor {
+        let (label, tone) = if advisor.win_rate >= 52.0 || advisor.overall_score >= 55.0 {
+            ("Strong pick", AdvisorTagTone::Good)
+        } else if advisor.win_rate < 49.0 {
+            ("Low WR", AdvisorTagTone::Warn)
+        } else {
+            ("Stable", AdvisorTagTone::Info)
+        };
+        tags.push(AdvisorPlayerTag {
+            label: label.to_string(),
+            tone,
+        });
+
+        if let Some(spike) = advisor.power_spikes.first() {
+            tags.push(AdvisorPlayerTag {
+                label: format!("Spike {}", spike.timing),
+                tone: AdvisorTagTone::Info,
+            });
+        }
+    }
+
+    tags
+}
+
+fn matchup_advice(advisor: &AdvisorRecord, opponent: &ChampSelectAdvisorPlayer) -> Option<String> {
+    let opponent_id = opponent.champion_id?;
+    advisor
+        .strong_against
+        .iter()
+        .find(|matchup| matchup.champion_id == opponent_id)
+        .map(|matchup| format!("Favorable into {}: {}", matchup.champion_name, matchup.note))
+        .or_else(|| {
+            advisor
+                .weak_against
+                .iter()
+                .find(|matchup| matchup.champion_id == opponent_id)
+                .map(|matchup| {
+                    format!("Difficult into {}: {}", matchup.champion_name, matchup.note)
+                })
+        })
+}
+
+fn sample_advisor_snapshot() -> AdvisorDataSnapshot {
+    AdvisorDataSnapshot {
+        source: "Local advisor sample".to_string(),
+        patch: Some("26.08".to_string()),
+        region: Some("KR".to_string()),
+        queue: Some("RANKED_SOLO_5X5".to_string()),
+        tier: Some("EMERALD_PLUS".to_string()),
+        generated_at: Some("2026-04-25T00:00:00Z".to_string()),
+        imported_at: "2026-04-25 00:00:00".to_string(),
+        records: vec![
+            sample_advisor_record(
+                86,
+                "Garen",
+                "Garen",
+                RankedChampionLane::Top,
+                52.1,
+                vec![122, 266],
+                vec![164],
+                "Short trades are strong when Q is ready. Hold W for enemy burst windows.",
+                "Front-to-back fights are best. Silence the nearest carry or diver before using R.",
+            ),
+            sample_advisor_record(
+                5,
+                "Xin Zhao",
+                "XinZhao",
+                RankedChampionLane::Jungle,
+                52.3,
+                vec![64],
+                vec![234],
+                "Path toward early skirmishes and protect lanes with setup CC.",
+                "Use R to isolate priority targets and deny ranged follow-up.",
+            ),
+            sample_advisor_record(
+                103,
+                "Ahri",
+                "Ahri",
+                RankedChampionLane::Middle,
+                51.1,
+                vec![134],
+                vec![777],
+                "Play around charm threat and push waves before roaming.",
+                "Enter after cooldowns are used, then use R charges to clean up fights.",
+            ),
+            sample_advisor_record(
+                222,
+                "Jinx",
+                "Jinx",
+                RankedChampionLane::Bottom,
+                51.9,
+                vec![145],
+                vec![81],
+                "Scale safely and trade when rockets can hit both ADC and support.",
+                "Reset fights are the win condition. Stay behind peel until passive procs.",
+            ),
+            sample_advisor_record(
+                412,
+                "Thresh",
+                "Thresh",
+                RankedChampionLane::Support,
+                50.5,
+                vec![497],
+                vec![555],
+                "Keep lane brushes warded and threaten hook when enemy last-hits.",
+                "Hold lantern for carries instead of forcing every engage.",
+            ),
+        ],
+    }
+}
+
+fn sample_advisor_record(
+    champion_id: i64,
+    champion_name: &str,
+    champion_alias: &str,
+    lane: RankedChampionLane,
+    win_rate: f64,
+    strong_against_ids: Vec<i64>,
+    weak_against_ids: Vec<i64>,
+    lane_advice: &str,
+    teamfight_advice: &str,
+) -> AdvisorRecord {
+    AdvisorRecord {
+        champion_id,
+        champion_name: champion_name.to_string(),
+        champion_alias: Some(champion_alias.to_string()),
+        lane,
+        win_rate,
+        pick_rate: 7.5,
+        ban_rate: 8.0,
+        overall_score: ranked_overall_score(win_rate, 7.5, 8.0),
+        games: 100_000,
+        runes: AdvisorRunePage {
+            primary_style: "Precision".to_string(),
+            primary_runes: vec![
+                named_ref(Some(8010), "Conqueror"),
+                named_ref(Some(9111), "Triumph"),
+                named_ref(Some(9104), "Legend: Alacrity"),
+                named_ref(Some(8299), "Last Stand"),
+            ],
+            secondary_style: "Resolve".to_string(),
+            secondary_runes: vec![
+                named_ref(Some(8444), "Second Wind"),
+                named_ref(Some(8451), "Overgrowth"),
+            ],
+            stat_shards: vec![
+                "Attack Speed".to_string(),
+                "Adaptive Force".to_string(),
+                "Health Scaling".to_string(),
+            ],
+        },
+        summoner_spells: vec![named_ref(Some(4), "Flash"), named_ref(Some(14), "Ignite")],
+        skill_order: AdvisorSkillOrder {
+            max_order: vec!["Q".to_string(), "E".to_string(), "W".to_string()],
+            early_order: vec![
+                "Q".to_string(),
+                "E".to_string(),
+                "W".to_string(),
+                "Q".to_string(),
+                "Q".to_string(),
+                "R".to_string(),
+            ],
+        },
+        item_build: AdvisorItemBuild {
+            starter: vec![
+                named_ref(Some(1055), "Doran's Blade"),
+                named_ref(Some(2003), "Health Potion"),
+            ],
+            core: vec![
+                named_ref(Some(6631), "Stridebreaker"),
+                named_ref(Some(3053), "Sterak's Gage"),
+            ],
+            boots: vec![named_ref(Some(3047), "Plated Steelcaps")],
+            late: vec![
+                named_ref(Some(6333), "Death's Dance"),
+                named_ref(Some(3075), "Thornmail"),
+            ],
+            situational: vec![named_ref(Some(3156), "Maw of Malmortius")],
+        },
+        strong_against: strong_against_ids
+            .into_iter()
+            .map(|id| AdvisorMatchup {
+                champion_id: id,
+                champion_name: format!("Champion {id}"),
+                note: "Can contest short trades and punish cooldowns.".to_string(),
+                win_rate_delta: Some(2.0),
+            })
+            .collect(),
+        weak_against: weak_against_ids
+            .into_iter()
+            .map(|id| AdvisorMatchup {
+                champion_id: id,
+                champion_name: format!("Champion {id}"),
+                note: "Respect range or all-in timing before first item.".to_string(),
+                win_rate_delta: Some(-2.0),
+            })
+            .collect(),
+        power_spikes: vec![
+            AdvisorPowerSpike {
+                timing: "6".to_string(),
+                label: "Ultimate threat".to_string(),
+                description: "Look for an all-in after unlocking R.".to_string(),
+            },
+            AdvisorPowerSpike {
+                timing: "1 item".to_string(),
+                label: "Core item".to_string(),
+                description: "First completed item opens stronger skirmishes.".to_string(),
+            },
+        ],
+        lane_advice: lane_advice.to_string(),
+        teamfight_advice: teamfight_advice.to_string(),
+    }
+}
+
+fn named_ref(id: Option<i64>, name: &str) -> AdvisorNamedRef {
+    AdvisorNamedRef {
+        id,
+        name: name.to_string(),
+    }
+}
+
 fn ranked_overall_score(win_rate: f64, pick_rate: f64, ban_rate: f64) -> f64 {
     round_to_tenth((win_rate * 0.55) + (pick_rate * 0.25) + (ban_rate * 0.20))
 }
@@ -1511,9 +1983,7 @@ fn unix_timestamp_seconds() -> String {
 fn validate_activity_title(title: &str, label: &str) -> Result<String, ApplicationError> {
     let trimmed = title.trim().to_string();
     if trimmed.is_empty() {
-        return Err(ApplicationError::Validation(format!(
-            "{label} is required"
-        )));
+        return Err(ApplicationError::Validation(format!("{label} is required")));
     }
     if trimmed.chars().count() > MAX_ACTIVITY_TITLE_LEN {
         return Err(ApplicationError::Validation(format!(
