@@ -792,6 +792,9 @@ pub fn get_champ_select_advisor_snapshot(
         .latest_advisor_snapshot()
         .map_err(|error| storage_failure("load advisor data", error))?
         .unwrap_or_else(sample_advisor_snapshot);
+    // Each stored advisor snapshot is lane-specific, so champion_id collisions
+    // are unlikely. Using champion_id alone as the key is intentional since
+    // ChampSelectSessionPlayer does not carry lane information.
     let advisors_by_champion: HashMap<i64, AdvisorRecord> = advisor_snapshot
         .records
         .iter()
