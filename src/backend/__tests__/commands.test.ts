@@ -33,6 +33,17 @@ describe("callBackend", () => {
     mockInvoke.mockRejectedValueOnce("string error");
     await expect(callBackend("cmd")).rejects.toEqual({ code: "internal", message: "Command failed" });
   });
+
+  it("returns an integration error when the desktop backend is unavailable", async () => {
+    mockInvoke.mockClear();
+    vi.stubGlobal("window", {});
+    await expect(callBackend("cmd")).rejects.toEqual({
+      code: "integration",
+      message: "Desktop backend unavailable in browser preview",
+    });
+    expect(mockInvoke).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
 });
 
 describe("isCommandError", () => {

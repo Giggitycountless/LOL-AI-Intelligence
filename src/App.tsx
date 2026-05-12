@@ -45,19 +45,24 @@ export function App() {
   );
 }
 
-function AppShell() {
+export function AppShell() {
   const { snapshot, feedback, clearFeedback, isLoading, effectiveLanguage, setLanguagePreference, t } = useAppCore();
   const [activePage, setActivePage] = useState<Page>("dashboard");
   const didApplyStartupPage = useRef(false);
+  const didUserNavigate = useRef(false);
   const compactMode = snapshot?.settings.compactMode ?? false;
-  const navigateTo = useCallback((page: Page) => {
+  const navigateTo = useCallback((page: Page, options?: { isUserInitiated?: boolean }) => {
+    if (options?.isUserInitiated) {
+      didUserNavigate.current = true;
+    }
+
     startTransition(() => {
       setActivePage(page);
     });
   }, []);
 
   useEffect(() => {
-    if (snapshot && !didApplyStartupPage.current) {
+    if (snapshot && !didApplyStartupPage.current && !didUserNavigate.current) {
       navigateTo(snapshot.settings.startupPage);
       didApplyStartupPage.current = true;
     }
@@ -94,7 +99,7 @@ function AppShell() {
                 type="button"
                 title={compactMode ? label : undefined}
                 aria-label={label}
-                onClick={() => navigateTo(page.id)}
+                onClick={() => navigateTo(page.id, { isUserInitiated: true })}
                 className={[
                   "flex h-11 w-full items-center gap-3 rounded-md px-3 text-left text-sm font-medium transition",
                   compactMode ? "justify-center" : "",
@@ -116,7 +121,8 @@ function AppShell() {
           <button
             type="button"
             onClick={() => void setLanguagePreference(oppositeLanguage(effectiveLanguage))}
-            className="inline-flex h-8 min-w-12 items-center justify-center rounded-md border border-zinc-300 bg-white px-3 text-sm font-semibold text-zinc-700 transition hover:bg-zinc-50"
+            disabled={!snapshot}
+            className="inline-flex h-8 min-w-12 items-center justify-center rounded-md border border-zinc-300 bg-white px-3 text-sm font-semibold text-zinc-700 transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:text-zinc-400"
           >
             {t("app.languageToggle")}
           </button>

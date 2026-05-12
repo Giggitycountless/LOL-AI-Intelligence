@@ -3,6 +3,13 @@ import { invoke } from "@tauri-apps/api/core";
 import type { CommandError } from "./types";
 
 export async function callBackend<T>(command: string, args?: Record<string, unknown>): Promise<T> {
+  if (!canInvokeDesktopBackend()) {
+    throw {
+      code: "integration",
+      message: "Desktop backend unavailable in browser preview",
+    } satisfies CommandError;
+  }
+
   try {
     return await invoke<T>(command, args);
   } catch (error: unknown) {
@@ -30,4 +37,12 @@ function normalizeCommandError(error: unknown): CommandError {
     code: "internal",
     message: error instanceof Error ? error.message : "Command failed",
   };
+}
+
+function canInvokeDesktopBackend() {
+  if (typeof window === "undefined") {
+    return true;
+  }
+
+  return typeof invoke === "function" && typeof (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ !== "undefined";
 }
