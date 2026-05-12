@@ -27,6 +27,7 @@ use domain::{
 };
 use futures_util::{SinkExt, Stream, StreamExt};
 use rayon::prelude::*;
+use percent_encoding::{percent_encode, AsciiSet, CONTROLS};
 use reqwest::{blocking::Client, header::CONTENT_TYPE, StatusCode};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -2313,55 +2314,67 @@ impl GameClientPlayer {
     }
 }
 
+const QUERY_ENCODE_SET: &AsciiSet = &CONTROLS
+    .add(b' ')
+    .add(b'"')
+    .add(b'#')
+    .add(b'<')
+    .add(b'>')
+    .add(b'`')
+    .add(b'?')
+    .add(b'{')
+    .add(b'}')
+    .add(b'/')
+    .add(b':')
+    .add(b'@')
+    .add(b'\\')
+    .add(b'$')
+    .add(b'&')
+    .add(b'+')
+    .add(b',')
+    .add(b'=')
+    .add(b'%');
+
 fn enrich_live_overlay_players(
     http_client: &Client,
     mut players: Vec<GameClientPlayer>,
 ) -> Vec<GameClientPlayer> {
-    for player in &mut players {
+    players.par_iter_mut().for_each(|player| {
         let Some(display_name) = player.display_name() else {
-            continue;
+            return;
         };
-        let encoded_name = percent_encode_query_value(display_name.as_str());
+        let encoded_name = percent_encode(display_name.as_str().as_bytes(), QUERY_ENCODE_SET).to_string();
 
-        if let Ok(items) = live_client_get_json::<Vec<GameClientItem>>(
+        match live_client_get_json::<Vec<GameClientItem>>(
             http_client,
             format!("/liveclientdata/playeritems?summonerName={encoded_name}").as_str(),
         ) {
-            if !items.is_empty() {
-                player.items = items;
-            }
+            Ok(items) if !items.is_empty() => player.items = items,
+            Err(e) => log_lcu_adapter_event(&format!("failed to fetch items for {display_name}: {e}")),
+            _ => {}
         }
 
-        if let Ok(scores) = live_client_get_json::<GameClientScores>(
+        match live_client_get_json::<GameClientScores>(
             http_client,
             format!("/liveclientdata/playerscores?summonerName={encoded_name}").as_str(),
         ) {
-            player.scores = Some(scores);
+            Ok(scores) => player.scores = Some(scores),
+            Err(e) => log_lcu_adapter_event(&format!("failed to fetch scores for {display_name}: {e}")),
         }
 
-        if let Ok(spells) = live_client_get_json::<GameClientSummonerSpells>(
+        match live_client_get_json::<GameClientSummonerSpells>(
             http_client,
             format!("/liveclientdata/playersummonerspells?summonerName={encoded_name}").as_str(),
         ) {
-            player.summoner_spells = Some(spells);
+            Ok(spells) => player.summoner_spells = Some(spells),
+            Err(e) => log_lcu_adapter_event(&format!("failed to fetch spells for {display_name}: {e}")),
         }
-    }
+    });
 
     players
 }
 
-fn percent_encode_query_value(value: &str) -> String {
-    let mut encoded = String::new();
-    for byte in value.as_bytes() {
-        match *byte {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
-                encoded.push(*byte as char);
-            }
-            _ => encoded.push_str(format!("%{byte:02X}").as_str()),
-        }
-    }
-    encoded
-}
+
 
 fn map_live_overlay_snapshot(
     players: Vec<GameClientPlayer>,
