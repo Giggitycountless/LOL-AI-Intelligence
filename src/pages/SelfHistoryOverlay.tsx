@@ -308,7 +308,7 @@ export function SelfHistoryOverlay() {
         />
       )}
 
-      <LiveOverlayBar snapshot={liveOverlaySnapshot} />
+      <LiveOverlayBar snapshot={liveOverlaySnapshot} t={t} />
       <SummaryBar summary={model.summary} t={t} />
     </main>
   );
@@ -601,7 +601,7 @@ function SummaryCard({ label, tone, value }: { label: string; tone: TeamTone; va
   );
 }
 
-function LiveOverlayBar({ snapshot }: { snapshot: LiveOverlaySnapshot | null }) {
+function LiveOverlayBar({ snapshot, t }: { snapshot: LiveOverlaySnapshot | null; t: (key: string) => string }) {
   if (!snapshot) {
     return null;
   }
@@ -612,10 +612,10 @@ function LiveOverlayBar({ snapshot }: { snapshot: LiveOverlaySnapshot | null }) 
 
   return (
     <div className="mt-2 grid shrink-0 grid-cols-4 gap-2">
-      <LiveInfoCard label="Game" value={snapshot.gameTimeSeconds === null ? "-" : formatGameTime(snapshot.gameTimeSeconds)} />
-      <LiveInfoCard label="Items" value={formatSignedNumber(diff)} tone={diff >= 0 ? "ally" : "enemy"} />
-      <LiveInfoCard label="Gold" value={activeGold === null || activeGold === undefined ? "-" : formatNumber(Math.round(activeGold))} />
-      <LiveInfoCard label="Event" value={lastEvent ? eventSummary(lastEvent) : "-"} />
+      <LiveInfoCard label={t("live.game")} value={snapshot.gameTimeSeconds === null ? "-" : formatGameTime(snapshot.gameTimeSeconds)} />
+      <LiveInfoCard label={t("live.items")} value={formatSignedNumber(diff)} tone={diff >= 0 ? "ally" : "enemy"} />
+      <LiveInfoCard label={t("live.gold")} value={activeGold === null || activeGold === undefined ? "-" : formatNumber(Math.round(activeGold))} />
+      <LiveInfoCard label={t("live.event")} value={lastEvent ? eventSummary(lastEvent) : "-"} />
     </div>
   );
 }

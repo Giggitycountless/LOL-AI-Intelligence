@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import type { AdvisorNamedRef, AdvisorRecord, RankedChampionLane } from "../backend/types";
 import { ChampionImage } from "../components/common";
-import { useAdvisor, useLeagueAssets } from "../state/AppStateProvider";
+import { useAdvisor, useAppCore, useLeagueAssets } from "../state/AppStateProvider";
 
 const lanes: Array<{ id: RankedChampionLane; label: string }> = [
   { id: "top", label: "Top" },
@@ -13,6 +13,7 @@ const lanes: Array<{ id: RankedChampionLane; label: string }> = [
 ];
 
 export function Advisor() {
+  const { t } = useAppCore();
   const { advisorData, isAdvisorDataLoading, loadAdvisorData, refreshAdvisorData } = useAdvisor();
   const { leagueImages, loadLeagueChampionIcon } = useLeagueAssets();
   const [lane, setLane] = useState<RankedChampionLane>("top");
@@ -37,8 +38,8 @@ export function Advisor() {
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-7">
         <header className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <p className="text-sm font-medium uppercase tracking-wide text-rose-700">Advisor</p>
-            <h1 className="mt-2 text-3xl font-semibold text-zinc-950">Champion Recommendations</h1>
+            <p className="text-sm font-medium uppercase tracking-wide text-rose-700">{t("advisor.eyebrow")}</p>
+            <h1 className="mt-2 text-3xl font-semibold text-zinc-950">{t("advisor.title")}</h1>
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -48,10 +49,10 @@ export function Advisor() {
               type="button"
             >
               <RefreshIcon />
-              <span>{isAdvisorDataLoading ? "Refreshing" : "Refresh"}</span>
+              <span>{isAdvisorDataLoading ? t("common.refreshing") : t("common.refresh")}</span>
             </button>
             <div className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-600">
-              {records.length} champions
+              {records.length} {t("advisor.champions")}
             </div>
           </div>
         </header>
@@ -77,9 +78,9 @@ export function Advisor() {
         <section className="rounded-lg border border-zinc-200 bg-white shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-200 px-5 py-4">
             <div>
-              <h2 className="text-base font-semibold text-zinc-950">{laneLabel(lane)} Recommendations</h2>
+              <h2 className="text-base font-semibold text-zinc-950">{laneLabel(lane)} {t("advisor.recommendations")}</h2>
               <p className="mt-1 text-sm text-zinc-500">
-                {activeAdvisorData?.source ?? "Local advisor sample"} {metadata ? `/ ${metadata}` : ""}
+                {activeAdvisorData?.source ?? t("advisor.localSample")} {metadata ? `/ ${metadata}` : ""}
               </p>
             </div>
             {activeAdvisorData?.statusMessage && (
@@ -91,7 +92,7 @@ export function Advisor() {
 
           {records.length === 0 ? (
             <div className="px-5 py-8 text-sm font-medium text-zinc-500">
-              {isAdvisorDataLoading ? "Loading advisor data..." : "No advisor data is available for this lane."}
+              {isAdvisorDataLoading ? t("advisor.loading") : t("advisor.noData")}
             </div>
           ) : (
             <div className="grid gap-4 p-4 xl:grid-cols-2">
@@ -100,6 +101,7 @@ export function Advisor() {
                   imageUrl={leagueImages.championIcons[record.championId]}
                   key={`${record.lane}-${record.championId}`}
                   record={record}
+                  t={t}
                 />
               ))}
             </div>
@@ -110,7 +112,7 @@ export function Advisor() {
   );
 }
 
-function AdvisorCard({ imageUrl, record }: { imageUrl: string | undefined; record: AdvisorRecord }) {
+function AdvisorCard({ imageUrl, record, t }: { imageUrl: string | undefined; record: AdvisorRecord; t: (key: string) => string }) {
   const spellNames = record.summonerSpells.map((spell) => spell.name).join(" + ");
   const runeText = [
     `${record.runes.primaryStyle}: ${names(record.runes.primaryRunes)}`,
@@ -129,19 +131,19 @@ function AdvisorCard({ imageUrl, record }: { imageUrl: string | undefined; recor
           </div>
           <div className="mt-2 grid gap-2 text-xs font-semibold text-zinc-600 sm:grid-cols-5">
             <Metric label="Score" value={formatDecimal(record.overallScore)} />
-            <Metric label="Win" value={`${record.winRate.toFixed(1)}%`} />
-            <Metric label="Pick" value={`${record.pickRate.toFixed(1)}%`} />
-            <Metric label="Ban" value={`${record.banRate.toFixed(1)}%`} />
-            <Metric label="Games" value={formatGames(record.games)} />
+            <Metric label={t("advisor.winRate")} value={`${record.winRate.toFixed(1)}%`} />
+            <Metric label={t("advisor.pickRate")} value={`${record.pickRate.toFixed(1)}%`} />
+            <Metric label={t("advisor.banRate")} value={`${record.banRate.toFixed(1)}%`} />
+            <Metric label={t("advisor.games")} value={formatGames(record.games)} />
           </div>
         </div>
       </div>
 
       <div className="mt-4 grid gap-3 lg:grid-cols-2">
-        <InfoBlock label="Runes" value={runeText} />
-        <InfoBlock label="Summoners" value={spellNames || "-"} />
-        <InfoBlock label="Skill order" value={`Max ${record.skillOrder.maxOrder.join(" > ")} / Early ${record.skillOrder.earlyOrder.join(" > ")}`} />
-        <InfoBlock label="Core build" value={buildPath(record.itemBuild.starter, record.itemBuild.core, record.itemBuild.boots)} />
+        <InfoBlock label={t("advisor.runes")} value={runeText} />
+        <InfoBlock label={t("advisor.spells")} value={spellNames || "-"} />
+        <InfoBlock label={t("advisor.skillOrder")} value={`Max ${record.skillOrder.maxOrder.join(" > ")} / Early ${record.skillOrder.earlyOrder.join(" > ")}`} />
+        <InfoBlock label={t("advisor.items")} value={buildPath(record.itemBuild.starter, record.itemBuild.core, record.itemBuild.boots)} />
         <InfoBlock label="Late build" value={names(record.itemBuild.late)} />
         <InfoBlock label="Situational" value={names(record.itemBuild.situational)} />
       </div>
@@ -152,9 +154,9 @@ function AdvisorCard({ imageUrl, record }: { imageUrl: string | undefined; recor
       </div>
 
       <div className="mt-3 grid gap-3 lg:grid-cols-3">
-        <ListBlock title="Power spikes" values={record.powerSpikes.map((spike) => `${spike.timing}: ${spike.label}`)} />
-        <ListBlock title="Good into" values={record.strongAgainst.map((matchup) => matchup.championName)} />
-        <ListBlock title="Careful into" values={record.weakAgainst.map((matchup) => matchup.championName)} />
+        <ListBlock title={t("advisor.powerSpikes")} values={record.powerSpikes.map((spike) => `${spike.timing}: ${spike.label}`)} />
+        <ListBlock title={t("advisor.strongAgainst")} values={record.strongAgainst.map((matchup) => matchup.championName)} />
+        <ListBlock title={t("advisor.weakAgainst")} values={record.weakAgainst.map((matchup) => matchup.championName)} />
       </div>
     </article>
   );
@@ -194,8 +196,8 @@ function ListBlock({ title, values }: { title: string; values: string[] }) {
     <div className="rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2">
       <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">{title}</p>
       <div className="mt-2 flex flex-wrap gap-1.5">
-        {displayValues.map((value) => (
-          <span className="rounded bg-white px-2 py-1 text-xs font-semibold text-zinc-700" key={value}>
+        {displayValues.map((value, index) => (
+          <span className="rounded bg-white px-2 py-1 text-xs font-semibold text-zinc-700" key={`${value}-${index}`}>
             {value}
           </span>
         ))}
