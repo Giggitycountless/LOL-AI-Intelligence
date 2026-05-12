@@ -5,9 +5,14 @@ use std::{
 };
 
 use domain::{
-    ActivityEntry, ActivityKind, AppLanguagePreference, AppSettings, ImportLocalDataResult,
-    LocalActivityEntry, NewActivityEntry, RankedChampionDataSnapshot, RankedChampionLane,
-    RankedChampionStat, SettingsValues, StartupPage,
+    ActivityEntry, ActivityKind, AdvisorDataSnapshot, AppLanguagePreference, AppSettings,
+    ImportLocalDataResult, LocalActivityEntry, NewActivityEntry, RankedChampionDataSnapshot,
+    RankedChampionLane, RankedChampionStat, SettingsValues, StartupPage,
+};
+#[cfg(test)]
+use domain::{
+    AdvisorItemBuild, AdvisorMatchup, AdvisorNamedRef, AdvisorPowerSpike, AdvisorRecord,
+    AdvisorRunePage, AdvisorSkillOrder,
 };
 use rusqlite::{Connection, OptionalExtension};
 
@@ -178,6 +183,29 @@ impl SqliteStore {
 
         Ok(saved)
     }
+
+    pub fn latest_advisor_snapshot(&self) -> StorageResult<Option<AdvisorDataSnapshot>> {
+        let connection = Connection::open(&self.database_path)?;
+        configure_connection(&connection)?;
+        read_latest_advisor_snapshot(&connection)
+    }
+
+    pub fn replace_advisor_snapshot(
+        &self,
+        snapshot: &AdvisorDataSnapshot,
+    ) -> StorageResult<AdvisorDataSnapshot> {
+        let mut connection = Connection::open(&self.database_path)?;
+        configure_connection(&connection)?;
+        let transaction = connection.transaction()?;
+
+        transaction.execute("DELETE FROM advisor_data_snapshots", [])?;
+        insert_advisor_snapshot(&transaction, snapshot)?;
+        let saved = read_latest_advisor_snapshot(&transaction)?
+            .ok_or(StorageError::MissingAdvisorSnapshot)?;
+        transaction.commit()?;
+
+        Ok(saved)
+    }
 }
 
 pub type StorageResult<T> = Result<T, StorageError>;
@@ -194,6 +222,8 @@ pub enum StorageError {
     InvalidPlayerTags(String),
     InvalidRankedChampionLane(String),
     MissingRankedChampionSnapshot,
+    MissingAdvisorSnapshot,
+    InvalidAdvisorSnapshot(String),
 }
 
 impl fmt::Display for StorageError {
@@ -215,6 +245,12 @@ impl fmt::Display for StorageError {
             Self::MissingRankedChampionSnapshot => {
                 write!(formatter, "ranked champion snapshot is missing after save")
             }
+            Self::MissingAdvisorSnapshot => {
+                write!(formatter, "advisor snapshot is missing after save")
+            }
+            Self::InvalidAdvisorSnapshot(error) => {
+                write!(formatter, "invalid advisor snapshot: {error}")
+            }
         }
     }
 }
@@ -231,7 +267,9 @@ impl Error for StorageError {
             | Self::MissingPlayerNote
             | Self::InvalidPlayerTags(_)
             | Self::InvalidRankedChampionLane(_)
-            | Self::MissingRankedChampionSnapshot => None,
+            | Self::MissingRankedChampionSnapshot
+            | Self::MissingAdvisorSnapshot
+            | Self::InvalidAdvisorSnapshot(_) => None,
         }
     }
 }
@@ -294,6 +332,11 @@ fn run_migrations(connection: &mut Connection) -> StorageResult<()> {
             version: 6,
             description: "language_preference",
             sql: MIGRATION_0006,
+        },
+        Migration {
+            version: 7,
+            description: "advisor_data_cache",
+            sql: MIGRATION_0007,
         },
     ] {
         let migration_is_applied = transaction
@@ -754,6 +797,75 @@ fn insert_ranked_champion_snapshot(
     Ok(())
 }
 
+fn read_latest_advisor_snapshot(
+    connection: &Connection,
+) -> StorageResult<Option<AdvisorDataSnapshot>> {
+    let metadata = connection
+        .query_row(
+            "SELECT source, patch, region, queue, tier, generated_at, imported_at, payload_json
+            FROM advisor_data_snapshots
+            ORDER BY imported_at DESC, id DESC
+            LIMIT 1",
+            [],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, Option<String>>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                    row.get::<_, Option<String>>(3)?,
+                    row.get::<_, Option<String>>(4)?,
+                    row.get::<_, Option<String>>(5)?,
+                    row.get::<_, String>(6)?,
+                    row.get::<_, String>(7)?,
+                ))
+            },
+        )
+        .optional()?;
+
+    let Some((source, patch, region, queue, tier, generated_at, imported_at, payload_json)) =
+        metadata
+    else {
+        return Ok(None);
+    };
+
+    let mut snapshot: AdvisorDataSnapshot = serde_json::from_str(payload_json.as_str())
+        .map_err(|error| StorageError::InvalidAdvisorSnapshot(error.to_string()))?;
+    snapshot.source = source;
+    snapshot.patch = patch;
+    snapshot.region = region;
+    snapshot.queue = queue;
+    snapshot.tier = tier;
+    snapshot.generated_at = generated_at;
+    snapshot.imported_at = imported_at;
+
+    Ok(Some(snapshot))
+}
+
+fn insert_advisor_snapshot(
+    connection: &Connection,
+    snapshot: &AdvisorDataSnapshot,
+) -> StorageResult<()> {
+    let payload_json = serde_json::to_string(snapshot)
+        .map_err(|error| StorageError::InvalidAdvisorSnapshot(error.to_string()))?;
+    connection.execute(
+        "INSERT INTO advisor_data_snapshots
+            (source, patch, region, queue, tier, generated_at, imported_at, payload_json)
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        (
+            snapshot.source.as_str(),
+            snapshot.patch.as_deref(),
+            snapshot.region.as_deref(),
+            snapshot.queue.as_deref(),
+            snapshot.tier.as_deref(),
+            snapshot.generated_at.as_deref(),
+            snapshot.imported_at.as_str(),
+            payload_json.as_str(),
+        ),
+    )?;
+
+    Ok(())
+}
+
 fn bool_to_int(value: bool) -> i64 {
     if value {
         1
@@ -841,6 +953,17 @@ impl application::AppStore for SqliteStore {
         SqliteStore::replace_ranked_champion_snapshot(self, &snapshot)
             .map_err(|error| error.to_string())
     }
+
+    fn latest_advisor_snapshot(&self) -> Result<Option<AdvisorDataSnapshot>, String> {
+        SqliteStore::latest_advisor_snapshot(self).map_err(|error| error.to_string())
+    }
+
+    fn replace_advisor_snapshot(
+        &self,
+        snapshot: AdvisorDataSnapshot,
+    ) -> Result<AdvisorDataSnapshot, String> {
+        SqliteStore::replace_advisor_snapshot(self, &snapshot).map_err(|error| error.to_string())
+    }
 }
 
 #[cfg(test)]
@@ -858,13 +981,13 @@ mod tests {
         let store = SqliteStore::initialize(&data_dir).expect("storage initializes");
 
         assert!(store.database_path().exists());
-        assert_eq!(store.health().expect("storage health").schema_version, 6);
+        assert_eq!(store.health().expect("storage health").schema_version, 7);
         assert_eq!(store.get_settings().expect("settings").activity_limit, 100);
         assert_eq!(
             store.get_settings().expect("settings").language,
             AppLanguagePreference::System
         );
-        assert_eq!(migration_count(store.database_path()), 6);
+        assert_eq!(migration_count(store.database_path()), 7);
 
         let _ = fs::remove_dir_all(data_dir);
     }
@@ -877,8 +1000,8 @@ mod tests {
         let second = SqliteStore::initialize(&data_dir).expect("second initialization");
 
         assert_eq!(first.database_path(), second.database_path());
-        assert_eq!(second.health().expect("storage health").schema_version, 6);
-        assert_eq!(migration_count(second.database_path()), 6);
+        assert_eq!(second.health().expect("storage health").schema_version, 7);
+        assert_eq!(migration_count(second.database_path()), 7);
 
         let _ = fs::remove_dir_all(data_dir);
     }
@@ -912,7 +1035,7 @@ mod tests {
 
         let store = SqliteStore::initialize(&data_dir).expect("upgrade database");
 
-        assert_eq!(store.health().expect("storage health").schema_version, 6);
+        assert_eq!(store.health().expect("storage health").schema_version, 7);
         assert_eq!(
             store.get_settings().expect("settings").startup_page,
             StartupPage::Dashboard
@@ -921,7 +1044,7 @@ mod tests {
             store.get_settings().expect("settings").language,
             AppLanguagePreference::System
         );
-        assert_eq!(migration_count(store.database_path()), 6);
+        assert_eq!(migration_count(store.database_path()), 7);
 
         let _ = fs::remove_dir_all(data_dir);
     }
@@ -1149,6 +1272,35 @@ mod tests {
         let _ = fs::remove_dir_all(data_dir);
     }
 
+    #[test]
+    fn stores_and_replaces_advisor_snapshot() {
+        let data_dir = unique_temp_dir();
+        let store = SqliteStore::initialize(&data_dir).expect("storage initializes");
+
+        assert!(store
+            .latest_advisor_snapshot()
+            .expect("empty advisor snapshot reads")
+            .is_none());
+
+        let first = sample_advisor_snapshot("first", 86, RankedChampionLane::Top);
+        let saved = store
+            .replace_advisor_snapshot(&first)
+            .expect("advisor snapshot saves");
+        let second = sample_advisor_snapshot("second", 103, RankedChampionLane::Middle);
+        let replaced = store
+            .replace_advisor_snapshot(&second)
+            .expect("advisor snapshot replaces");
+
+        assert_eq!(saved.source, "first");
+        assert_eq!(saved.records[0].champion_name, "Garen");
+        assert_eq!(replaced.source, "second");
+        assert_eq!(replaced.records.len(), 1);
+        assert_eq!(replaced.records[0].champion_id, 103);
+        assert_eq!(advisor_snapshot_count(store.database_path()), 1);
+
+        let _ = fs::remove_dir_all(data_dir);
+    }
+
     fn unique_temp_dir() -> PathBuf {
         let stamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -1184,6 +1336,16 @@ mod tests {
             .expect("query ranked snapshot count")
     }
 
+    fn advisor_snapshot_count(database_path: &Path) -> i64 {
+        let connection = Connection::open(database_path).expect("open test database");
+
+        connection
+            .query_row("SELECT COUNT(*) FROM advisor_data_snapshots", [], |row| {
+                row.get(0)
+            })
+            .expect("query advisor snapshot count")
+    }
+
     fn sample_ranked_snapshot(
         source: &str,
         champion_id: i64,
@@ -1210,6 +1372,90 @@ mod tests {
                 wins: 512,
                 picks: 1000,
                 bans: 80,
+            }],
+        }
+    }
+
+    fn sample_advisor_snapshot(
+        source: &str,
+        champion_id: i64,
+        lane: RankedChampionLane,
+    ) -> AdvisorDataSnapshot {
+        AdvisorDataSnapshot {
+            source: source.to_string(),
+            patch: Some("26.08".to_string()),
+            region: Some("KR".to_string()),
+            queue: Some("RANKED_SOLO_5x5".to_string()),
+            tier: Some("EMERALD_PLUS".to_string()),
+            generated_at: Some("2026-04-25T00:00:00Z".to_string()),
+            imported_at: "2026-04-25 01:00:00".to_string(),
+            records: vec![AdvisorRecord {
+                champion_id,
+                champion_name: if champion_id == 86 { "Garen" } else { "Ahri" }.to_string(),
+                champion_alias: None,
+                lane,
+                win_rate: 51.2,
+                pick_rate: 10.4,
+                ban_rate: 8.0,
+                overall_score: 90.0,
+                games: 1000,
+                runes: AdvisorRunePage {
+                    primary_style: "Precision".to_string(),
+                    primary_runes: vec![AdvisorNamedRef {
+                        id: Some(8010),
+                        name: "Conqueror".to_string(),
+                    }],
+                    secondary_style: "Resolve".to_string(),
+                    secondary_runes: vec![AdvisorNamedRef {
+                        id: Some(8444),
+                        name: "Second Wind".to_string(),
+                    }],
+                    stat_shards: vec!["Adaptive Force".to_string()],
+                },
+                summoner_spells: vec![AdvisorNamedRef {
+                    id: Some(4),
+                    name: "Flash".to_string(),
+                }],
+                skill_order: AdvisorSkillOrder {
+                    max_order: vec!["Q".to_string(), "E".to_string(), "W".to_string()],
+                    early_order: vec!["Q".to_string(), "E".to_string(), "W".to_string()],
+                },
+                item_build: AdvisorItemBuild {
+                    starter: vec![AdvisorNamedRef {
+                        id: Some(1055),
+                        name: "Doran's Blade".to_string(),
+                    }],
+                    core: vec![AdvisorNamedRef {
+                        id: Some(6631),
+                        name: "Stridebreaker".to_string(),
+                    }],
+                    boots: vec![AdvisorNamedRef {
+                        id: Some(3047),
+                        name: "Plated Steelcaps".to_string(),
+                    }],
+                    late: vec![AdvisorNamedRef {
+                        id: Some(3053),
+                        name: "Sterak's Gage".to_string(),
+                    }],
+                    situational: vec![AdvisorNamedRef {
+                        id: Some(3156),
+                        name: "Maw of Malmortius".to_string(),
+                    }],
+                },
+                strong_against: vec![AdvisorMatchup {
+                    champion_id: 122,
+                    champion_name: "Darius".to_string(),
+                    note: "Punish cooldowns.".to_string(),
+                    win_rate_delta: Some(2.0),
+                }],
+                weak_against: Vec::new(),
+                power_spikes: vec![AdvisorPowerSpike {
+                    timing: "6".to_string(),
+                    label: "All-in".to_string(),
+                    description: "Look for R windows.".to_string(),
+                }],
+                lane_advice: "Trade when Q is ready.".to_string(),
+                teamfight_advice: "Play front to back.".to_string(),
             }],
         }
     }

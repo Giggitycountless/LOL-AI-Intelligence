@@ -23,7 +23,7 @@ export type LeagueClientPhase =
   | "patching"
   | "partialData"
   | "unavailable";
-export type LeagueDataSection = "champions" | "ranked" | "matches" | "participants" | "recentStats";
+export type LeagueDataSection = "champions" | "ranked" | "advisor" | "matches" | "participants" | "recentStats" | "liveOverlay";
 export type RankedQueue = "soloDuo" | "flex" | "other";
 export type RankedChampionLane = "top" | "jungle" | "middle" | "bottom" | "support";
 export type RankedChampionSort = "overall" | "winRate" | "banRate" | "pickRate";
@@ -165,6 +165,184 @@ export type RankedChampionStatsResponse = {
 
 export type RankedChampionRefreshInput = RankedChampionStatsInput & {
   url?: string | null;
+};
+
+export type AdvisorNamedRef = {
+  id: number | null;
+  name: string;
+};
+
+export type AdvisorRunePage = {
+  primaryStyle: string;
+  primaryRunes: AdvisorNamedRef[];
+  secondaryStyle: string;
+  secondaryRunes: AdvisorNamedRef[];
+  statShards: string[];
+};
+
+export type AdvisorSkillOrder = {
+  maxOrder: string[];
+  earlyOrder: string[];
+};
+
+export type AdvisorItemBuild = {
+  starter: AdvisorNamedRef[];
+  core: AdvisorNamedRef[];
+  boots: AdvisorNamedRef[];
+  late: AdvisorNamedRef[];
+  situational: AdvisorNamedRef[];
+};
+
+export type AdvisorMatchup = {
+  championId: number;
+  championName: string;
+  note: string;
+  winRateDelta: number | null;
+};
+
+export type AdvisorPowerSpike = {
+  timing: string;
+  label: string;
+  description: string;
+};
+
+export type AdvisorRecord = {
+  championId: number;
+  championName: string;
+  championAlias: string | null;
+  lane: RankedChampionLane;
+  winRate: number;
+  pickRate: number;
+  banRate: number;
+  overallScore: number;
+  games: number;
+  runes: AdvisorRunePage;
+  summonerSpells: AdvisorNamedRef[];
+  skillOrder: AdvisorSkillOrder;
+  itemBuild: AdvisorItemBuild;
+  strongAgainst: AdvisorMatchup[];
+  weakAgainst: AdvisorMatchup[];
+  powerSpikes: AdvisorPowerSpike[];
+  laneAdvice: string;
+  teamfightAdvice: string;
+};
+
+export type AdvisorDataInput = {
+  lane?: RankedChampionLane | null;
+  championId?: number | null;
+};
+
+export type AdvisorDataResponse = {
+  lane: RankedChampionLane | null;
+  championId: number | null;
+  records: AdvisorRecord[];
+  source: string;
+  updatedAt: string;
+  generatedAt: string | null;
+  importedAt: string | null;
+  patch: string | null;
+  region: string | null;
+  queue: string | null;
+  tier: string | null;
+  isCached: boolean;
+  dataStatus: RankedChampionDataStatus;
+  statusMessage: string | null;
+};
+
+export type AdvisorDataRefreshInput = AdvisorDataInput & {
+  url?: string | null;
+};
+
+export type AdvisorTagTone = "good" | "warn" | "info";
+
+export type AdvisorPlayerTag = {
+  label: string;
+  tone: AdvisorTagTone;
+};
+
+export type ChampSelectAdvisorPlayer = {
+  summonerId: number;
+  displayName: string;
+  championId: number | null;
+  championName: string | null;
+  team: ChampSelectTeam;
+  recentStats: ParticipantRecentStats | null;
+  recentStatsStatus: ChampSelectRecentStatsStatus;
+  tags: AdvisorPlayerTag[];
+  advisor: AdvisorRecord | null;
+  matchupAdvice: string | null;
+};
+
+export type ChampSelectAdvisorSnapshot = {
+  players: ChampSelectAdvisorPlayer[];
+  cachedAt: string;
+  advisorSource: string;
+  advisorPatch: string | null;
+  dataStatus: RankedChampionDataStatus;
+};
+
+export type LiveOverlaySnapshot = {
+  gameTimeSeconds: number | null;
+  gameMode: string | null;
+  mapName: string | null;
+  activePlayer: LiveOverlayActivePlayer | null;
+  players: LiveOverlayPlayer[];
+  events: LiveOverlayEvent[];
+  gold: LiveOverlayGoldSummary;
+  refreshedAt: string;
+};
+
+export type LiveOverlayActivePlayer = {
+  displayName: string;
+  level: number | null;
+  currentGold: number | null;
+  resourceType: string | null;
+  resourceValue: number | null;
+  resourceMax: number | null;
+};
+
+export type LiveOverlayPlayer = {
+  displayName: string;
+  championName: string | null;
+  team: string;
+  level: number | null;
+  position: string | null;
+  isDead: boolean;
+  respawnTimer: number | null;
+  items: LiveOverlayItem[];
+  scores: LiveOverlayScores | null;
+  summonerSpells: AdvisorNamedRef[];
+};
+
+export type LiveOverlayItem = {
+  itemId: number;
+  displayName: string;
+  price: number;
+  count: number;
+  slot: number | null;
+};
+
+export type LiveOverlayScores = {
+  kills: number;
+  deaths: number;
+  assists: number;
+  creepScore: number;
+  wardScore: number;
+};
+
+export type LiveOverlayEvent = {
+  eventId: number;
+  eventName: string;
+  eventTime: number;
+  actor: string | null;
+  victim: string | null;
+  assistingParticipants: string[];
+};
+
+export type LiveOverlayGoldSummary = {
+  allyItemValue: number;
+  enemyItemValue: number;
+  itemValueDiff: number;
 };
 
 export type RecentMatchSummary = {

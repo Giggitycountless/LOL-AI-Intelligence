@@ -9,13 +9,15 @@ export function abilityStatText(values: string[], fallback: string | null | unde
 }
 
 export function abilityTooltipText(summaryDescription: string | null | undefined, description: string | null | undefined) {
-  return cleanAbilityText(summaryDescription ?? "") || cleanAbilityText(description ?? "") || "-";
+  return cleanAbilityText(description ?? "") || cleanAbilityText(summaryDescription ?? "") || "-";
 }
 
 function cleanAbilityText(value: string) {
   return value
     .replace(/@[^@]*@/g, "")
+    .replace(/%i:[^%]*%/g, "")
     .replace(/<[^>]*>/g, "")
     .replace(/\s+/g, " ")
+    .replace(/^\s*s\s*$/i, "")
     .trim();
 }

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import React from "react";
 
 // Mock all Tauri API modules before importing the provider
@@ -35,16 +35,20 @@ vi.mock("../../backend/activity", () => ({
 }));
 
 vi.mock("../../backend/leagueClient", () => ({
+  fetchAdvisorData: vi.fn().mockResolvedValue(null),
   fetchLeagueSelfSnapshot: vi.fn().mockResolvedValue(null),
   fetchAutoAcceptStatus: vi.fn().mockResolvedValue(null),
+  fetchChampSelectAdvisorSnapshot: vi.fn().mockResolvedValue({ players: [] }),
   fetchChampSelectSnapshot: vi.fn().mockResolvedValue({ players: [] }),
   fetchLeagueChampionDetails: vi.fn().mockResolvedValue(null),
   fetchLeagueChampionIcon: vi.fn().mockResolvedValue(null),
   fetchLeagueGameAsset: vi.fn().mockResolvedValue(null),
   fetchLeagueProfileIcon: vi.fn().mockResolvedValue(null),
+  fetchLiveOverlaySnapshot: vi.fn().mockRejectedValue(new Error("No live game")),
   fetchPostMatchDetail: vi.fn().mockResolvedValue(null),
   fetchPostMatchParticipantProfile: vi.fn().mockResolvedValue(null),
   fetchRankedChampionStats: vi.fn().mockResolvedValue(null),
+  refreshAdvisorData: vi.fn().mockResolvedValue(null),
   refreshRankedChampionStats: vi.fn().mockResolvedValue(null),
   savePlayerNote: vi.fn().mockResolvedValue(null),
   clearPlayerNote: vi.fn().mockResolvedValue(undefined),
@@ -86,22 +90,26 @@ describe("AppStateProvider", () => {
     vi.clearAllMocks();
   });
 
-  it("renders children and provides context", () => {
-    render(
-      <AppStateProvider>
-        <TestConsumer />
-      </AppStateProvider>,
-    );
+  it("renders children and provides context", async () => {
+    await act(async () => {
+      render(
+        <AppStateProvider>
+          <TestConsumer />
+        </AppStateProvider>,
+      );
+    });
 
     expect(screen.getByTestId("app-name").textContent).toBeTruthy();
   });
 
   it("provides English translations by default", async () => {
-    render(
-      <AppStateProvider>
-        <TestConsumer />
-      </AppStateProvider>,
-    );
+    await act(async () => {
+      render(
+        <AppStateProvider>
+          <TestConsumer />
+        </AppStateProvider>,
+      );
+    });
 
     // Default effective language with "system" preference and no zh system lang is "en"
     const langEl = screen.getByTestId("language");

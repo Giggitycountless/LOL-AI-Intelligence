@@ -1,0 +1,395 @@
+{
+  "formatVersion": 1,
+  "source": "lol-desktop-assistant-advisor-sample",
+  "patch": "26.08",
+  "region": "KR",
+  "queue": "RANKED_SOLO_5X5",
+  "tier": "EMERALD_PLUS",
+  "generatedAt": "2026-04-25T00:00:00Z",
+  "champions": [
+    {
+      "championId": 86,
+      "championName": "Garen",
+      "championAlias": "Garen",
+      "lane": "top",
+      "games": 139000,
+      "winRate": 52.1,
+      "pickRate": 6.8,
+      "banRate": 7.5,
+      "overallScore": 31.9,
+      "runes": {
+        "primaryStyle": "Precision",
+        "primaryRunes": [
+          { "id": 8010, "name": "Conqueror" },
+          { "id": 9111, "name": "Triumph" },
+          { "id": 9104, "name": "Legend: Alacrity" },
+          { "id": 8299, "name": "Last Stand" }
+        ],
+        "secondaryStyle": "Resolve",
+        "secondaryRunes": [
+          { "id": 8444, "name": "Second Wind" },
+          { "id": 8451, "name": "Overgrowth" }
+        ],
+        "statShards": ["Attack Speed", "Adaptive Force", "Health Scaling"]
+      },
+      "summonerSpells": [
+        { "id": 4, "name": "Flash" },
+        { "id": 14, "name": "Ignite" }
+      ],
+      "skillOrder": {
+        "maxOrder": ["E", "Q", "W"],
+        "earlyOrder": ["E", "Q", "W", "E", "E", "R"]
+      },
+      "itemBuild": {
+        "starter": [
+          { "id": 1054, "name": "Doran's Shield" },
+          { "id": 2003, "name": "Health Potion" }
+        ],
+        "core": [
+          { "id": 6631, "name": "Stridebreaker" },
+          { "id": 3053, "name": "Sterak's Gage" }
+        ],
+        "boots": [{ "id": 3047, "name": "Plated Steelcaps" }],
+        "late": [
+          { "id": 6333, "name": "Death's Dance" },
+          { "id": 3075, "name": "Thornmail" }
+        ],
+        "situational": [{ "id": 3156, "name": "Maw of Malmortius" }]
+      },
+      "strongAgainst": [
+        {
+          "championId": 122,
+          "championName": "Darius",
+          "note": "Trade after Darius Q is down and use silence before his all-in.",
+          "winRateDelta": 1.8
+        }
+      ],
+      "weakAgainst": [
+        {
+          "championId": 164,
+          "championName": "Camille",
+          "note": "Respect hookshot range and save W for her burst window.",
+          "winRateDelta": -2.3
+        }
+      ],
+      "powerSpikes": [
+        {
+          "timing": "6",
+          "label": "Execute threat",
+          "description": "All-in becomes much stronger once Demacian Justice is unlocked."
+        },
+        {
+          "timing": "1 item",
+          "label": "Side lane pressure",
+          "description": "Stridebreaker lets Garen stick to carries and force short trades."
+        }
+      ],
+      "laneAdvice": "Use passive sustain to recover after short trades. Avoid extended fights until enemy key cooldowns are down.",
+      "teamfightAdvice": "Hold silence for enemy carries or divers, then execute low-health targets."
+    },
+    {
+      "championId": 5,
+      "championName": "Xin Zhao",
+      "championAlias": "XinZhao",
+      "lane": "jungle",
+      "games": 132000,
+      "winRate": 52.3,
+      "pickRate": 6.4,
+      "banRate": 5.8,
+      "overallScore": 31.5,
+      "runes": {
+        "primaryStyle": "Precision",
+        "primaryRunes": [
+          { "id": 8010, "name": "Conqueror" },
+          { "id": 9111, "name": "Triumph" },
+          { "id": 9104, "name": "Legend: Alacrity" },
+          { "id": 8299, "name": "Last Stand" }
+        ],
+        "secondaryStyle": "Inspiration",
+        "secondaryRunes": [
+          { "id": 8345, "name": "Biscuit Delivery" },
+          { "id": 8347, "name": "Cosmic Insight" }
+        ],
+        "statShards": ["Attack Speed", "Adaptive Force", "Health Scaling"]
+      },
+      "summonerSpells": [
+        { "id": 4, "name": "Flash" },
+        { "id": 11, "name": "Smite" }
+      ],
+      "skillOrder": {
+        "maxOrder": ["W", "E", "Q"],
+        "earlyOrder": ["W", "E", "Q", "W", "W", "R"]
+      },
+      "itemBuild": {
+        "starter": [{ "id": 1101, "name": "Scorchclaw Pup" }],
+        "core": [
+          { "id": 6631, "name": "Stridebreaker" },
+          { "id": 3071, "name": "Black Cleaver" }
+        ],
+        "boots": [{ "id": 3047, "name": "Plated Steelcaps" }],
+        "late": [
+          { "id": 3053, "name": "Sterak's Gage" },
+          { "id": 6333, "name": "Death's Dance" }
+        ],
+        "situational": [{ "id": 3156, "name": "Maw of Malmortius" }]
+      },
+      "strongAgainst": [
+        {
+          "championId": 64,
+          "championName": "Lee Sin",
+          "note": "Fight around early lane priority and force extended skirmishes.",
+          "winRateDelta": 1.2
+        }
+      ],
+      "weakAgainst": [
+        {
+          "championId": 234,
+          "championName": "Viego",
+          "note": "Avoid messy resets and finish targets before Viego can possess.",
+          "winRateDelta": -1.6
+        }
+      ],
+      "powerSpikes": [
+        {
+          "timing": "3",
+          "label": "First gank",
+          "description": "Three basic abilities give Xin Zhao strong early lane pressure."
+        },
+        {
+          "timing": "6",
+          "label": "Isolation ultimate",
+          "description": "Crescent Guard can split carries from the rest of the fight."
+        }
+      ],
+      "laneAdvice": "Path toward lanes with reliable crowd control and contest early river fights.",
+      "teamfightAdvice": "Use ultimate to deny ranged follow-up while your team collapses."
+    },
+    {
+      "championId": 103,
+      "championName": "Ahri",
+      "championAlias": "Ahri",
+      "lane": "middle",
+      "games": 197000,
+      "winRate": 51.1,
+      "pickRate": 9.6,
+      "banRate": 8.3,
+      "overallScore": 32.2,
+      "runes": {
+        "primaryStyle": "Domination",
+        "primaryRunes": [
+          { "id": 8112, "name": "Electrocute" },
+          { "id": 8139, "name": "Taste of Blood" },
+          { "id": 8138, "name": "Eyeball Collection" },
+          { "id": 8106, "name": "Ultimate Hunter" }
+        ],
+        "secondaryStyle": "Sorcery",
+        "secondaryRunes": [
+          { "id": 8226, "name": "Manaflow Band" },
+          { "id": 8236, "name": "Gathering Storm" }
+        ],
+        "statShards": ["Attack Speed", "Adaptive Force", "Health Scaling"]
+      },
+      "summonerSpells": [
+        { "id": 4, "name": "Flash" },
+        { "id": 14, "name": "Ignite" }
+      ],
+      "skillOrder": {
+        "maxOrder": ["Q", "W", "E"],
+        "earlyOrder": ["Q", "W", "E", "Q", "Q", "R"]
+      },
+      "itemBuild": {
+        "starter": [
+          { "id": 1056, "name": "Doran's Ring" },
+          { "id": 2003, "name": "Health Potion" }
+        ],
+        "core": [
+          { "id": 6655, "name": "Luden's Companion" },
+          { "id": 4645, "name": "Shadowflame" }
+        ],
+        "boots": [{ "id": 3020, "name": "Sorcerer's Shoes" }],
+        "late": [
+          { "id": 3089, "name": "Rabadon's Deathcap" },
+          { "id": 3135, "name": "Void Staff" }
+        ],
+        "situational": [{ "id": 3157, "name": "Zhonya's Hourglass" }]
+      },
+      "strongAgainst": [
+        {
+          "championId": 134,
+          "championName": "Syndra",
+          "note": "Dodge Scatter the Weak, then punish with charm during her cooldown window.",
+          "winRateDelta": 1.4
+        }
+      ],
+      "weakAgainst": [
+        {
+          "championId": 777,
+          "championName": "Yone",
+          "note": "Hold charm for his return path and avoid trading into Soul Unbound.",
+          "winRateDelta": -2.1
+        }
+      ],
+      "powerSpikes": [
+        {
+          "timing": "6",
+          "label": "Roam threat",
+          "description": "Spirit Rush turns charm picks and side-lane roams into kills."
+        },
+        {
+          "timing": "2 items",
+          "label": "Pick burst",
+          "description": "Charm into full combo can remove squishy targets."
+        }
+      ],
+      "laneAdvice": "Push with Q when safe, then move first to side fights. Charm is your main pressure tool.",
+      "teamfightAdvice": "Play from fog or flank angles and enter after major crowd control is used."
+    },
+    {
+      "championId": 222,
+      "championName": "Jinx",
+      "championAlias": "Jinx",
+      "lane": "bottom",
+      "games": 248000,
+      "winRate": 51.9,
+      "pickRate": 12.6,
+      "banRate": 10.4,
+      "overallScore": 33.8,
+      "runes": {
+        "primaryStyle": "Precision",
+        "primaryRunes": [
+          { "id": 8008, "name": "Lethal Tempo" },
+          { "id": 8009, "name": "Presence of Mind" },
+          { "id": 9103, "name": "Legend: Bloodline" },
+          { "id": 8014, "name": "Coup de Grace" }
+        ],
+        "secondaryStyle": "Sorcery",
+        "secondaryRunes": [
+          { "id": 8233, "name": "Absolute Focus" },
+          { "id": 8236, "name": "Gathering Storm" }
+        ],
+        "statShards": ["Attack Speed", "Adaptive Force", "Health Scaling"]
+      },
+      "summonerSpells": [
+        { "id": 4, "name": "Flash" },
+        { "id": 7, "name": "Heal" }
+      ],
+      "skillOrder": {
+        "maxOrder": ["Q", "W", "E"],
+        "earlyOrder": ["Q", "W", "Q", "E", "Q", "R"]
+      },
+      "itemBuild": {
+        "starter": [
+          { "id": 1055, "name": "Doran's Blade" },
+          { "id": 2003, "name": "Health Potion" }
+        ],
+        "core": [
+          { "id": 6672, "name": "Kraken Slayer" },
+          { "id": 3085, "name": "Runaan's Hurricane" }
+        ],
+        "boots": [{ "id": 3006, "name": "Berserker's Greaves" }],
+        "late": [
+          { "id": 3031, "name": "Infinity Edge" },
+          { "id": 3036, "name": "Lord Dominik's Regards" }
+        ],
+        "situational": [{ "id": 3139, "name": "Mercurial Scimitar" }]
+      },
+      "strongAgainst": [
+        {
+          "championId": 145,
+          "championName": "Kai'Sa",
+          "note": "Use rocket range to control waves before Kai'Sa can all-in.",
+          "winRateDelta": 1.1
+        }
+      ],
+      "weakAgainst": [
+        {
+          "championId": 81,
+          "championName": "Ezreal",
+          "note": "Do not overchase through poke. Scale toward two-item teamfights.",
+          "winRateDelta": -1.5
+        }
+      ],
+      "powerSpikes": [
+        {
+          "timing": "2 items",
+          "label": "Reset fights",
+          "description": "Runaan's plus Kraken gives Jinx strong front-to-back DPS."
+        }
+      ],
+      "laneAdvice": "Farm safely and use rockets for controlled poke when the wave is stable.",
+      "teamfightAdvice": "Stay behind peel until a reset starts, then chase with passive movement speed."
+    },
+    {
+      "championId": 412,
+      "championName": "Thresh",
+      "championAlias": "Thresh",
+      "lane": "support",
+      "games": 244000,
+      "winRate": 50.5,
+      "pickRate": 12.8,
+      "banRate": 9.6,
+      "overallScore": 33.4,
+      "runes": {
+        "primaryStyle": "Resolve",
+        "primaryRunes": [
+          { "id": 8439, "name": "Aftershock" },
+          { "id": 8463, "name": "Font of Life" },
+          { "id": 8473, "name": "Bone Plating" },
+          { "id": 8242, "name": "Unflinching" }
+        ],
+        "secondaryStyle": "Inspiration",
+        "secondaryRunes": [
+          { "id": 8306, "name": "Hextech Flashtraption" },
+          { "id": 8347, "name": "Cosmic Insight" }
+        ],
+        "statShards": ["Ability Haste", "Armor", "Health Scaling"]
+      },
+      "summonerSpells": [
+        { "id": 4, "name": "Flash" },
+        { "id": 14, "name": "Ignite" }
+      ],
+      "skillOrder": {
+        "maxOrder": ["Q", "E", "W"],
+        "earlyOrder": ["Q", "E", "W", "Q", "Q", "R"]
+      },
+      "itemBuild": {
+        "starter": [{ "id": 3860, "name": "World Atlas" }],
+        "core": [
+          { "id": 3190, "name": "Locket of the Iron Solari" },
+          { "id": 3109, "name": "Knight's Vow" }
+        ],
+        "boots": [{ "id": 3117, "name": "Boots of Swiftness" }],
+        "late": [
+          { "id": 3050, "name": "Zeke's Convergence" },
+          { "id": 3222, "name": "Mikael's Blessing" }
+        ],
+        "situational": [{ "id": 3107, "name": "Redemption" }]
+      },
+      "strongAgainst": [
+        {
+          "championId": 497,
+          "championName": "Rakan",
+          "note": "Flay can interrupt Rakan's engage before he reaches your carry.",
+          "winRateDelta": 1.0
+        }
+      ],
+      "weakAgainst": [
+        {
+          "championId": 555,
+          "championName": "Pyke",
+          "note": "Track fog angles and avoid using hook before Pyke commits.",
+          "winRateDelta": -1.9
+        }
+      ],
+      "powerSpikes": [
+        {
+          "timing": "2",
+          "label": "Hook + flay",
+          "description": "Level two gives Thresh strong all-in or disengage control."
+        }
+      ],
+      "laneAdvice": "Control brush vision and threaten hooks when the enemy walks up for last hits.",
+      "teamfightAdvice": "Use lantern defensively for carries unless a hook creates a guaranteed pick."
+    }
+  ]
+}

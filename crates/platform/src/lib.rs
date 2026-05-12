@@ -1,4 +1,4 @@
-﻿use std::{
+use std::{
     collections::HashMap,
     error::Error,
     path::Path,
@@ -12,23 +12,23 @@
 
 use adapters::{
     LcuSubscription, LcuWebSocketError, LcuWebSocketEvent, LocalLeagueClient,
-    RemoteRankedChampionJsonProvider,
+    RemoteAdvisorJsonProvider, RemoteRankedChampionJsonProvider,
 };
 use application::{
-    normalize_player_name, ActivityListInput, ActivityNoteInput, ApplicationError,
-    LeagueChampionDetailsInput, LeagueChampionIconInput, LeagueClientReadError, LeagueClientReader,
-    LeagueGameAssetInput, LeagueProfileIconInput, LeagueSelfSnapshotInput,
-    ParticipantPublicProfileInput, PostMatchDetailInput, RankedChampionRefreshInput,
-    RankedChampionStatsInput, SettingsInput,
+    normalize_player_name, ActivityListInput, ActivityNoteInput, AdvisorDataInput,
+    AdvisorDataRefreshInput, ApplicationError, LeagueChampionDetailsInput, LeagueChampionIconInput,
+    LeagueClientReadError, LeagueClientReader, LeagueGameAssetInput, LeagueProfileIconInput,
+    LeagueSelfSnapshotInput, ParticipantPublicProfileInput, PostMatchDetailInput,
+    RankedChampionRefreshInput, RankedChampionStatsInput, SettingsInput,
 };
 use domain::{
-    ActivityEntry, ActivityKind, AppSettings, AppSnapshot, AutoAcceptStatus, AutoAcceptStatusState,
-    ClearActivityResult, ClearPlayerNoteResult, DatabaseStatus, HealthReport,
-    ImportLocalDataResult, LeagueChampionDetails, LeagueChampionSummary, LeagueClientStatus,
-    LeagueGameAsset, LeagueGameAssetKind, LeagueImageAsset, LeagueSelfData, LeagueSelfSnapshot,
-    LocalDataExport, ParticipantPublicProfile, ParticipantRecentStats, PlayerNoteView,
-    PostMatchDetail, RankedChampionLane, RankedChampionSort, RankedChampionStatsResponse,
-    SettingsValues,
+    ActivityEntry, ActivityKind, AdvisorDataResponse, AppSettings, AppSnapshot, AutoAcceptStatus,
+    AutoAcceptStatusState, ChampSelectAdvisorSnapshot, ClearActivityResult, ClearPlayerNoteResult,
+    DatabaseStatus, HealthReport, ImportLocalDataResult, LeagueChampionDetails,
+    LeagueChampionSummary, LeagueClientStatus, LeagueGameAsset, LeagueGameAssetKind,
+    LeagueImageAsset, LeagueSelfData, LeagueSelfSnapshot, LiveOverlaySnapshot, LocalDataExport,
+    ParticipantPublicProfile, ParticipantRecentStats, PlayerNoteView, PostMatchDetail,
+    RankedChampionLane, RankedChampionSort, RankedChampionStatsResponse, SettingsValues,
 };
 use serde::{Deserialize, Serialize};
 use storage::SqliteStore;
@@ -144,6 +144,7 @@ pub struct AppState {
     store: SqliteStore,
     league_client: LocalLeagueClient,
     ranked_champion_provider: RemoteRankedChampionJsonProvider,
+    advisor_provider: RemoteAdvisorJsonProvider,
     pub champ_select_cache: Mutex<Option<ChampSelectCacheEntry>>,
     pub recent_stats_cache: Mutex<HashMap<String, RecentStatsCacheEntry>>,
     pub summoner_id_cache: Mutex<HashMap<i64, SummonerCacheEntry>>,
@@ -171,6 +172,7 @@ impl AppState {
             ranked_champion_provider: RemoteRankedChampionJsonProvider::new(
                 DEFAULT_RANKED_CHAMPION_DATA_URL,
             ),
+            advisor_provider: RemoteAdvisorJsonProvider::new(DEFAULT_ADVISOR_DATA_URL),
             champ_select_cache: Mutex::new(None),
             recent_stats_cache: Mutex::new(HashMap::new()),
             summoner_id_cache: Mutex::new(HashMap::new()),
@@ -194,6 +196,7 @@ impl Clone for AppState {
             store: self.store.clone(),
             league_client: self.league_client.clone(),
             ranked_champion_provider: self.ranked_champion_provider.clone(),
+            advisor_provider: self.advisor_provider.clone(),
             champ_select_cache: Mutex::new(lock_or_recover(&self.champ_select_cache).clone()),
             recent_stats_cache: Mutex::new(lock_or_recover(&self.recent_stats_cache).clone()),
             summoner_id_cache: Mutex::new(lock_or_recover(&self.summoner_id_cache).clone()),
@@ -223,6 +226,10 @@ impl LeagueClientReader for CachedLeagueClientReader<'_> {
 
     fn gameflow_phase(&self) -> Result<String, LeagueClientReadError> {
         self.inner.gameflow_phase()
+    }
+
+    fn live_overlay(&self) -> Result<domain::LiveOverlaySnapshot, LeagueClientReadError> {
+        self.inner.live_overlay()
     }
 
     fn self_data(&self, match_limit: i64) -> Result<LeagueSelfData, LeagueClientReadError> {
@@ -597,6 +604,21 @@ pub struct RefreshRankedChampionStatsCommand {
     pub url: Option<String>,
     pub lane: Option<RankedChampionLane>,
     pub sort_by: Option<RankedChampionSort>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdvisorDataCommand {
+    pub lane: Option<RankedChampionLane>,
+    pub champion_id: Option<i64>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RefreshAdvisorDataCommand {
+    pub url: Option<String>,
+    pub lane: Option<RankedChampionLane>,
+    pub champion_id: Option<i64>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -1058,7 +1080,8 @@ fn champ_select_cache_is_usable(
     current_phase: Option<&str>,
 ) -> bool {
     if current_phase == Some("InProgress") {
-        return recent_limit <= CHAMP_SELECT_LIGHT_RECENT_LIMIT || entry.recent_limit >= recent_limit;
+        return recent_limit <= CHAMP_SELECT_LIGHT_RECENT_LIMIT
+            || entry.recent_limit >= recent_limit;
     }
 
     entry.cached_at.elapsed() < CHAMP_SELECT_CACHE_TTL && entry.recent_limit >= recent_limit
@@ -1072,7 +1095,11 @@ fn champ_select_cache_can_hydrate_from_cache(
     current_phase == Some("InProgress")
         && recent_limit > CHAMP_SELECT_LIGHT_RECENT_LIMIT
         && entry.recent_limit < recent_limit
-        && entry.snapshot.players.iter().any(|player| !player.puuid.is_empty())
+        && entry
+            .snapshot
+            .players
+            .iter()
+            .any(|player| !player.puuid.is_empty())
 }
 
 fn hydrate_cached_champ_select_snapshot(
@@ -1637,6 +1664,59 @@ pub fn refresh_ranked_champion_stats(
     .map_err(CommandError::from)
 }
 
+pub fn get_advisor_data(
+    state: &AppState,
+    command: AdvisorDataCommand,
+) -> Result<AdvisorDataResponse, CommandError> {
+    application::get_advisor_data_from_store(
+        &state.store,
+        AdvisorDataInput {
+            lane: command.lane,
+            champion_id: command.champion_id,
+        },
+    )
+    .map_err(CommandError::from)
+}
+
+pub fn refresh_advisor_data(
+    state: &AppState,
+    command: RefreshAdvisorDataCommand,
+) -> Result<AdvisorDataResponse, CommandError> {
+    application::refresh_advisor_data(
+        &state.store,
+        &state.advisor_provider,
+        AdvisorDataRefreshInput { url: command.url },
+        AdvisorDataInput {
+            lane: command.lane,
+            champion_id: command.champion_id,
+        },
+    )
+    .map_err(CommandError::from)
+}
+
+pub fn get_champ_select_advisor_snapshot(
+    state: &AppState,
+    command: ChampSelectSnapshotCommand,
+) -> Result<ChampSelectAdvisorSnapshot, CommandError> {
+    let recent_limit = command
+        .recent_limit
+        .unwrap_or(CHAMP_SELECT_HYDRATED_RECENT_LIMIT);
+    let cached_reader = CachedLeagueClientReader {
+        inner: &state.league_client,
+        recent_stats_cache: &state.recent_stats_cache,
+        summoner_id_cache: &state.summoner_id_cache,
+        summoner_name_cache: &state.summoner_name_cache,
+        cache_metrics: &state.cache_metrics,
+    };
+
+    application::get_champ_select_advisor_snapshot(&state.store, &cached_reader, recent_limit)
+        .map_err(CommandError::from)
+}
+
+pub fn get_live_overlay_snapshot(state: &AppState) -> Result<LiveOverlaySnapshot, CommandError> {
+    application::get_live_overlay_snapshot(&state.league_client).map_err(CommandError::from)
+}
+
 pub fn get_league_profile_icon(
     state: &AppState,
     command: LeagueProfileIconCommand,
@@ -1758,10 +1838,12 @@ mod tests {
     use domain::{
         ActivityKind, ChampSelectPlayer, ChampSelectSnapshot, ChampSelectTeam, KdaTag,
         LeagueClientConnection, LeagueClientPhase, LeagueDataSection, LeagueDataWarning,
-        MatchResult, ParticipantMetricLeader, ParticipantPublicProfile, ParticipantRecentStats,
-        PlayerNoteSummary, PlayerNoteView, PostMatchComparison, PostMatchDetail,
-        PostMatchParticipant, PostMatchTeam, PostMatchTeamTotals, RankedChampionLane,
-        RankedChampionSort, RecentMatchSummary, RecentPerformanceSummary, StartupPage,
+        LiveOverlayActivePlayer, LiveOverlayEvent, LiveOverlayGoldSummary, LiveOverlayItem,
+        LiveOverlayPlayer, LiveOverlayScores, MatchResult, ParticipantMetricLeader,
+        ParticipantPublicProfile, ParticipantRecentStats, PlayerNoteSummary, PlayerNoteView,
+        PostMatchComparison, PostMatchDetail, PostMatchParticipant, PostMatchTeam,
+        PostMatchTeamTotals, RankedChampionLane, RankedChampionSort, RecentMatchSummary,
+        RecentPerformanceSummary, StartupPage,
     };
     use serde_json::json;
     use std::{
@@ -2303,6 +2385,45 @@ mod tests {
     }
 
     #[test]
+    fn advisor_data_accepts_frontend_payload_shape() {
+        let command: AdvisorDataCommand = serde_json::from_value(json!({
+            "lane": "top",
+            "championId": 86
+        }))
+        .expect("frontend-shaped advisor command deserializes");
+
+        assert_eq!(command.lane, Some(RankedChampionLane::Top));
+        assert_eq!(command.champion_id, Some(86));
+    }
+
+    #[test]
+    fn advisor_refresh_accepts_frontend_payload_shape() {
+        let command: RefreshAdvisorDataCommand = serde_json::from_value(json!({
+            "url": "https://raw.githubusercontent.com/example/data/main/advisor/latest.json",
+            "lane": "support",
+            "championId": 412
+        }))
+        .expect("frontend-shaped advisor refresh command deserializes");
+
+        assert_eq!(
+            command.url.as_deref(),
+            Some("https://raw.githubusercontent.com/example/data/main/advisor/latest.json")
+        );
+        assert_eq!(command.lane, Some(RankedChampionLane::Support));
+        assert_eq!(command.champion_id, Some(412));
+    }
+
+    #[test]
+    fn champ_select_advisor_snapshot_accepts_frontend_payload_shape() {
+        let command: ChampSelectSnapshotCommand = serde_json::from_value(json!({
+            "recentLimit": 6
+        }))
+        .expect("frontend-shaped champ-select advisor command deserializes");
+
+        assert_eq!(command.recent_limit, Some(6));
+    }
+
+    #[test]
     fn ranked_champion_stats_serializes_frontend_shape() {
         let data_dir = unique_temp_dir();
         let state = AppState::initialize(&data_dir).expect("app state initializes");
@@ -2335,6 +2456,111 @@ mod tests {
         assert!(value["records"][0].get("password").is_none());
 
         let _ = fs::remove_dir_all(data_dir);
+    }
+
+    #[test]
+    fn advisor_data_serializes_frontend_shape() {
+        let data_dir = unique_temp_dir();
+        let state = AppState::initialize(&data_dir).expect("app state initializes");
+        let value = serde_json::to_value(
+            get_advisor_data(
+                &state,
+                AdvisorDataCommand {
+                    lane: Some(RankedChampionLane::Top),
+                    champion_id: Some(86),
+                },
+            )
+            .expect("advisor data"),
+        )
+        .expect("advisor data serializes");
+
+        assert_eq!(value["lane"], "top");
+        assert_eq!(value["championId"], 86);
+        assert_eq!(value["records"][0]["championId"], 86);
+        assert_eq!(value["records"][0]["runes"]["primaryStyle"], "Precision");
+        assert_eq!(value["records"][0]["summonerSpells"][0]["name"], "Flash");
+        assert_eq!(value["records"][0]["skillOrder"]["maxOrder"][0], "Q");
+        assert_eq!(
+            value["records"][0]["itemBuild"]["core"][0]["name"],
+            "Stridebreaker"
+        );
+        assert!(value["records"][0].get("puuid").is_none());
+        assert!(value["records"][0].get("authorization").is_none());
+        assert!(value["records"][0].get("password").is_none());
+
+        let _ = fs::remove_dir_all(data_dir);
+    }
+
+    #[test]
+    fn live_overlay_snapshot_serializes_safe_frontend_shape() {
+        let value = serde_json::to_value(LiveOverlaySnapshot {
+            game_time_seconds: Some(125.0),
+            game_mode: Some("CLASSIC".to_string()),
+            map_name: Some("Summoner's Rift".to_string()),
+            active_player: Some(LiveOverlayActivePlayer {
+                display_name: "Ally One".to_string(),
+                level: Some(6),
+                current_gold: Some(742.0),
+                resource_type: Some("MANA".to_string()),
+                resource_value: Some(100.0),
+                resource_max: Some(300.0),
+            }),
+            players: vec![LiveOverlayPlayer {
+                display_name: "Ally One".to_string(),
+                champion_name: Some("Garen".to_string()),
+                team: "ORDER".to_string(),
+                level: Some(6),
+                position: Some("TOP".to_string()),
+                is_dead: false,
+                respawn_timer: None,
+                items: vec![LiveOverlayItem {
+                    item_id: 1055,
+                    display_name: "Doran's Blade".to_string(),
+                    price: 450,
+                    count: 1,
+                    slot: Some(0),
+                }],
+                scores: Some(LiveOverlayScores {
+                    kills: 1,
+                    deaths: 0,
+                    assists: 2,
+                    creep_score: 42,
+                    ward_score: 5.0,
+                }),
+                summoner_spells: vec![domain::AdvisorNamedRef {
+                    id: Some(4),
+                    name: "Flash".to_string(),
+                }],
+            }],
+            events: vec![LiveOverlayEvent {
+                event_id: 1,
+                event_name: "ChampionKill".to_string(),
+                event_time: 120.0,
+                actor: Some("Ally One".to_string()),
+                victim: Some("Enemy One".to_string()),
+                assisting_participants: vec!["Ally Two".to_string()],
+            }],
+            gold: LiveOverlayGoldSummary {
+                ally_item_value: 3000,
+                enemy_item_value: 2100,
+                item_value_diff: 900,
+            },
+            refreshed_at: "1".to_string(),
+        })
+        .expect("live overlay serializes");
+        let serialized = value.to_string();
+
+        assert_eq!(value["gameTimeSeconds"], 125.0);
+        assert_eq!(value["activePlayer"]["currentGold"], 742.0);
+        assert_eq!(value["players"][0]["items"][0]["itemId"], 1055);
+        assert_eq!(value["players"][0]["scores"]["creepScore"], 42);
+        assert_eq!(value["events"][0]["eventName"], "ChampionKill");
+        assert_eq!(value["gold"]["itemValueDiff"], 900);
+        assert!(value.get("game_time_seconds").is_none());
+        assert!(!serialized.contains("cooldown"));
+        assert!(!serialized.contains("jungle"));
+        assert!(!serialized.contains("authorization"));
+        assert!(!serialized.contains("password"));
     }
 
     #[test]

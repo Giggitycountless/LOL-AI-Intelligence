@@ -400,9 +400,11 @@ pub enum LeagueGameAssetKind {
 pub enum LeagueDataSection {
     Champions,
     Ranked,
+    Advisor,
     Matches,
     Participants,
     RecentStats,
+    LiveOverlay,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -482,7 +484,231 @@ pub struct RankedChampionDataSnapshot {
     pub records: Vec<RankedChampionStat>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdvisorDataResponse {
+    pub lane: Option<RankedChampionLane>,
+    pub champion_id: Option<i64>,
+    pub records: Vec<AdvisorRecord>,
+    pub source: String,
+    pub updated_at: String,
+    pub generated_at: Option<String>,
+    pub imported_at: Option<String>,
+    pub patch: Option<String>,
+    pub region: Option<String>,
+    pub queue: Option<String>,
+    pub tier: Option<String>,
+    pub is_cached: bool,
+    pub data_status: RankedChampionDataStatus,
+    pub status_message: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdvisorDataSnapshot {
+    pub source: String,
+    pub patch: Option<String>,
+    pub region: Option<String>,
+    pub queue: Option<String>,
+    pub tier: Option<String>,
+    pub generated_at: Option<String>,
+    pub imported_at: String,
+    pub records: Vec<AdvisorRecord>,
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdvisorRecord {
+    pub champion_id: i64,
+    pub champion_name: String,
+    pub champion_alias: Option<String>,
+    pub lane: RankedChampionLane,
+    pub win_rate: f64,
+    pub pick_rate: f64,
+    pub ban_rate: f64,
+    pub overall_score: f64,
+    pub games: i64,
+    pub runes: AdvisorRunePage,
+    pub summoner_spells: Vec<AdvisorNamedRef>,
+    pub skill_order: AdvisorSkillOrder,
+    pub item_build: AdvisorItemBuild,
+    pub strong_against: Vec<AdvisorMatchup>,
+    pub weak_against: Vec<AdvisorMatchup>,
+    pub power_spikes: Vec<AdvisorPowerSpike>,
+    pub lane_advice: String,
+    pub teamfight_advice: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdvisorNamedRef {
+    pub id: Option<i64>,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdvisorRunePage {
+    pub primary_style: String,
+    pub primary_runes: Vec<AdvisorNamedRef>,
+    pub secondary_style: String,
+    pub secondary_runes: Vec<AdvisorNamedRef>,
+    pub stat_shards: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdvisorSkillOrder {
+    pub max_order: Vec<String>,
+    pub early_order: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdvisorItemBuild {
+    pub starter: Vec<AdvisorNamedRef>,
+    pub core: Vec<AdvisorNamedRef>,
+    pub boots: Vec<AdvisorNamedRef>,
+    pub late: Vec<AdvisorNamedRef>,
+    pub situational: Vec<AdvisorNamedRef>,
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdvisorMatchup {
+    pub champion_id: i64,
+    pub champion_name: String,
+    pub note: String,
+    pub win_rate_delta: Option<f64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdvisorPowerSpike {
+    pub timing: String,
+    pub label: String,
+    pub description: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChampSelectAdvisorSnapshot {
+    pub players: Vec<ChampSelectAdvisorPlayer>,
+    pub cached_at: String,
+    pub advisor_source: String,
+    pub advisor_patch: Option<String>,
+    pub data_status: RankedChampionDataStatus,
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChampSelectAdvisorPlayer {
+    pub summoner_id: i64,
+    pub display_name: String,
+    pub champion_id: Option<i64>,
+    pub champion_name: Option<String>,
+    pub team: ChampSelectTeam,
+    pub recent_stats: Option<ParticipantRecentStats>,
+    pub recent_stats_status: ChampSelectRecentStatsStatus,
+    pub tags: Vec<AdvisorPlayerTag>,
+    pub advisor: Option<AdvisorRecord>,
+    pub matchup_advice: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdvisorPlayerTag {
+    pub label: String,
+    pub tone: AdvisorTagTone,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AdvisorTagTone {
+    Good,
+    Warn,
+    Info,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LiveOverlaySnapshot {
+    pub game_time_seconds: Option<f64>,
+    pub game_mode: Option<String>,
+    pub map_name: Option<String>,
+    pub active_player: Option<LiveOverlayActivePlayer>,
+    pub players: Vec<LiveOverlayPlayer>,
+    pub events: Vec<LiveOverlayEvent>,
+    pub gold: LiveOverlayGoldSummary,
+    pub refreshed_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LiveOverlayActivePlayer {
+    pub display_name: String,
+    pub level: Option<i64>,
+    pub current_gold: Option<f64>,
+    pub resource_type: Option<String>,
+    pub resource_value: Option<f64>,
+    pub resource_max: Option<f64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LiveOverlayPlayer {
+    pub display_name: String,
+    pub champion_name: Option<String>,
+    pub team: String,
+    pub level: Option<i64>,
+    pub position: Option<String>,
+    pub is_dead: bool,
+    pub respawn_timer: Option<f64>,
+    pub items: Vec<LiveOverlayItem>,
+    pub scores: Option<LiveOverlayScores>,
+    pub summoner_spells: Vec<AdvisorNamedRef>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LiveOverlayItem {
+    pub item_id: i64,
+    pub display_name: String,
+    pub price: i64,
+    pub count: i64,
+    pub slot: Option<i64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LiveOverlayScores {
+    pub kills: i64,
+    pub deaths: i64,
+    pub assists: i64,
+    pub creep_score: i64,
+    pub ward_score: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LiveOverlayEvent {
+    pub event_id: i64,
+    pub event_name: String,
+    pub event_time: f64,
+    pub actor: Option<String>,
+    pub victim: Option<String>,
+    pub assisting_participants: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LiveOverlayGoldSummary {
+    pub ally_item_value: i64,
+    pub enemy_item_value: i64,
+    pub item_value_diff: i64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum RankedChampionDataStatus {
     Sample,

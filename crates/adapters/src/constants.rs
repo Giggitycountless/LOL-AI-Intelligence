@@ -9,3 +9,4 @@ pub(crate) const GAME_ASSET_MIME: &str = "image/png";
 pub(crate) const MAX_COMPLETED_MATCH_SCAN: i64 = 20;
 pub(crate) const RANKED_CHAMPION_REMOTE_TIMEOUT: Duration = Duration::from_secs(5);
 pub(crate) const RANKED_CHAMPION_FORMAT_VERSION: i64 = 1;
+pub(crate) const ADVISOR_DATA_FORMAT_VERSION: i64 = 1;

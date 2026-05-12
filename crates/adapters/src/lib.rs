@@ -9,20 +9,25 @@ use std::{
 };
 
 use application::{
-    ChampSelectSessionData, ChampSelectSessionPlayer, ChampSelectSessionSource,
-    LeagueClientReadError, LeagueClientReader, RankedChampionDataError, RankedChampionDataProvider,
-    RankedChampionRefreshInput, SummonerBatchEntry,
+    AdvisorDataProvider, AdvisorDataRefreshInput, ChampSelectSessionData, ChampSelectSessionPlayer,
+    ChampSelectSessionSource, LeagueClientReadError, LeagueClientReader, RankedChampionDataError,
+    RankedChampionDataProvider, RankedChampionRefreshInput, SummonerBatchEntry,
 };
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use domain::{
-    ChampSelectTeam, CurrentSummonerProfile, LeagueChampionAbility, LeagueChampionDetails,
-    LeagueChampionSummary, LeagueClientConnection, LeagueClientPhase, LeagueClientStatus,
-    LeagueDataSection, LeagueDataWarning, LeagueGameAsset, LeagueGameAssetKind, LeagueImageAsset,
-    LeagueSelfData, MatchResult, ParticipantRecentStats, RankedChampionDataSnapshot,
-    RankedChampionLane, RankedChampionStat, RankedQueue, RankedQueueSummary, RecentMatchSummary,
+    AdvisorDataSnapshot, AdvisorItemBuild, AdvisorMatchup, AdvisorNamedRef, AdvisorPowerSpike,
+    AdvisorRecord, AdvisorRunePage, AdvisorSkillOrder, ChampSelectTeam, CurrentSummonerProfile,
+    LeagueChampionAbility, LeagueChampionDetails, LeagueChampionSummary, LeagueClientConnection,
+    LeagueClientPhase, LeagueClientStatus, LeagueDataSection, LeagueDataWarning, LeagueGameAsset,
+    LeagueGameAssetKind, LeagueImageAsset, LeagueSelfData, LiveOverlayActivePlayer,
+    LiveOverlayEvent, LiveOverlayGoldSummary, LiveOverlayItem, LiveOverlayPlayer,
+    LiveOverlayScores, LiveOverlaySnapshot, MatchResult, ParticipantRecentStats,
+    RankedChampionDataSnapshot, RankedChampionLane, RankedChampionStat, RankedQueue,
+    RankedQueueSummary, RecentMatchSummary,
 };
 use futures_util::{SinkExt, Stream, StreamExt};
 use rayon::prelude::*;
+use percent_encoding::{percent_encode, AsciiSet, CONTROLS};
 use reqwest::{blocking::Client, header::CONTENT_TYPE, StatusCode};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -106,6 +111,115 @@ impl RankedChampionDataProvider for RemoteRankedChampionJsonProvider {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct RemoteAdvisorJsonProvider {
+    default_url: Option<String>,
+    http_client: Client,
+}
+
+impl RemoteAdvisorJsonProvider {
+    pub fn new(default_url: impl Into<String>) -> Self {
+        Self {
+            default_url: Some(default_url.into()),
+            http_client: ranked_champion_http_client(),
+        }
+    }
+
+    pub fn without_default_url() -> Self {
+        Self {
+            default_url: None,
+            http_client: ranked_champion_http_client(),
+        }
+    }
+}
+
+impl AdvisorDataProvider for RemoteAdvisorJsonProvider {
+    fn fetch_advisor_snapshot(
+        &self,
+        input: AdvisorDataRefreshInput,
+    ) -> Result<AdvisorDataSnapshot, RankedChampionDataError> {
+        let url = input
+            .url
+            .or_else(|| self.default_url.clone())
+            .ok_or_else(|| {
+                RankedChampionDataError::InvalidData("Advisor data URL is required".to_string())
+            })?;
+
+        if !url.starts_with("https://") {
+            return Err(RankedChampionDataError::InvalidData(
+                "Advisor data URL must use HTTPS".to_string(),
+            ));
+        }
+
+        let response = self.http_client.get(url).send().map_err(|error| {
+            RankedChampionDataError::Unavailable(format!(
+                "Advisor data could not be downloaded: {error}"
+            ))
+        })?;
+
+        if !response.status().is_success() {
+            return Err(RankedChampionDataError::Unavailable(format!(
+                "Advisor data returned HTTP {}",
+                response.status()
+            )));
+        }
+
+        let body = response.text().map_err(|error| {
+            RankedChampionDataError::Unavailable(format!(
+                "Advisor data response could not be read: {error}"
+            ))
+        })?;
+
+        parse_advisor_snapshot_json(body.as_str())
+    }
+}
+
+pub fn parse_advisor_snapshot_json(
+    json: &str,
+) -> Result<AdvisorDataSnapshot, RankedChampionDataError> {
+    let document: AdvisorJsonDocument = serde_json::from_str(json).map_err(|error| {
+        RankedChampionDataError::InvalidData(format!("Advisor data JSON is invalid: {error}"))
+    })?;
+
+    if document.format_version != ADVISOR_DATA_FORMAT_VERSION {
+        return Err(RankedChampionDataError::InvalidData(format!(
+            "Unsupported advisor data format version {}",
+            document.format_version
+        )));
+    }
+
+    if document.champions.is_empty() {
+        return Err(RankedChampionDataError::InvalidData(
+            "Advisor data must contain at least one champion".to_string(),
+        ));
+    }
+
+    let mut seen_records = HashSet::new();
+    let mut records = Vec::with_capacity(document.champions.len());
+    for champion in document.champions {
+        let record = normalize_advisor_entry(champion)?;
+        let record_key = format!("{}:{}", record.champion_id, record.lane.as_str());
+        if !seen_records.insert(record_key) {
+            return Err(RankedChampionDataError::InvalidData(
+                "Advisor data contains duplicate champion/lane entries".to_string(),
+            ));
+        }
+        records.push(record);
+    }
+
+    Ok(AdvisorDataSnapshot {
+        source: optional_non_empty(document.source)
+            .unwrap_or_else(|| "remoteAdvisorJson".to_string()),
+        patch: optional_non_empty(document.patch),
+        region: optional_non_empty(document.region),
+        queue: optional_non_empty(document.queue),
+        tier: optional_non_empty(document.tier),
+        generated_at: optional_non_empty(document.generated_at),
+        imported_at: unix_timestamp_seconds(),
+        records,
+    })
+}
+
 pub fn parse_ranked_champion_snapshot_json(
     json: &str,
 ) -> Result<RankedChampionDataSnapshot, RankedChampionDataError> {
@@ -183,6 +297,179 @@ struct RankedChampionJsonEntry {
     pick_rate: f64,
     ban_rate: f64,
     overall_score: Option<f64>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AdvisorJsonDocument {
+    format_version: i64,
+    source: Option<String>,
+    patch: Option<String>,
+    region: Option<String>,
+    queue: Option<String>,
+    tier: Option<String>,
+    generated_at: Option<String>,
+    champions: Vec<AdvisorJsonEntry>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AdvisorJsonEntry {
+    champion_id: i64,
+    champion_name: String,
+    champion_alias: Option<String>,
+    lane: String,
+    games: i64,
+    win_rate: f64,
+    pick_rate: f64,
+    ban_rate: f64,
+    overall_score: Option<f64>,
+    runes: AdvisorRunePage,
+    summoner_spells: Vec<AdvisorNamedRef>,
+    skill_order: AdvisorSkillOrder,
+    item_build: AdvisorItemBuild,
+    strong_against: Vec<AdvisorMatchup>,
+    weak_against: Vec<AdvisorMatchup>,
+    power_spikes: Vec<AdvisorPowerSpike>,
+    lane_advice: String,
+    teamfight_advice: String,
+}
+
+fn normalize_advisor_entry(
+    entry: AdvisorJsonEntry,
+) -> Result<AdvisorRecord, RankedChampionDataError> {
+    if entry.champion_id <= 0 {
+        return Err(RankedChampionDataError::InvalidData(
+            "Advisor champion id must be positive".to_string(),
+        ));
+    }
+    if entry.games < 0 {
+        return Err(RankedChampionDataError::InvalidData(
+            "Advisor champion games must not be negative".to_string(),
+        ));
+    }
+
+    let champion_name = optional_non_empty(Some(entry.champion_name)).ok_or_else(|| {
+        RankedChampionDataError::InvalidData("Advisor champion name is required".to_string())
+    })?;
+    let lane = ranked_lane_from_remote(entry.lane.as_str()).ok_or_else(|| {
+        RankedChampionDataError::InvalidData(format!("Advisor lane is invalid: {}", entry.lane))
+    })?;
+    validate_rate(entry.win_rate, "winRate")?;
+    validate_rate(entry.pick_rate, "pickRate")?;
+    validate_rate(entry.ban_rate, "banRate")?;
+    let overall_score = entry
+        .overall_score
+        .unwrap_or_else(|| ranked_overall_score(entry.win_rate, entry.pick_rate, entry.ban_rate));
+    validate_rate(overall_score, "overallScore")?;
+    validate_advisor_named_refs(&entry.summoner_spells, "summonerSpells")?;
+    validate_advisor_named_refs(&entry.item_build.starter, "itemBuild.starter")?;
+    validate_advisor_named_refs(&entry.item_build.core, "itemBuild.core")?;
+    validate_advisor_named_refs(&entry.item_build.boots, "itemBuild.boots")?;
+    validate_advisor_named_refs(&entry.item_build.late, "itemBuild.late")?;
+    validate_advisor_named_refs(&entry.item_build.situational, "itemBuild.situational")?;
+    validate_string_list(&entry.skill_order.max_order, "skillOrder.maxOrder")?;
+    validate_string_list(&entry.skill_order.early_order, "skillOrder.earlyOrder")?;
+    if optional_non_empty(Some(entry.runes.primary_style.clone())).is_none()
+        || optional_non_empty(Some(entry.runes.secondary_style.clone())).is_none()
+    {
+        return Err(RankedChampionDataError::InvalidData(
+            "Advisor rune styles are required".to_string(),
+        ));
+    }
+    validate_advisor_named_refs(&entry.runes.primary_runes, "runes.primaryRunes")?;
+    validate_advisor_named_refs(&entry.runes.secondary_runes, "runes.secondaryRunes")?;
+    validate_string_list(&entry.runes.stat_shards, "runes.statShards")?;
+    validate_matchups(&entry.strong_against, "strongAgainst")?;
+    validate_matchups(&entry.weak_against, "weakAgainst")?;
+    validate_power_spikes(&entry.power_spikes)?;
+    let lane_advice = optional_non_empty(Some(entry.lane_advice)).ok_or_else(|| {
+        RankedChampionDataError::InvalidData("Advisor laneAdvice is required".to_string())
+    })?;
+    let teamfight_advice = optional_non_empty(Some(entry.teamfight_advice)).ok_or_else(|| {
+        RankedChampionDataError::InvalidData("Advisor teamfightAdvice is required".to_string())
+    })?;
+
+    Ok(AdvisorRecord {
+        champion_id: entry.champion_id,
+        champion_name,
+        champion_alias: optional_non_empty(entry.champion_alias),
+        lane,
+        win_rate: round_to_tenth(entry.win_rate),
+        pick_rate: round_to_tenth(entry.pick_rate),
+        ban_rate: round_to_tenth(entry.ban_rate),
+        overall_score: round_to_tenth(overall_score),
+        games: entry.games,
+        runes: entry.runes,
+        summoner_spells: entry.summoner_spells,
+        skill_order: entry.skill_order,
+        item_build: entry.item_build,
+        strong_against: entry.strong_against,
+        weak_against: entry.weak_against,
+        power_spikes: entry.power_spikes,
+        lane_advice,
+        teamfight_advice,
+    })
+}
+
+fn validate_advisor_named_refs(
+    refs: &[AdvisorNamedRef],
+    label: &str,
+) -> Result<(), RankedChampionDataError> {
+    if refs.is_empty() {
+        return Err(RankedChampionDataError::InvalidData(format!(
+            "Advisor {label} must not be empty"
+        )));
+    }
+    for value in refs {
+        if value.id.is_some_and(|id| id <= 0) || value.name.trim().is_empty() {
+            return Err(RankedChampionDataError::InvalidData(format!(
+                "Advisor {label} contains an invalid entry"
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn validate_string_list(values: &[String], label: &str) -> Result<(), RankedChampionDataError> {
+    if values.is_empty() || values.iter().any(|value| value.trim().is_empty()) {
+        return Err(RankedChampionDataError::InvalidData(format!(
+            "Advisor {label} must contain non-empty values"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_matchups(
+    matchups: &[AdvisorMatchup],
+    label: &str,
+) -> Result<(), RankedChampionDataError> {
+    for matchup in matchups {
+        if matchup.champion_id <= 0
+            || matchup.champion_name.trim().is_empty()
+            || matchup.note.trim().is_empty()
+        {
+            return Err(RankedChampionDataError::InvalidData(format!(
+                "Advisor {label} contains an invalid matchup"
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn validate_power_spikes(spikes: &[AdvisorPowerSpike]) -> Result<(), RankedChampionDataError> {
+    if spikes.is_empty()
+        || spikes.iter().any(|spike| {
+            spike.timing.trim().is_empty()
+                || spike.label.trim().is_empty()
+                || spike.description.trim().is_empty()
+        })
+    {
+        return Err(RankedChampionDataError::InvalidData(
+            "Advisor powerSpikes must contain non-empty values".to_string(),
+        ));
+    }
+    Ok(())
 }
 
 fn normalize_ranked_champion_entry(
@@ -628,6 +915,7 @@ impl LocalLeagueClient {
             &http_client,
             "/liveclientdata/playerlist",
         )?;
+        let players = enrich_live_overlay_players(&http_client, players);
         let active_player = live_client_get_json::<GameClientActivePlayer>(
             &http_client,
             "/liveclientdata/activeplayer",
@@ -638,7 +926,11 @@ impl LocalLeagueClient {
             .and_then(|active| {
                 let active_name = normalize_player_name(active.summoner_name.as_str());
                 players.iter().find_map(|player| {
-                    if normalize_player_name(player.summoner_name.as_str()) == active_name {
+                    if player
+                        .summoner_name
+                        .as_deref()
+                        .is_some_and(|name| normalize_player_name(name) == active_name)
+                    {
                         Some(player.team.clone())
                     } else {
                         None
@@ -672,6 +964,42 @@ impl LocalLeagueClient {
             source: ChampSelectSessionSource::LiveClient,
             players: Vec::new(),
         })
+    }
+
+    fn read_live_overlay_snapshot(&self) -> Result<LiveOverlaySnapshot, LeagueClientReadError> {
+        let http_client = Client::builder()
+            .timeout(REQUEST_TIMEOUT)
+            .connect_timeout(REQUEST_TIMEOUT)
+            .no_proxy()
+            .tls_danger_accept_invalid_certs(true)
+            .build()
+            .map_err(|_| {
+                LeagueClientReadError::Integration(
+                    "Live Client local connection could not be prepared".to_string(),
+                )
+            })?;
+        let players = live_client_get_json::<Vec<GameClientPlayer>>(
+            &http_client,
+            "/liveclientdata/playerlist",
+        )?;
+        let active_player = live_client_get_json::<GameClientActivePlayer>(
+            &http_client,
+            "/liveclientdata/activeplayer",
+        )
+        .ok();
+        let events =
+            live_client_get_json::<GameClientEventData>(&http_client, "/liveclientdata/eventdata")
+                .map(|data| data.events)
+                .unwrap_or_default();
+        let game_stats =
+            live_client_get_json::<GameClientStats>(&http_client, "/liveclientdata/gamestats").ok();
+
+        Ok(map_live_overlay_snapshot(
+            players,
+            active_player,
+            events,
+            game_stats,
+        ))
     }
 
     fn read_gameflow_session(
@@ -781,7 +1109,8 @@ impl LocalLeagueClient {
         match parse_lockfile(lockfile_contents.as_str()) {
             Ok(credentials) => {
                 log_lcu_adapter_event("lockfile parsed");
-                *self.cached_credentials.lock().unwrap() = Some((Instant::now(), credentials.clone()));
+                *self.cached_credentials.lock().unwrap() =
+                    Some((Instant::now(), credentials.clone()));
                 Ok(credentials)
             }
             Err(_) => {
@@ -845,6 +1174,10 @@ impl LeagueClientReader for LocalLeagueClient {
 
     fn gameflow_phase(&self) -> Result<String, LeagueClientReadError> {
         LocalLeagueClient::gameflow_phase(self)
+    }
+
+    fn live_overlay(&self) -> Result<LiveOverlaySnapshot, LeagueClientReadError> {
+        self.read_live_overlay_snapshot()
     }
 
     fn self_data(&self, match_limit: i64) -> Result<LeagueSelfData, LeagueClientReadError> {
@@ -1863,15 +2196,99 @@ struct LcuSummonerBatch {
 #[serde(rename_all = "camelCase")]
 #[allow(dead_code)]
 struct GameClientPlayer {
-    summoner_name: String,
+    summoner_name: Option<String>,
     team: String,
     riot_id: Option<String>,
+    champion_name: Option<String>,
+    level: Option<i64>,
+    position: Option<String>,
+    #[serde(default)]
+    is_dead: bool,
+    respawn_timer: Option<f64>,
+    #[serde(default)]
+    items: Vec<GameClientItem>,
+    scores: Option<GameClientScores>,
+    summoner_spells: Option<GameClientSummonerSpells>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct GameClientActivePlayer {
     summoner_name: String,
+    level: Option<i64>,
+    current_gold: Option<f64>,
+    champion_stats: Option<GameClientChampionStats>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GameClientChampionStats {
+    resource_type: Option<String>,
+    resource_value: Option<f64>,
+    resource_max: Option<f64>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GameClientItem {
+    #[serde(rename = "itemID")]
+    item_id: Option<i64>,
+    display_name: Option<String>,
+    price: Option<i64>,
+    count: Option<i64>,
+    slot: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GameClientScores {
+    kills: Option<i64>,
+    deaths: Option<i64>,
+    assists: Option<i64>,
+    creep_score: Option<i64>,
+    ward_score: Option<f64>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GameClientSummonerSpells {
+    summoner_spell_one: Option<GameClientNamedEntity>,
+    summoner_spell_two: Option<GameClientNamedEntity>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GameClientNamedEntity {
+    display_name: Option<String>,
+    id: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+struct GameClientEventData {
+    #[serde(default)]
+    events: Vec<GameClientEvent>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+struct GameClientEvent {
+    #[serde(rename = "EventID")]
+    event_id: Option<i64>,
+    event_name: Option<String>,
+    event_time: Option<f64>,
+    killer_name: Option<String>,
+    victim_name: Option<String>,
+    #[serde(default)]
+    assisters: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GameClientStats {
+    game_time: Option<f64>,
+    game_mode: Option<String>,
+    map_name: Option<String>,
 }
 
 impl LcuChampSelectMember {
@@ -1892,9 +2309,227 @@ impl LcuChampSelectMember {
 impl GameClientPlayer {
     fn display_name(&self) -> Option<String> {
         non_empty(self.riot_id.as_deref())
-            .or_else(|| non_empty(Some(self.summoner_name.as_str())))
+            .or_else(|| non_empty(self.summoner_name.as_deref()))
             .map(str::to_string)
     }
+}
+
+const QUERY_ENCODE_SET: &AsciiSet = &CONTROLS
+    .add(b' ')
+    .add(b'"')
+    .add(b'#')
+    .add(b'<')
+    .add(b'>')
+    .add(b'`')
+    .add(b'?')
+    .add(b'{')
+    .add(b'}')
+    .add(b'/')
+    .add(b':')
+    .add(b'@')
+    .add(b'\\')
+    .add(b'$')
+    .add(b'&')
+    .add(b'+')
+    .add(b',')
+    .add(b'=')
+    .add(b'%');
+
+fn enrich_live_overlay_players(
+    http_client: &Client,
+    mut players: Vec<GameClientPlayer>,
+) -> Vec<GameClientPlayer> {
+    players.par_iter_mut().for_each(|player| {
+        let Some(display_name) = player.display_name() else {
+            return;
+        };
+        let encoded_name = percent_encode(display_name.as_str().as_bytes(), QUERY_ENCODE_SET).to_string();
+
+        match live_client_get_json::<Vec<GameClientItem>>(
+            http_client,
+            format!("/liveclientdata/playeritems?summonerName={encoded_name}").as_str(),
+        ) {
+            Ok(items) if !items.is_empty() => player.items = items,
+            Err(e) => log_lcu_adapter_event(&format!("failed to fetch items for {display_name}: {e}")),
+            _ => {}
+        }
+
+        match live_client_get_json::<GameClientScores>(
+            http_client,
+            format!("/liveclientdata/playerscores?summonerName={encoded_name}").as_str(),
+        ) {
+            Ok(scores) => player.scores = Some(scores),
+            Err(e) => log_lcu_adapter_event(&format!("failed to fetch scores for {display_name}: {e}")),
+        }
+
+        match live_client_get_json::<GameClientSummonerSpells>(
+            http_client,
+            format!("/liveclientdata/playersummonerspells?summonerName={encoded_name}").as_str(),
+        ) {
+            Ok(spells) => player.summoner_spells = Some(spells),
+            Err(e) => log_lcu_adapter_event(&format!("failed to fetch spells for {display_name}: {e}")),
+        }
+    });
+
+    players
+}
+
+
+
+fn map_live_overlay_snapshot(
+    players: Vec<GameClientPlayer>,
+    active_player: Option<GameClientActivePlayer>,
+    events: Vec<GameClientEvent>,
+    game_stats: Option<GameClientStats>,
+) -> LiveOverlaySnapshot {
+    let active_team = active_player
+        .as_ref()
+        .and_then(|active| {
+            let active_name = normalize_player_name(active.summoner_name.as_str());
+            players.iter().find_map(|player| {
+                let is_active = player
+                    .display_name()
+                    .is_some_and(|name| normalize_player_name(name.as_str()) == active_name)
+                    || player
+                        .summoner_name
+                        .as_deref()
+                        .is_some_and(|name| normalize_player_name(name) == active_name);
+                if is_active {
+                    Some(player.team.clone())
+                } else {
+                    None
+                }
+            })
+        })
+        .or_else(|| players.first().map(|player| player.team.clone()));
+
+    let mut ally_item_value = 0;
+    let mut enemy_item_value = 0;
+    let mapped_players: Vec<LiveOverlayPlayer> = players
+        .into_iter()
+        .filter_map(|player| {
+            let display_name = player.display_name()?;
+            let items: Vec<LiveOverlayItem> = player
+                .items
+                .into_iter()
+                .filter_map(map_live_overlay_item)
+                .collect();
+            let item_value: i64 = items
+                .iter()
+                .map(|item| item.price.saturating_mul(item.count.max(1)))
+                .sum();
+            if active_team
+                .as_deref()
+                .is_some_and(|team| strings_match(Some(team), Some(player.team.as_str())))
+            {
+                ally_item_value += item_value;
+            } else {
+                enemy_item_value += item_value;
+            }
+            let summoner_spells = player
+                .summoner_spells
+                .map(map_live_overlay_summoner_spells)
+                .unwrap_or_default();
+            Some(LiveOverlayPlayer {
+                display_name,
+                champion_name: player.champion_name.and_then(non_empty_owned),
+                team: player.team,
+                level: player.level,
+                position: player.position.and_then(non_empty_owned),
+                is_dead: player.is_dead,
+                respawn_timer: player.respawn_timer,
+                items,
+                scores: player.scores.map(|scores| LiveOverlayScores {
+                    kills: scores.kills.unwrap_or_default(),
+                    deaths: scores.deaths.unwrap_or_default(),
+                    assists: scores.assists.unwrap_or_default(),
+                    creep_score: scores.creep_score.unwrap_or_default(),
+                    ward_score: scores.ward_score.unwrap_or_default(),
+                }),
+                summoner_spells,
+            })
+        })
+        .collect();
+    LiveOverlaySnapshot {
+        game_time_seconds: game_stats.as_ref().and_then(|stats| stats.game_time),
+        game_mode: game_stats
+            .as_ref()
+            .and_then(|stats| stats.game_mode.clone().and_then(non_empty_owned)),
+        map_name: game_stats
+            .as_ref()
+            .and_then(|stats| stats.map_name.clone().and_then(non_empty_owned)),
+        active_player: active_player.map(|active| LiveOverlayActivePlayer {
+            display_name: active.summoner_name,
+            level: active.level,
+            current_gold: active.current_gold,
+            resource_type: active
+                .champion_stats
+                .as_ref()
+                .and_then(|stats| stats.resource_type.clone()),
+            resource_value: active
+                .champion_stats
+                .as_ref()
+                .and_then(|stats| stats.resource_value),
+            resource_max: active
+                .champion_stats
+                .as_ref()
+                .and_then(|stats| stats.resource_max),
+        }),
+        players: mapped_players,
+        events: events
+            .into_iter()
+            .filter_map(|event| {
+                let event_name = event.event_name.and_then(non_empty_owned)?;
+                Some(LiveOverlayEvent {
+                    event_id: event.event_id.unwrap_or_default(),
+                    event_name,
+                    event_time: event.event_time.unwrap_or_default(),
+                    actor: event.killer_name.and_then(non_empty_owned),
+                    victim: event.victim_name.and_then(non_empty_owned),
+                    assisting_participants: event
+                        .assisters
+                        .into_iter()
+                        .filter_map(non_empty_owned)
+                        .collect(),
+                })
+            })
+            .collect(),
+        gold: LiveOverlayGoldSummary {
+            ally_item_value,
+            enemy_item_value,
+            item_value_diff: ally_item_value - enemy_item_value,
+        },
+        refreshed_at: unix_timestamp_seconds(),
+    }
+}
+
+fn map_live_overlay_item(item: GameClientItem) -> Option<LiveOverlayItem> {
+    let item_id = item.item_id?;
+    if item_id <= 0 {
+        return None;
+    }
+
+    Some(LiveOverlayItem {
+        item_id,
+        display_name: item
+            .display_name
+            .and_then(non_empty_owned)
+            .unwrap_or_else(|| format!("Item {item_id}")),
+        price: item.price.unwrap_or_default().max(0),
+        count: item.count.unwrap_or(1).max(1),
+        slot: item.slot,
+    })
+}
+
+fn map_live_overlay_summoner_spells(spells: GameClientSummonerSpells) -> Vec<AdvisorNamedRef> {
+    [spells.summoner_spell_one, spells.summoner_spell_two]
+        .into_iter()
+        .flatten()
+        .filter_map(|spell| {
+            let name = spell.display_name.and_then(non_empty_owned)?;
+            Some(AdvisorNamedRef { id: spell.id, name })
+        })
+        .collect()
 }
 
 fn map_gameflow_session(session: LcuGameflowSession) -> Option<ChampSelectSessionData> {
@@ -2229,6 +2864,12 @@ struct LcuChampionAbility {
     cooldown: Option<Value>,
     cost: Option<Value>,
     range: Option<Value>,
+    #[serde(default)]
+    cooldown_coefficients: Vec<f64>,
+    #[serde(default)]
+    cost_coefficients: Vec<f64>,
+    #[serde(default)]
+    effect_amounts: HashMap<String, Vec<f64>>,
 }
 
 fn map_champion_catalog(champions: Vec<LcuChampionSummary>) -> Vec<LeagueChampionSummary> {
@@ -2264,7 +2905,13 @@ fn map_champion_details(
 
     if let Some(passive) = details.passive {
         let passive_bin = bin_data.and_then(|bd| bd.get_spell("Passive"));
-        abilities.push(map_champion_ability(session, "Passive", passive, passive_bin));
+        abilities.push(map_champion_ability(
+            session,
+            champion_name.as_str(),
+            "Passive",
+            passive,
+            passive_bin,
+        ));
     }
 
     for (index, spell) in details.spells.into_iter().take(4).enumerate() {
@@ -2275,7 +2922,13 @@ fn map_champion_details(
             .map(str::to_string)
             .unwrap_or_else(|| ["Q", "W", "E", "R"][index].to_string());
         let slot_bin = bin_data.and_then(|bd| bd.get_spell(slot.as_str()));
-        abilities.push(map_champion_ability(session, slot.as_str(), spell, slot_bin));
+        abilities.push(map_champion_ability(
+            session,
+            champion_name.as_str(),
+            slot.as_str(),
+            spell,
+            slot_bin,
+        ));
     }
 
     Ok(LeagueChampionDetails {
@@ -2289,6 +2942,7 @@ fn map_champion_details(
 
 fn map_champion_ability(
     session: &LcuSession,
+    champion_name: &str,
     slot: &str,
     ability: LcuChampionAbility,
     bin_spell: Option<&community_dragon::BinSpellData>,
@@ -2308,30 +2962,63 @@ fn map_champion_ability(
         .map(clean_game_asset_text)
         .and_then(non_empty_owned)
         .unwrap_or_else(|| "No description available".to_string());
+    let ability_name = ability
+        .name
+        .and_then(non_empty_owned)
+        .unwrap_or_else(|| slot.to_string());
 
     // Resolve @Token@ placeholders using CommunityDragon bin data
     let summary_description = raw_description.clone();
+    let effect_values = ability
+        .effect_amounts
+        .iter()
+        .map(|(name, values)| community_dragon::DataValue {
+            name: name.clone(),
+            values: values.clone(),
+        })
+        .collect::<Vec<_>>();
     let description = bin_spell
-        .and_then(|spell| {
-            community_dragon::resolve_tokens(&raw_description, &spell.data_values)
+        .map(|spell| {
+            community_dragon::resolve_spell_tokens_with_fallbacks(
+                &raw_description,
+                spell,
+                &effect_values,
+            )
+        })
+        .map(|resolution| {
+            if !resolution.unresolved_tokens.is_empty() {
+                log_lcu_adapter_event(
+                    format!(
+                        "unresolved champion ability tokens champion={champion_name} slot={slot} ability={} tokens={:?}",
+                        ability_name, resolution.unresolved_tokens
+                    )
+                    .as_str(),
+                );
+            }
+            resolution.text
         })
         .unwrap_or(raw_description);
 
+    let cooldown_values = coefficient_values(&ability.cooldown_coefficients, true);
+    let cost_values = coefficient_values(&ability.cost_coefficients, true);
+    let range_values = ability
+        .range
+        .as_ref()
+        .map(value_as_display_values)
+        .unwrap_or_default();
+
     LeagueChampionAbility {
         slot: slot.to_string(),
-        name: ability
-            .name
-            .and_then(non_empty_owned)
-            .unwrap_or_else(|| slot.to_string()),
+        name: ability_name,
         description,
         icon,
         cooldown: ability.cooldown.as_ref().and_then(value_as_display_string),
         cost: ability.cost.as_ref().and_then(value_as_display_string),
         range: ability.range.as_ref().and_then(value_as_display_string),
         summary_description,
-        cooldown_values: Vec::new(),
-        cost_values: Vec::new(),
-        range_values: Vec::new(),
+        cooldown_values,
+        cost_values,
+        range_values,
     }
 }
 
@@ -2947,7 +3634,7 @@ fn value_as_string(value: &Value) -> Option<String> {
 fn value_as_display_string(value: &Value) -> Option<String> {
     match value {
         Value::String(value) => non_empty(Some(value.as_str())).map(str::to_string),
-        Value::Number(value) => Some(value.to_string()),
+        Value::Number(value) => value.as_f64().map(format_display_number),
         Value::Array(values) => {
             let values = values
                 .iter()
@@ -2961,6 +3648,89 @@ fn value_as_display_string(value: &Value) -> Option<String> {
         }
         _ => None,
     }
+}
+
+fn value_as_display_values(value: &Value) -> Vec<String> {
+    match value {
+        Value::Array(values) => {
+            let numbers = values.iter().filter_map(Value::as_f64).collect::<Vec<_>>();
+            if !numbers.is_empty() {
+                compact_display_numbers(numbers, true)
+            } else {
+                compact_display_strings(
+                    values
+                        .iter()
+                        .filter_map(value_as_display_string)
+                        .collect::<Vec<_>>(),
+                )
+            }
+        }
+        Value::Number(value) => value
+            .as_f64()
+            .map(format_display_number)
+            .into_iter()
+            .collect(),
+        Value::String(value) => non_empty(Some(value.as_str()))
+            .map(str::to_string)
+            .into_iter()
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+fn coefficient_values(values: &[f64], keep_zero: bool) -> Vec<String> {
+    if !keep_zero && values.iter().all(|value| value.abs() < f64::EPSILON) {
+        return Vec::new();
+    }
+
+    compact_display_numbers(values.to_vec(), keep_zero)
+}
+
+fn compact_display_numbers(mut values: Vec<f64>, keep_zero: bool) -> Vec<String> {
+    if !keep_zero {
+        values.retain(|value| value.is_finite() && value.abs() >= f64::EPSILON);
+    } else {
+        values.retain(|value| value.is_finite());
+    }
+
+    while values.len() > 1 {
+        let last = *values.last().unwrap_or(&0.0);
+        let previous = values[values.len() - 2];
+        if (last - previous).abs() < 0.001 {
+            values.pop();
+        } else {
+            break;
+        }
+    }
+
+    values.into_iter().map(format_display_number).collect()
+}
+
+fn compact_display_strings(mut values: Vec<String>) -> Vec<String> {
+    values.retain(|value| !value.trim().is_empty());
+
+    while values.len() > 1 && values.last() == values.get(values.len() - 2) {
+        values.pop();
+    }
+
+    values
+}
+
+fn format_display_number(value: f64) -> String {
+    if value.is_nan() || value.is_infinite() {
+        return value.to_string();
+    }
+
+    let rounded = value.round();
+    if (value - rounded).abs() < 0.001 {
+        return (rounded as i64).to_string();
+    }
+
+    let formatted = format!("{value:.2}");
+    formatted
+        .trim_end_matches('0')
+        .trim_end_matches('.')
+        .to_string()
 }
 
 fn match_result_from_stats(stats: &LcuParticipantStats) -> MatchResult {
@@ -3216,6 +3986,166 @@ mod tests {
     }
 
     #[test]
+    fn parses_advisor_json_snapshot() {
+        let snapshot = parse_advisor_snapshot_json(
+            advisor_json(&[advisor_json_entry(103, "Ahri", "mid")]).as_str(),
+        )
+        .expect("advisor json parses");
+
+        assert_eq!(snapshot.source, "test-advisor-json");
+        assert_eq!(snapshot.records.len(), 1);
+        assert_eq!(snapshot.records[0].champion_name, "Ahri");
+        assert_eq!(snapshot.records[0].lane, RankedChampionLane::Middle);
+        assert_eq!(snapshot.records[0].summoner_spells[0].name, "Flash");
+    }
+
+    #[test]
+    fn advisor_json_rejects_duplicate_champion_lane() {
+        let error = parse_advisor_snapshot_json(
+            advisor_json(&[
+                advisor_json_entry(103, "Ahri", "middle"),
+                advisor_json_entry(103, "Ahri", "mid"),
+            ])
+            .as_str(),
+        )
+        .expect_err("duplicate advisor entries are rejected");
+
+        assert!(matches!(error, RankedChampionDataError::InvalidData(_)));
+        assert!(error.to_string().contains("duplicate"));
+    }
+
+    #[test]
+    fn advisor_json_rejects_missing_required_fields() {
+        let error = parse_advisor_snapshot_json(
+            r#"{
+                "formatVersion": 1,
+                "champions": [
+                    {
+                        "championId": 103,
+                        "championName": "Ahri",
+                        "lane": "middle",
+                        "games": 1000,
+                        "winRate": 51.4,
+                        "pickRate": 10.2,
+                        "banRate": 8.0
+                    }
+                ]
+            }"#,
+        )
+        .expect_err("incomplete advisor entry is rejected");
+
+        assert!(matches!(error, RankedChampionDataError::InvalidData(_)));
+    }
+
+    #[test]
+    fn checked_in_advisor_data_matches_adapter_contract() {
+        let snapshot =
+            parse_advisor_snapshot_json(include_str!("../../../data/advisor/latest.json"))
+                .expect("checked-in advisor data parses");
+
+        assert_eq!(snapshot.source, "lol-desktop-assistant-advisor-sample");
+        assert_eq!(snapshot.records.len(), 5);
+        assert!(snapshot
+            .records
+            .iter()
+            .any(|record| record.lane == RankedChampionLane::Support));
+    }
+
+    #[test]
+    fn live_overlay_maps_visible_item_values_scores_spells_and_events() {
+        let snapshot = map_live_overlay_snapshot(
+            vec![
+                GameClientPlayer {
+                    summoner_name: Some("Ally One".to_string()),
+                    team: "ORDER".to_string(),
+                    riot_id: Some("Ally One#NA1".to_string()),
+                    champion_name: Some("Garen".to_string()),
+                    level: Some(6),
+                    position: Some("TOP".to_string()),
+                    is_dead: false,
+                    respawn_timer: None,
+                    items: vec![GameClientItem {
+                        item_id: Some(1055),
+                        display_name: Some("Doran's Blade".to_string()),
+                        price: Some(450),
+                        count: Some(1),
+                        slot: Some(0),
+                    }],
+                    scores: Some(GameClientScores {
+                        kills: Some(1),
+                        deaths: Some(0),
+                        assists: Some(2),
+                        creep_score: Some(42),
+                        ward_score: Some(5.0),
+                    }),
+                    summoner_spells: Some(GameClientSummonerSpells {
+                        summoner_spell_one: Some(GameClientNamedEntity {
+                            display_name: Some("Flash".to_string()),
+                            id: Some(4),
+                        }),
+                        summoner_spell_two: Some(GameClientNamedEntity {
+                            display_name: Some("Ignite".to_string()),
+                            id: Some(14),
+                        }),
+                    }),
+                },
+                GameClientPlayer {
+                    summoner_name: Some("Enemy One".to_string()),
+                    team: "CHAOS".to_string(),
+                    riot_id: None,
+                    champion_name: Some("Darius".to_string()),
+                    level: Some(6),
+                    position: Some("TOP".to_string()),
+                    is_dead: true,
+                    respawn_timer: Some(8.0),
+                    items: vec![GameClientItem {
+                        item_id: Some(1054),
+                        display_name: Some("Doran's Shield".to_string()),
+                        price: Some(450),
+                        count: Some(1),
+                        slot: Some(0),
+                    }],
+                    scores: None,
+                    summoner_spells: None,
+                },
+            ],
+            Some(GameClientActivePlayer {
+                summoner_name: "Ally One".to_string(),
+                level: Some(6),
+                current_gold: Some(733.0),
+                champion_stats: Some(GameClientChampionStats {
+                    resource_type: Some("MANA".to_string()),
+                    resource_value: Some(100.0),
+                    resource_max: Some(300.0),
+                }),
+            }),
+            vec![GameClientEvent {
+                event_id: Some(1),
+                event_name: Some("ChampionKill".to_string()),
+                event_time: Some(120.0),
+                killer_name: Some("Ally One".to_string()),
+                victim_name: Some("Enemy One".to_string()),
+                assisters: vec!["Ally Two".to_string()],
+            }],
+            Some(GameClientStats {
+                game_time: Some(125.0),
+                game_mode: Some("CLASSIC".to_string()),
+                map_name: Some("Summoner's Rift".to_string()),
+            }),
+        );
+
+        assert_eq!(snapshot.game_time_seconds, Some(125.0));
+        assert_eq!(
+            snapshot.active_player.as_ref().unwrap().current_gold,
+            Some(733.0)
+        );
+        assert_eq!(snapshot.players.len(), 2);
+        assert_eq!(snapshot.players[0].summoner_spells.len(), 2);
+        assert_eq!(snapshot.gold.item_value_diff, 0);
+        assert_eq!(snapshot.events[0].event_name, "ChampionKill");
+    }
+
+    #[test]
     fn parses_valid_lockfile() {
         let credentials =
             parse_lockfile(format!("LeagueClient:1234:2999:{TEST_LOCKFILE_VALUE}:https").as_str())
@@ -3389,6 +4319,69 @@ mod tests {
         assert_eq!(
             game_asset_metadata_path(LeagueGameAssetKind::Spell),
             "/lol-game-data/assets/v1/summoner-spells.json"
+        );
+    }
+
+    #[test]
+    fn champion_ability_maps_lcu_rank_values() {
+        let session = LcuSession::new(LockfileCredentials {
+            port: 1,
+            password: "test".to_string(),
+        })
+        .expect("session builds");
+
+        let ability = map_champion_ability(
+            &session,
+            "Ahri",
+            "Q",
+            LcuChampionAbility {
+                name: Some("Orb of Deception".to_string()),
+                description: Some("Deals magic damage.".to_string()),
+                dynamic_description: None,
+                ability_icon_path: None,
+                spell_key: Some("q".to_string()),
+                cooldown: Some(serde_json::json!("@Cooldown@s %i:cooldown%")),
+                cost: Some(serde_json::json!("@Cost@ @AbilityResourceName@")),
+                range: Some(serde_json::json!([
+                    970.0, 970.0, 970.0, 970.0, 970.0, 970.0
+                ])),
+                cooldown_coefficients: vec![9.0, 8.0, 7.0, 6.0, 5.0, 5.0],
+                cost_coefficients: vec![55.0, 65.0, 75.0, 85.0, 95.0, 95.0],
+                effect_amounts: HashMap::new(),
+            },
+            None,
+        );
+
+        assert_eq!(ability.cooldown_values, vec!["9", "8", "7", "6", "5"]);
+        assert_eq!(ability.cost_values, vec!["55", "65", "75", "85", "95"]);
+        assert_eq!(ability.range_values, vec!["970"]);
+    }
+
+    #[test]
+    fn lcu_champion_ability_deserializes_rank_coefficients() {
+        let ability: LcuChampionAbility = serde_json::from_value(serde_json::json!({
+            "spellKey": "q",
+            "name": "Orb of Deception",
+            "description": "Deals magic damage.",
+            "cooldownCoefficients": [9, 8, 7, 6, 5],
+            "costCoefficients": [55, 65, 75, 85, 95],
+            "range": [970, 970, 970, 970, 970]
+        }))
+        .expect("ability deserializes");
+
+        assert_eq!(ability.cooldown_coefficients, vec![9.0, 8.0, 7.0, 6.0, 5.0]);
+        assert_eq!(
+            ability.cost_coefficients,
+            vec![55.0, 65.0, 75.0, 85.0, 95.0]
+        );
+    }
+
+    #[test]
+    fn champion_ability_keeps_zero_rank_values() {
+        assert_eq!(coefficient_values(&[0.0, 0.0, 0.0], true), vec!["0"]);
+        assert_eq!(
+            value_as_display_values(&serde_json::json!([0, 0, 0])),
+            vec!["0"]
         );
     }
 
@@ -3662,6 +4655,70 @@ mod tests {
             client.discover_lockfile_path(),
             LockfileDiscovery::LockfileMissing
         ));
+    }
+
+    fn advisor_json(entries: &[String]) -> String {
+        format!(
+            r#"{{
+                "formatVersion": 1,
+                "source": "test-advisor-json",
+                "patch": "26.08",
+                "region": "KR",
+                "queue": "RANKED_SOLO_5X5",
+                "tier": "EMERALD_PLUS",
+                "generatedAt": "2026-04-25T00:00:00Z",
+                "champions": [{}]
+            }}"#,
+            entries.join(",")
+        )
+    }
+
+    fn advisor_json_entry(champion_id: i64, champion_name: &str, lane: &str) -> String {
+        format!(
+            r#"{{
+                "championId": {champion_id},
+                "championName": "{champion_name}",
+                "championAlias": "{champion_name}",
+                "lane": "{lane}",
+                "games": 1000,
+                "winRate": 51.4,
+                "pickRate": 10.2,
+                "banRate": 8.0,
+                "runes": {{
+                    "primaryStyle": "Domination",
+                    "primaryRunes": [{{ "id": 8112, "name": "Electrocute" }}],
+                    "secondaryStyle": "Sorcery",
+                    "secondaryRunes": [{{ "id": 8210, "name": "Transcendence" }}],
+                    "statShards": ["Adaptive Force"]
+                }},
+                "summonerSpells": [
+                    {{ "id": 4, "name": "Flash" }},
+                    {{ "id": 14, "name": "Ignite" }}
+                ],
+                "skillOrder": {{
+                    "maxOrder": ["Q", "W", "E"],
+                    "earlyOrder": ["Q", "W", "E", "Q", "Q", "R"]
+                }},
+                "itemBuild": {{
+                    "starter": [{{ "id": 1056, "name": "Doran's Ring" }}],
+                    "core": [{{ "id": 6655, "name": "Luden's Companion" }}],
+                    "boots": [{{ "id": 3020, "name": "Sorcerer's Shoes" }}],
+                    "late": [{{ "id": 3089, "name": "Rabadon's Deathcap" }}],
+                    "situational": [{{ "id": 3157, "name": "Zhonya's Hourglass" }}]
+                }},
+                "strongAgainst": [
+                    {{ "championId": 777, "championName": "Yone", "note": "Punish Q3.", "winRateDelta": 2.1 }}
+                ],
+                "weakAgainst": [
+                    {{ "championId": 238, "championName": "Zed", "note": "Respect level 6.", "winRateDelta": -1.8 }}
+                ],
+                "powerSpikes": [
+                    {{ "timing": "6", "label": "Ultimate", "description": "Look for all-in windows." }}
+                ],
+                "laneAdvice": "Push waves before roaming.",
+                "teamfightAdvice": "Enter after key cooldowns are used."
+            }}"#
+        )
     }
 
     fn sample_summoner() -> LcuSummoner {
