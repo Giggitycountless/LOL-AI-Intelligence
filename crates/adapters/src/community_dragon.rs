@@ -270,7 +270,22 @@ const SKIP_STAT_NAMES: &[&str] = &[
 ];
 
 /// Stat name suffixes that indicate the value is a percentage.
-const PERCENT_SUFFIXES: &[&str] = &["Percent", "Mod", "Amp", "Mult", "Conversion"];
+/// NOTE: "Mod" deliberately excluded — too broad (catches MinionMod, RepeatDamageMod).
+const PERCENT_SUFFIXES: &[&str] = &["Percent", "Amp", "Mult", "Conversion"];
+
+/// Stat names that are always noise — displayed elsewhere or too internal.
+const NOISE_NAMES: &[&str] = &[
+    "ADRatio",
+    "APRatio",
+    "MaxHealthTADRatio",
+    "MaxHealthTADRatioTOOLTIP",
+    "MonsterCap",
+    "LockTime",
+    "ResourceDecayRate",
+    "DamageConversionBase",
+    "PassiveADRatioTT",
+    "RAPCoefficient",
+];
 
 /// Stat names where the value represents damage (physical or magical).
 const DAMAGE_LABELS: &[&str] = &[
@@ -331,9 +346,6 @@ const DURATION_LABELS: &[&str] = &[
     "InitialDelay",
     "SecondaryDelay",
     "TrapArmTime",
-    "LockTime",
-    "ResourceDecayRate",
-    "CarryDistancePerStack",
 ];
 
 /// Stat names where the value represents movement speed.
@@ -398,6 +410,7 @@ const RANGE_LABELS: &[&str] = &[
     "RDashDistance",
     "RBaseDashSpeed",
     "RAcquisitionRange",
+    "CarryDistancePerStack",
 ];
 
 /// Stat names where the value is a count.
@@ -422,7 +435,6 @@ pub(crate) fn is_interesting_stat(name: &str) -> bool {
     if name.is_empty() {
         return false;
     }
-    // Skip names that are obviously internal
     let upper = name.to_uppercase();
     if SKIP_STAT_NAMES
         .iter()
@@ -430,62 +442,39 @@ pub(crate) fn is_interesting_stat(name: &str) -> bool {
     {
         return false;
     }
-    // Skip if it appears to be a key/ID rather than a displayable stat
+    // Explicit noise names (ADRatio, MonsterCap, etc.)
+    if NOISE_NAMES.iter().any(|noise| name.eq_ignore_ascii_case(noise)) {
+        return false;
+    }
     if name.len() < 5 {
         return false;
     }
     true
 }
 
+/// Check whether stat values are noise — all identical, or all near-zero.
+pub(crate) fn is_noise_stat(_name: &str, values: &[f64]) -> bool {
+    if values.is_empty() {
+        return true;
+    }
+    // All values identical (e.g. StackCount always 1)
+    if values.len() > 1 && values.iter().all(|v| (v - values[0]).abs() < f64::EPSILON) {
+        return true;
+    }
+    // All values near zero (e.g. MaxHealthTADRatio 0.00005)
+    if values.iter().all(|v| v.abs() < 0.001) {
+        return true;
+    }
+    false
+}
+
 /// Turn a raw DataValue name into a human-readable label and suffix.
 ///
 /// Returns `(label, suffix)` where suffix is e.g. `"%"` or `"s"` or `""`.
+/// Specific categories checked first (DAMAGE, SHIELD, HEAL, MOVE, RANGE, COUNT, COST, RATIO);
+/// PERCENT fallback runs last.
 pub(crate) fn clean_stat_label(name: &str) -> (String, String) {
-    // PERCENT — values that are ratios or percentages
-    for label_set in &[
-        PERCENT_SUFFIXES,
-        &["Percent"],
-    ] {
-        for keyword in *label_set {
-            if name.contains(keyword) {
-                let label = split_camel_case(name);
-                return (label, "%".to_string());
-            }
-        }
-    }
-
-    // DURATION — values in seconds
-    for keyword in DURATION_LABELS {
-        if name.eq_ignore_ascii_case(keyword) {
-            let label = split_camel_case(name)
-                .replace("Duration", "")
-                .replace("Length", "")
-                .replace("Timer", "")
-                .replace("Window", "")
-                .replace("Delay", "")
-                .trim()
-                .to_string();
-            return (label, "s".to_string());
-        }
-    }
-
-    // MOVE SPEED
-    for keyword in MOVE_SPEED_LABELS {
-        if name.eq_ignore_ascii_case(keyword) {
-            let label = split_camel_case(name)
-                .replace("MS ", "Move Speed ")
-                .replace("MovementSpeed", "Move Speed")
-                .replace("Duration", "")
-                .trim()
-                .to_string();
-            if name.contains("Percent") || name.contains("Slow") {
-                return (label, "%".to_string());
-            }
-            return (label, String::new());
-        }
-    }
-
-    // DAMAGE
+    // DAMAGE — physical/magical/true damage
     for keyword in DAMAGE_LABELS {
         if name.eq_ignore_ascii_case(keyword) {
             let label = split_camel_case(name);
@@ -509,18 +498,30 @@ pub(crate) fn clean_stat_label(name: &str) -> (String, String) {
         }
     }
 
-    // RATIO
-    for keyword in RATIO_LABELS {
+    // MOVE SPEED
+    for keyword in MOVE_SPEED_LABELS {
         if name.eq_ignore_ascii_case(keyword) {
-            let label = split_camel_case(name);
-            if name.contains("Percent") || name.contains("Percent") {
+            let label = split_camel_case(name)
+                .replace("MS ", "Move Speed ")
+                .replace("MovementSpeed", "Move Speed")
+                .replace("Duration", "")
+                .trim()
+                .to_string();
+            if name.contains("Percent") || name.contains("Slow") {
                 return (label, "%".to_string());
+            }
+            // MovementSpeedDuration / MSDuration — duration of speed buff
+            if name.eq_ignore_ascii_case("MSDuration")
+                || name.eq_ignore_ascii_case("MovementSpeedDuration")
+                || name.contains("Bonus")
+            {
+                return (label, "s".to_string());
             }
             return (label, String::new());
         }
     }
 
-    // RANGE
+    // RANGE / DISTANCE
     for keyword in RANGE_LABELS {
         if name.eq_ignore_ascii_case(keyword) {
             let label = split_camel_case(name);
@@ -544,8 +545,55 @@ pub(crate) fn clean_stat_label(name: &str) -> (String, String) {
         }
     }
 
+    // RATIO — scaling ratios (displayed in description, low priority)
+    for keyword in RATIO_LABELS {
+        if name.eq_ignore_ascii_case(keyword) {
+            let label = split_camel_case(name);
+            return (label, String::new());
+        }
+    }
+
+    // DURATION — values in seconds (check after specific categories)
+    for keyword in DURATION_LABELS {
+        if name.eq_ignore_ascii_case(keyword) {
+            let label = split_camel_case(name)
+                .replace("Duration", "")
+                .replace("Length", "")
+                .replace("Timer", "")
+                .replace("Window", "")
+                .replace("Delay", "")
+                .trim()
+                .to_string();
+            return (label, "s".to_string());
+        }
+    }
+
+    // PERCENT — fallback for names with explicit percentage indicators
+    for keyword in PERCENT_SUFFIXES {
+        if name.contains(keyword) {
+            let label = split_camel_case(name);
+            return (label, "%".to_string());
+        }
+    }
+
     // Fallback: generic CamelCase split
     (split_camel_case(name), String::new())
+}
+
+/// Auto-detect whether values should be scaled to percentage display.
+/// Returns scaled values, abs() applied, and suffix override.
+pub(crate) fn scale_percent_values(values: &[f64]) -> (Vec<f64>, String) {
+    if values.is_empty() {
+        return (vec![], String::new());
+    }
+    // Scale if all values in [0, 1] or [-1, 0] range AND any non-integer
+    let all_in_unit_range = values.iter().all(|v| v.abs() <= 1.0);
+    let any_fractional = values.iter().any(|v| (v.abs() % 1.0) > f64::EPSILON);
+    if all_in_unit_range && any_fractional {
+        let scaled: Vec<f64> = values.iter().map(|v| v.abs() * 100.0).collect();
+        return (scaled, "%".to_string());
+    }
+    (values.to_vec(), String::new())
 }
 
 /// Insert spaces before uppercase letters: "BaseDamage" → "Base Damage".

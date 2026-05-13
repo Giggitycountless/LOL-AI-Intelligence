@@ -3019,11 +3019,18 @@ fn map_champion_ability(
                 .data_values
                 .iter()
                 .filter(|dv| community_dragon::is_interesting_stat(&dv.name))
+                .filter(|dv| !community_dragon::is_noise_stat(&dv.name, &dv.values))
                 .map(|dv| {
-                    let (label, suffix) = community_dragon::clean_stat_label(&dv.name);
+                    let (label, label_suffix) = community_dragon::clean_stat_label(&dv.name);
+                    let (values, auto_suffix) = community_dragon::scale_percent_values(&dv.values);
+                    let suffix = if !auto_suffix.is_empty() {
+                        auto_suffix
+                    } else {
+                        label_suffix
+                    };
                     AbilityStat {
                         label,
-                        values: dv.values.clone(),
+                        values,
                         suffix,
                     }
                 })
