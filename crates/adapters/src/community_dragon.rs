@@ -260,8 +260,314 @@ fn default_rank_count(slot: &str) -> usize {
 }
 
 // ---------------------------------------------------------------------------
-// Token resolver
+// Stat name cleaning for display
 // ---------------------------------------------------------------------------
+
+/// Stat names that are internal implementation details, not player-facing.
+const SKIP_STAT_NAMES: &[&str] = &[
+    "Duration",
+    "Tooltip",
+];
+
+/// Stat name suffixes that indicate the value is a percentage.
+const PERCENT_SUFFIXES: &[&str] = &["Percent", "Mod", "Amp", "Mult", "Conversion"];
+
+/// Stat names where the value represents damage (physical or magical).
+const DAMAGE_LABELS: &[&str] = &[
+    "BaseDamage",
+    "BonusDamage",
+    "TotalDamage",
+    "MaxHealthDamage",
+    "MissingHealthDamage",
+    "CurrentHealthDamage",
+    "MinionMod",
+    "MonsterDamage",
+    "SingleBaseDamage",
+    "RepeatDamageMod",
+    "ReducedDamagePercent",
+    "DamageAmp",
+    "DamageStored",
+    "EnemyMaxHealthDamage",
+    "MinionBonusDamageMultiplier",
+    "MinionBonusDamageThreshold",
+    "QMinimumDamage",
+    "FourthShotMultiplier",
+    "PercentMissingAmp",
+    "CraterEdgeDamageReduction",
+];
+
+/// Stat names where the value represents a duration in seconds.
+const DURATION_LABELS: &[&str] = &[
+    "StunDuration",
+    "CharmDuration",
+    "RootDuration",
+    "SlowDuration",
+    "TauntLength",
+    "FearDuration",
+    "KnockupDuration",
+    "SuppressionDuration",
+    "BlindDuration",
+    "SilenceDuration",
+    "GrabDuration",
+    "LanternDuration",
+    "ShieldDuration",
+    "ShieldMaxDuration",
+    "MarkerDuration",
+    "SpottingDuration",
+    "RevealDuration",
+    "LockoutTimer",
+    "EnrageDuration",
+    "CraterDuration",
+    "FlameDuration",
+    "HasteDuration",
+    "ResistDuration",
+    "AdrenalineStorageWindow",
+    "AdrenalineDecayLockTimer",
+    "GreyHealthDuration",
+    "TakedownWindow",
+    "RecastWindow",
+    "DelayBeforeDecay",
+    "OutOfCombatTimeBeforeReload",
+    "InitialDelay",
+    "SecondaryDelay",
+    "TrapArmTime",
+    "LockTime",
+    "ResourceDecayRate",
+    "CarryDistancePerStack",
+];
+
+/// Stat names where the value represents movement speed.
+const MOVE_SPEED_LABELS: &[&str] = &[
+    "MSAmount",
+    "MSDuration",
+    "MovementSpeed",
+    "MovementSpeedDuration",
+    "MoveSpeedBonus",
+    "SelfSlowPercent",
+];
+
+/// Stat names where the value represents a shield.
+const SHIELD_LABELS: &[&str] = &[
+    "BaseShieldValue",
+    "ShieldPerSoul",
+    "ShieldConversion",
+    "ShieldAmount",
+];
+
+/// Stat names where the value represents healing.
+const HEAL_LABELS: &[&str] = &["HealAmount", "EnrageHealingMult"];
+
+/// Stat names where the value represents a ratio/scaling.
+const RATIO_LABELS: &[&str] = &[
+    "APRatio",
+    "ADRatio",
+    "PassiveADRatio",
+    "PassiveADRatioTT",
+    "RAPCoefficient",
+    "MaxHealthTADRatio",
+    "MaxHealthTADRatioTOOLTIP",
+    "PercentAttackSpeedPerLevel",
+    "CritMoveSpeedPercentASRatio",
+    "JabDamagePercent",
+    "HookDamagePercentFinal",
+    "PassiveHealthThresholdAmp",
+    "EnrageADMult",
+    "EnrageArmorPen",
+    "CritReductionPercent",
+    "FourthShotDamageMult",
+    "DamageConversionBase",
+    "PassiveHealthThreshold",
+];
+
+/// Stat names where the value represents a range or distance.
+const RANGE_LABELS: &[&str] = &[
+    "LeapDistance",
+    "DashDistance",
+    "BounceRange",
+    "ThrowRange",
+    "AcquisitionRange",
+    "BonusAcquisitionRange",
+    "OrbitRadius",
+    "CraterRadius",
+    "CraterSweetSpotRadius",
+    "TrapAoERadius",
+    "TrapTriggerRadius",
+    "DistanceToFirstHit",
+    "DistancePastFirstHit",
+    "SpellRange",
+    "RDashDistance",
+    "RBaseDashSpeed",
+    "RAcquisitionRange",
+];
+
+/// Stat names where the value is a count.
+const COUNT_LABELS: &[&str] = &[
+    "NumberOfBounces",
+    "NumHits",
+    "StackCount",
+    "MaxStacks",
+    "MaxAmmo",
+    "MaxPassiveStacks",
+    "SoulsToGainOnPickUp",
+    "RMaxTargetsPerCast",
+    "RMaxCasts",
+    "RResetCasts",
+];
+
+/// Stat names where the value represents self-cost.
+const COST_LABELS: &[&str] = &["HealthCost", "BaseHealthCost"];
+
+/// Decide whether a DataValue is interesting enough to surface to the player.
+pub(crate) fn is_interesting_stat(name: &str) -> bool {
+    if name.is_empty() {
+        return false;
+    }
+    // Skip names that are obviously internal
+    let upper = name.to_uppercase();
+    if SKIP_STAT_NAMES
+        .iter()
+        .any(|skip| upper.contains(&skip.to_uppercase()))
+    {
+        return false;
+    }
+    // Skip if it appears to be a key/ID rather than a displayable stat
+    if name.len() < 5 {
+        return false;
+    }
+    true
+}
+
+/// Turn a raw DataValue name into a human-readable label and suffix.
+///
+/// Returns `(label, suffix)` where suffix is e.g. `"%"` or `"s"` or `""`.
+pub(crate) fn clean_stat_label(name: &str) -> (String, String) {
+    // PERCENT — values that are ratios or percentages
+    for label_set in &[
+        PERCENT_SUFFIXES,
+        &["Percent"],
+    ] {
+        for keyword in *label_set {
+            if name.contains(keyword) {
+                let label = split_camel_case(name);
+                return (label, "%".to_string());
+            }
+        }
+    }
+
+    // DURATION — values in seconds
+    for keyword in DURATION_LABELS {
+        if name.eq_ignore_ascii_case(keyword) {
+            let label = split_camel_case(name)
+                .replace("Duration", "")
+                .replace("Length", "")
+                .replace("Timer", "")
+                .replace("Window", "")
+                .replace("Delay", "")
+                .trim()
+                .to_string();
+            return (label, "s".to_string());
+        }
+    }
+
+    // MOVE SPEED
+    for keyword in MOVE_SPEED_LABELS {
+        if name.eq_ignore_ascii_case(keyword) {
+            let label = split_camel_case(name)
+                .replace("MS ", "Move Speed ")
+                .replace("MovementSpeed", "Move Speed")
+                .replace("Duration", "")
+                .trim()
+                .to_string();
+            if name.contains("Percent") || name.contains("Slow") {
+                return (label, "%".to_string());
+            }
+            return (label, String::new());
+        }
+    }
+
+    // DAMAGE
+    for keyword in DAMAGE_LABELS {
+        if name.eq_ignore_ascii_case(keyword) {
+            let label = split_camel_case(name);
+            return (label, String::new());
+        }
+    }
+
+    // SHIELD
+    for keyword in SHIELD_LABELS {
+        if name.eq_ignore_ascii_case(keyword) {
+            let label = split_camel_case(name);
+            return (label, String::new());
+        }
+    }
+
+    // HEAL
+    for keyword in HEAL_LABELS {
+        if name.eq_ignore_ascii_case(keyword) {
+            let label = split_camel_case(name);
+            return (label, String::new());
+        }
+    }
+
+    // RATIO
+    for keyword in RATIO_LABELS {
+        if name.eq_ignore_ascii_case(keyword) {
+            let label = split_camel_case(name);
+            if name.contains("Percent") || name.contains("Percent") {
+                return (label, "%".to_string());
+            }
+            return (label, String::new());
+        }
+    }
+
+    // RANGE
+    for keyword in RANGE_LABELS {
+        if name.eq_ignore_ascii_case(keyword) {
+            let label = split_camel_case(name);
+            return (label, String::new());
+        }
+    }
+
+    // COUNT
+    for keyword in COUNT_LABELS {
+        if name.eq_ignore_ascii_case(keyword) {
+            let label = split_camel_case(name);
+            return (label, String::new());
+        }
+    }
+
+    // COST
+    for keyword in COST_LABELS {
+        if name.eq_ignore_ascii_case(keyword) {
+            let label = split_camel_case(name);
+            return (label, String::new());
+        }
+    }
+
+    // Fallback: generic CamelCase split
+    (split_camel_case(name), String::new())
+}
+
+/// Insert spaces before uppercase letters: "BaseDamage" → "Base Damage".
+fn split_camel_case(name: &str) -> String {
+    let mut result = String::with_capacity(name.len() + 4);
+    // Strip multiplication suffixes like *100 or *1000
+    let clean = name
+        .split('*')
+        .next()
+        .unwrap_or(name);
+    let mut chars = clean.chars();
+    if let Some(first) = chars.next() {
+        result.push(first);
+    }
+    for c in chars {
+        if c.is_uppercase() {
+            result.push(' ');
+        }
+        result.push(c);
+    }
+    result
+}
 
 /// Resolve `@Token@` placeholders in an ability description using bin data
 /// values. Unresolved tokens are replaced with bracketed names and returned as

@@ -361,7 +361,7 @@ pub struct LeagueChampionSummary {
     pub champion_name: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LeagueChampionDetails {
     pub champion_id: i64,
@@ -371,7 +371,7 @@ pub struct LeagueChampionDetails {
     pub abilities: Vec<LeagueChampionAbility>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LeagueChampionAbility {
     pub slot: String,
@@ -385,6 +385,16 @@ pub struct LeagueChampionAbility {
     pub cooldown_values: Vec<String>,
     pub cost_values: Vec<String>,
     pub range_values: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub stats: Vec<AbilityStat>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AbilityStat {
+    pub label: String,
+    pub values: Vec<f64>,
+    pub suffix: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]

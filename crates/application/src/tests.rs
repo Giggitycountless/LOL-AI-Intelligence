@@ -1772,6 +1772,7 @@ impl LeagueClientReader for FakeLeagueClientReader {
                 cooldown_values: vec!["7".to_string()],
                 cost_values: vec!["55".to_string()],
                 range_values: vec!["880".to_string()],
+                stats: vec![],
             }],
         })
     }

@@ -23,7 +23,7 @@ use domain::{
     LiveOverlayEvent, LiveOverlayGoldSummary, LiveOverlayItem, LiveOverlayPlayer,
     LiveOverlayScores, LiveOverlaySnapshot, MatchResult, ParticipantRecentStats,
     RankedChampionDataSnapshot, RankedChampionLane, RankedChampionStat, RankedQueue,
-    RankedQueueSummary, RecentMatchSummary,
+    RankedQueueSummary, RecentMatchSummary, AbilityStat,
 };
 use futures_util::{SinkExt, Stream, StreamExt};
 use percent_encoding::{AsciiSet, CONTROLS, percent_encode};
@@ -3012,6 +3012,25 @@ fn map_champion_ability(
         .map(value_as_display_values)
         .unwrap_or_default();
 
+    // Extract structured ability stats from CommunityDragon bin data
+    let stats: Vec<AbilityStat> = bin_spell
+        .map(|spell| {
+            spell
+                .data_values
+                .iter()
+                .filter(|dv| community_dragon::is_interesting_stat(&dv.name))
+                .map(|dv| {
+                    let (label, suffix) = community_dragon::clean_stat_label(&dv.name);
+                    AbilityStat {
+                        label,
+                        values: dv.values.clone(),
+                        suffix,
+                    }
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
     LeagueChampionAbility {
         slot: slot.to_string(),
         name: ability_name,
@@ -3024,6 +3043,7 @@ fn map_champion_ability(
         cooldown_values,
         cost_values,
         range_values,
+        stats,
     }
 }
 

@@ -15,7 +15,7 @@ import type { EffectiveLanguage } from "../i18n";
 import type { LeagueChampionAbilityView, LeagueChampionDetailsView } from "../state/AppStateProvider";
 import { useAdvisor, useAppCore, useChampSelect, useLeagueAssets } from "../state/AppStateProvider";
 import { canOpenSelfHistoryOverlayWindow, destroySelfHistoryOverlayWindow } from "../windows/selfHistoryOverlayWindow";
-import { abilityStatText, abilityTooltipText } from "./selfHistoryOverlayAbilityView";
+import { abilityStatDisplay, abilityStatText, abilityTooltipText } from "./selfHistoryOverlayAbilityView";
 import { initials, type T } from "../utils/formatting";
 
 const TEAM_SIZE = 5;
@@ -556,6 +556,13 @@ const AbilityCard = memo(function AbilityCard({ ability, t }: { ability: LeagueC
           </div>
           <p className="mt-2 text-xs font-medium leading-relaxed text-zinc-600">{description}</p>
           <div className="mt-2 rounded-md bg-zinc-100 px-3 py-2 text-xs font-semibold leading-relaxed text-zinc-800">
+            {ability.stats?.map((stat, i) => (
+              <AbilityStatRow
+                key={`${stat.label}-${i}`}
+                label={stat.label}
+                value={abilityStatDisplay(stat.values, stat.suffix)}
+              />
+            ))}
             <AbilityStatRow label={t("overlay.cooldown")} value={cooldown} />
             <AbilityStatRow label={t("overlay.cost")} value={cost} />
             <AbilityStatRow label={t("overlay.range")} value={range} />

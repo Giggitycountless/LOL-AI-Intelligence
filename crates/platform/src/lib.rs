@@ -2797,6 +2797,7 @@ mod tests {
                 cooldown_values: Vec::new(),
                 cost_values: Vec::new(),
                 range_values: Vec::new(),
+                stats: vec![],
             }],
         })
         .expect("champion details serializes");
