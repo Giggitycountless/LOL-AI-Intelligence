@@ -1,6 +1,5 @@
 use std::{
-    error::Error,
-    fmt, fs,
+    fs,
     path::{Path, PathBuf},
 };
 
@@ -15,6 +14,7 @@ use domain::{
     AdvisorRunePage, AdvisorSkillOrder,
 };
 use rusqlite::{Connection, OptionalExtension};
+use thiserror::Error as ThisError;
 
 mod constants;
 use constants::*;
@@ -210,80 +210,32 @@ impl SqliteStore {
 
 pub type StorageResult<T> = Result<T, StorageError>;
 
-#[derive(Debug)]
+#[derive(Debug, ThisError)]
 pub enum StorageError {
-    Io(std::io::Error),
-    Sqlite(rusqlite::Error),
+    #[error("storage I/O error: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("sqlite error: {0}")]
+    Sqlite(#[from] rusqlite::Error),
+    #[error("invalid activity kind: {0}")]
     InvalidActivityKind(String),
+    #[error("invalid startup page: {0}")]
     InvalidStartupPage(String),
+    #[error("invalid language preference: {0}")]
     InvalidLanguagePreference(String),
+    #[error("schema version metadata is missing")]
     MissingSchemaVersion,
+    #[error("player note is missing after save")]
     MissingPlayerNote,
+    #[error("invalid player tags: {0}")]
     InvalidPlayerTags(String),
+    #[error("invalid ranked champion lane: {0}")]
     InvalidRankedChampionLane(String),
+    #[error("ranked champion snapshot is missing after save")]
     MissingRankedChampionSnapshot,
+    #[error("advisor snapshot is missing after save")]
     MissingAdvisorSnapshot,
+    #[error("invalid advisor snapshot: {0}")]
     InvalidAdvisorSnapshot(String),
-}
-
-impl fmt::Display for StorageError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Io(error) => write!(formatter, "storage I/O error: {error}"),
-            Self::Sqlite(error) => write!(formatter, "sqlite error: {error}"),
-            Self::InvalidActivityKind(value) => write!(formatter, "invalid activity kind: {value}"),
-            Self::InvalidStartupPage(value) => write!(formatter, "invalid startup page: {value}"),
-            Self::InvalidLanguagePreference(value) => {
-                write!(formatter, "invalid language preference: {value}")
-            }
-            Self::MissingSchemaVersion => write!(formatter, "schema version metadata is missing"),
-            Self::MissingPlayerNote => write!(formatter, "player note is missing after save"),
-            Self::InvalidPlayerTags(error) => write!(formatter, "invalid player tags: {error}"),
-            Self::InvalidRankedChampionLane(value) => {
-                write!(formatter, "invalid ranked champion lane: {value}")
-            }
-            Self::MissingRankedChampionSnapshot => {
-                write!(formatter, "ranked champion snapshot is missing after save")
-            }
-            Self::MissingAdvisorSnapshot => {
-                write!(formatter, "advisor snapshot is missing after save")
-            }
-            Self::InvalidAdvisorSnapshot(error) => {
-                write!(formatter, "invalid advisor snapshot: {error}")
-            }
-        }
-    }
-}
-
-impl Error for StorageError {
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        match self {
-            Self::Io(error) => Some(error),
-            Self::Sqlite(error) => Some(error),
-            Self::InvalidActivityKind(_)
-            | Self::InvalidStartupPage(_)
-            | Self::InvalidLanguagePreference(_)
-            | Self::MissingSchemaVersion
-            | Self::MissingPlayerNote
-            | Self::InvalidPlayerTags(_)
-            | Self::InvalidRankedChampionLane(_)
-            | Self::MissingRankedChampionSnapshot
-            | Self::MissingAdvisorSnapshot
-            | Self::InvalidAdvisorSnapshot(_) => None,
-        }
-    }
-}
-
-impl From<std::io::Error> for StorageError {
-    fn from(error: std::io::Error) -> Self {
-        Self::Io(error)
-    }
-}
-
-impl From<rusqlite::Error> for StorageError {
-    fn from(error: rusqlite::Error) -> Self {
-        Self::Sqlite(error)
-    }
 }
 
 fn configure_connection(connection: &Connection) -> StorageResult<()> {
@@ -867,11 +819,7 @@ fn insert_advisor_snapshot(
 }
 
 fn bool_to_int(value: bool) -> i64 {
-    if value {
-        1
-    } else {
-        0
-    }
+    if value { 1 } else { 0 }
 }
 
 fn int_to_bool(value: i64) -> bool {
@@ -1197,10 +1145,12 @@ mod tests {
         let deleted_count = store.clear_activity_entries().expect("activity clears");
 
         assert_eq!(deleted_count, 1);
-        assert!(store
-            .list_all_activity_entries()
-            .expect("all activity")
-            .is_empty());
+        assert!(
+            store
+                .list_all_activity_entries()
+                .expect("all activity")
+                .is_empty()
+        );
 
         let _ = fs::remove_dir_all(data_dir);
     }
@@ -1235,10 +1185,12 @@ mod tests {
         assert_eq!(updated.note, None);
         assert_eq!(updated.tags, vec!["calm"]);
         assert!(cleared);
-        assert!(store
-            .get_player_note("internal-puuid")
-            .expect("player note reads")
-            .is_none());
+        assert!(
+            store
+                .get_player_note("internal-puuid")
+                .expect("player note reads")
+                .is_none()
+        );
 
         let _ = fs::remove_dir_all(data_dir);
     }
@@ -1248,10 +1200,12 @@ mod tests {
         let data_dir = unique_temp_dir();
         let store = SqliteStore::initialize(&data_dir).expect("storage initializes");
 
-        assert!(store
-            .latest_ranked_champion_snapshot()
-            .expect("empty ranked snapshot reads")
-            .is_none());
+        assert!(
+            store
+                .latest_ranked_champion_snapshot()
+                .expect("empty ranked snapshot reads")
+                .is_none()
+        );
 
         let first = sample_ranked_snapshot("first", 103, RankedChampionLane::Middle);
         let saved = store
@@ -1277,10 +1231,12 @@ mod tests {
         let data_dir = unique_temp_dir();
         let store = SqliteStore::initialize(&data_dir).expect("storage initializes");
 
-        assert!(store
-            .latest_advisor_snapshot()
-            .expect("empty advisor snapshot reads")
-            .is_none());
+        assert!(
+            store
+                .latest_advisor_snapshot()
+                .expect("empty advisor snapshot reads")
+                .is_none()
+        );
 
         let first = sample_advisor_snapshot("first", 86, RankedChampionLane::Top);
         let saved = store
