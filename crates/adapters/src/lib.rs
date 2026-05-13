@@ -13,7 +13,7 @@ use application::{
     ChampSelectSessionSource, LeagueClientReadError, LeagueClientReader, RankedChampionDataError,
     RankedChampionDataProvider, RankedChampionRefreshInput, SummonerBatchEntry,
 };
-use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use domain::{
     AdvisorDataSnapshot, AdvisorItemBuild, AdvisorMatchup, AdvisorNamedRef, AdvisorPowerSpike,
     AdvisorRecord, AdvisorRunePage, AdvisorSkillOrder, ChampSelectTeam, CurrentSummonerProfile,
@@ -26,16 +26,16 @@ use domain::{
     RankedQueueSummary, RecentMatchSummary,
 };
 use futures_util::{SinkExt, Stream, StreamExt};
+use percent_encoding::{AsciiSet, CONTROLS, percent_encode};
 use rayon::prelude::*;
-use percent_encoding::{percent_encode, AsciiSet, CONTROLS};
-use reqwest::{blocking::Client, header::CONTENT_TYPE, StatusCode};
+use reqwest::{StatusCode, blocking::Client, header::CONTENT_TYPE};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sysinfo::{ProcessesToUpdate, System};
 use tokio::net::TcpStream;
 use tokio_tungstenite::{
-    tungstenite::{self, client::IntoClientRequest, http::HeaderValue, Message},
     Connector, MaybeTlsStream, WebSocketStream,
+    tungstenite::{self, Message, client::IntoClientRequest, http::HeaderValue},
 };
 
 mod community_dragon;
@@ -1056,10 +1056,10 @@ impl LocalLeagueClient {
         // Use cached credentials for up to 2 seconds to avoid repeated process scans.
         {
             let cache = self.cached_credentials.lock().unwrap();
-            if let Some((cached_at, cached)) = cache.as_ref() {
-                if cached_at.elapsed() < Duration::from_secs(2) {
-                    return Ok(cached.clone());
-                }
+            if let Some((cached_at, cached)) = cache.as_ref()
+                && cached_at.elapsed() < Duration::from_secs(2)
+            {
+                return Ok(cached.clone());
             }
         }
 
@@ -1251,15 +1251,15 @@ impl LeagueClientReader for LocalLeagueClient {
             .iter()
             .chain(champ_select.their_team.iter())
         {
-            if let (Some(sid), Some(cid)) = (member.summoner_id, member.champion_id) {
-                if cid > 0 {
-                    champion_selections.insert(sid, cid);
-                }
+            if let (Some(sid), Some(cid)) = (member.summoner_id, member.champion_id)
+                && cid > 0
+            {
+                champion_selections.insert(sid, cid);
             }
-            if let (Some(name), Some(cid)) = (member.display_name(), member.champion_id) {
-                if cid > 0 {
-                    champion_selections_by_name.insert(normalize_player_name(name.as_str()), cid);
-                }
+            if let (Some(name), Some(cid)) = (member.display_name(), member.champion_id)
+                && cid > 0
+            {
+                champion_selections_by_name.insert(normalize_player_name(name.as_str()), cid);
             }
         }
 
@@ -1366,10 +1366,10 @@ impl LeagueClientReader for LocalLeagueClient {
                 }
             }
 
-            if let Some(entry) = found {
-                if seen_ids.insert(entry.summoner_id) {
-                    entries.push(entry);
-                }
+            if let Some(entry) = found
+                && seen_ids.insert(entry.summoner_id)
+            {
+                entries.push(entry);
             }
         }
 
@@ -2343,14 +2343,16 @@ fn enrich_live_overlay_players(
         let Some(display_name) = player.display_name() else {
             return;
         };
-        let encoded_name = percent_encode(display_name.as_str().as_bytes(), QUERY_ENCODE_SET).to_string();
+        let encoded_name = percent_encode(display_name.as_bytes(), QUERY_ENCODE_SET).to_string();
 
         match live_client_get_json::<Vec<GameClientItem>>(
             http_client,
             format!("/liveclientdata/playeritems?summonerName={encoded_name}").as_str(),
         ) {
             Ok(items) if !items.is_empty() => player.items = items,
-            Err(e) => log_lcu_adapter_event(&format!("failed to fetch items for {display_name}: {e}")),
+            Err(e) => {
+                log_lcu_adapter_event(&format!("failed to fetch items for {display_name}: {e}"))
+            }
             _ => {}
         }
 
@@ -2359,7 +2361,9 @@ fn enrich_live_overlay_players(
             format!("/liveclientdata/playerscores?summonerName={encoded_name}").as_str(),
         ) {
             Ok(scores) => player.scores = Some(scores),
-            Err(e) => log_lcu_adapter_event(&format!("failed to fetch scores for {display_name}: {e}")),
+            Err(e) => {
+                log_lcu_adapter_event(&format!("failed to fetch scores for {display_name}: {e}"))
+            }
         }
 
         match live_client_get_json::<GameClientSummonerSpells>(
@@ -2367,14 +2371,14 @@ fn enrich_live_overlay_players(
             format!("/liveclientdata/playersummonerspells?summonerName={encoded_name}").as_str(),
         ) {
             Ok(spells) => player.summoner_spells = Some(spells),
-            Err(e) => log_lcu_adapter_event(&format!("failed to fetch spells for {display_name}: {e}")),
+            Err(e) => {
+                log_lcu_adapter_event(&format!("failed to fetch spells for {display_name}: {e}"))
+            }
         }
     });
 
     players
 }
-
-
 
 fn map_live_overlay_snapshot(
     players: Vec<GameClientPlayer>,
@@ -2617,6 +2621,7 @@ fn map_gameflow_session(session: LcuGameflowSession) -> Option<ChampSelectSessio
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 fn collect_gameflow_team(
     team_players: &[LcuGameflowParticipant],
     team: ChampSelectTeam,
@@ -2817,8 +2822,8 @@ fn map_ranked_queues(stats: LcuRankedStats) -> Vec<RankedQueueSummary> {
                 "RANKED_FLEX_SR" => RankedQueue::Flex,
                 _ => RankedQueue::Other,
             };
-            let tier = queue.tier.and_then(|value| non_empty_owned(value));
-            let division = queue.division.and_then(|value| non_empty_owned(value));
+            let tier = queue.tier.and_then(non_empty_owned);
+            let division = queue.division.and_then(non_empty_owned);
             let is_ranked = tier
                 .as_deref()
                 .is_some_and(|value| value != "NONE" && value != "UNRANKED");
@@ -3979,10 +3984,12 @@ mod tests {
 
         assert_eq!(snapshot.source, "lol-desktop-assistant-sample");
         assert_eq!(snapshot.records.len(), 10);
-        assert!(snapshot
-            .records
-            .iter()
-            .any(|record| record.lane == RankedChampionLane::Support));
+        assert!(
+            snapshot
+                .records
+                .iter()
+                .any(|record| record.lane == RankedChampionLane::Support)
+        );
     }
 
     #[test]
@@ -4045,10 +4052,12 @@ mod tests {
 
         assert_eq!(snapshot.source, "lol-desktop-assistant-advisor-sample");
         assert_eq!(snapshot.records.len(), 5);
-        assert!(snapshot
-            .records
-            .iter()
-            .any(|record| record.lane == RankedChampionLane::Support));
+        assert!(
+            snapshot
+                .records
+                .iter()
+                .any(|record| record.lane == RankedChampionLane::Support)
+        );
     }
 
     #[test]
@@ -4210,10 +4219,12 @@ mod tests {
             r#"[5,"OnJsonApiEvent_lol-gameflow_v1_gameflow-phase",{"data":"ChampSelect","eventType":"Update","uri":"/lol-gameflow/v1/gameflow-phase"}]"#
         )
         .is_none());
-        assert!(parse_lcu_websocket_event_text(
-            r#"[8,"OnJsonApiEvent",{"data":"ChampSelect","eventType":"Update"}]"#
-        )
-        .is_none());
+        assert!(
+            parse_lcu_websocket_event_text(
+                r#"[8,"OnJsonApiEvent",{"data":"ChampSelect","eventType":"Update"}]"#
+            )
+            .is_none()
+        );
     }
 
     #[test]
@@ -4641,10 +4652,11 @@ mod tests {
         assert_eq!(data.status.phase, LeagueClientPhase::PartialData);
         assert!(data.summoner.is_some());
         assert_eq!(data.data_warnings.len(), 2);
-        assert!(data
-            .data_warnings
-            .iter()
-            .all(|warning| !warning.message.contains(TEST_LOCKFILE_VALUE)));
+        assert!(
+            data.data_warnings
+                .iter()
+                .all(|warning| !warning.message.contains(TEST_LOCKFILE_VALUE))
+        );
     }
 
     #[test]

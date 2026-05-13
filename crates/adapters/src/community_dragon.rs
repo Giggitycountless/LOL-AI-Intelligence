@@ -138,10 +138,10 @@ impl CommunityDragonClient {
         let cd_name = community_dragon_name(champion_name);
         {
             let cache = self.cache.lock().ok()?;
-            if let Some(entry) = cache.get(&cd_name) {
-                if entry.fetched_at.elapsed() < CACHE_TTL {
-                    return Some(entry.data.clone());
-                }
+            if let Some(entry) = cache.get(&cd_name)
+                && entry.fetched_at.elapsed() < CACHE_TTL
+            {
+                return Some(entry.data.clone());
             }
         }
 
@@ -431,10 +431,9 @@ fn calculation_text(
                         .and_then(serde_json::Value::as_f64)
                         .map(|value| vec![value])
                 })
+                && let Some(text) = display_percent_values(values)
             {
-                if let Some(text) = display_percent_values(values) {
-                    percent_parts.push(format!("+{text}"));
-                }
+                percent_parts.push(format!("+{text}"));
             }
             continue;
         }
@@ -446,10 +445,10 @@ fn calculation_text(
             continue;
         }
 
-        if let Some(values) = formula_part_values(part, data_values, fallback_values, rank_count) {
-            if let Some(text) = display_values(&values, display_as_percent) {
-                flat_parts.push(text);
-            }
+        if let Some(values) = formula_part_values(part, data_values, fallback_values, rank_count)
+            && let Some(text) = display_values(&values, display_as_percent)
+        {
+            flat_parts.push(text);
         }
     }
 
@@ -859,12 +858,16 @@ mod tests {
         assert_no_raw_template_tokens("Sett Q", &resolved_sett.text);
         assert!(resolved_ahri.unresolved_tokens.is_empty());
         assert!(resolved_sett.unresolved_tokens.is_empty());
-        assert!(resolved_ahri
-            .text
-            .contains("35/60/85/110/135 (+50%) magic damage"));
-        assert!(resolved_ahri
-            .text
-            .contains("35/60/85/110/135 (+50%) true damage"));
+        assert!(
+            resolved_ahri
+                .text
+                .contains("35/60/85/110/135 (+50%) magic damage")
+        );
+        assert!(
+            resolved_ahri
+                .text
+                .contains("35/60/85/110/135 (+50%) true damage")
+        );
         assert!(resolved_sett.text.contains("30% Move Speed"));
         assert!(resolved_sett.text.contains("1.5 seconds"));
         assert!(resolved_sett.text.contains("10/20/30/40/50 plus"));
