@@ -34,6 +34,7 @@ export function Settings() {
   });
   const [champions, setChampions] = useState<LeagueChampionSummary[]>([]);
   const [isLoadingChampions, setIsLoadingChampions] = useState(false);
+  const [championsError, setChampionsError] = useState<string | null>(null);
   const [exportJson, setExportJson] = useState("");
   const [importJson, setImportJson] = useState("");
   const [confirmClear, setConfirmClear] = useState(false);
@@ -64,6 +65,7 @@ export function Settings() {
   useEffect(() => {
     let isMounted = true;
     setIsLoadingChampions(true);
+    setChampionsError(null);
 
     fetchLeagueChampionCatalog()
       .then((records) => {
@@ -74,6 +76,7 @@ export function Settings() {
       .catch(() => {
         if (isMounted) {
           setChampions([]);
+          setChampionsError("Failed to load champion catalog — is League Client running?");
         }
       })
       .finally(() => {
@@ -122,6 +125,7 @@ export function Settings() {
 
   async function handleExport() {
     setIsExporting(true);
+    setExportJson("");
 
     try {
       const json = await exportLocalData();
@@ -271,6 +275,7 @@ export function Settings() {
                 autoAcceptStatus={autoAcceptStatus}
                 champions={champions}
                 isLoadingChampions={isLoadingChampions}
+                championsError={championsError}
                 validationMessage={automationValidationMessage}
                 onAutoAcceptChange={(enabled) =>
                   setDraft((current) => ({
@@ -422,6 +427,7 @@ function RoomAutomationPanel({
   autoAcceptStatus: AutoAcceptStatus | null;
   champions: LeagueChampionSummary[];
   isLoadingChampions: boolean;
+  championsError: string | null;
   validationMessage: string | null;
   onAutoAcceptChange: (enabled: boolean) => void;
   onAutoPickEnabledChange: (enabled: boolean) => void;
@@ -488,6 +494,7 @@ function RoomAutomationPanel({
           championId={draft.autoPickChampionId}
           champions={champions}
           isLoading={isLoadingChampions}
+          championsError={championsError}
           onEnabledChange={onAutoPickEnabledChange}
           onChampionChange={onAutoPickChampionChange}
           t={t}
@@ -498,6 +505,7 @@ function RoomAutomationPanel({
           championId={draft.autoBanChampionId}
           champions={champions}
           isLoading={isLoadingChampions}
+          championsError={championsError}
           onEnabledChange={onAutoBanEnabledChange}
           onChampionChange={onAutoBanChampionChange}
           t={t}
@@ -578,6 +586,7 @@ function AutomationChampionPicker({
   championId: number | null;
   champions: LeagueChampionSummary[];
   isLoading: boolean;
+  championsError: string | null;
   onEnabledChange: (enabled: boolean) => void;
   onChampionChange: (championId: number | null) => void;
   t: Translator;
@@ -721,7 +730,7 @@ function AutomationChampionPicker({
         )}
 
         {enabled && !isLoading && champions.length === 0 && (
-          <div className="text-sm text-amber-700">{t("settings.championSearchUnavailable")}</div>
+          <div className="text-sm text-amber-700">{championsError ?? t("settings.championSearchUnavailable")}</div>
         )}
         {enabled && !championId && <div className="text-sm text-zinc-500">{t("settings.noChampion")}</div>}
         {enabled && selectedChampion && (
