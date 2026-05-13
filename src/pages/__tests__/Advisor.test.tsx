@@ -3,10 +3,12 @@ import { render, screen } from "@testing-library/react";
 import React from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+const mockUseAppCore = vi.fn();
 const mockUseAdvisor = vi.fn();
 const mockUseLeagueAssets = vi.fn();
 
 vi.mock("../../state/AppStateProvider", () => ({
+  useAppCore: () => mockUseAppCore(),
   useAdvisor: () => mockUseAdvisor(),
   useLeagueAssets: () => mockUseLeagueAssets(),
 }));
@@ -73,6 +75,7 @@ function defaultAdvisor(records = [advisorRecord()]) {
     champSelectAdvisorSnapshot: null,
     liveOverlaySnapshot: null,
     isAdvisorDataLoading: false,
+    advisorDataError: null,
     loadAdvisorData: vi.fn().mockResolvedValue(true),
     refreshAdvisorData: vi.fn().mockResolvedValue(true),
     refreshChampSelectAdvisorSnapshot: vi.fn().mockResolvedValue(true),
@@ -82,6 +85,26 @@ function defaultAdvisor(records = [advisorRecord()]) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockUseAppCore.mockReturnValue({
+    t: (key: string) => {
+      const map: Record<string, string> = {
+        "advisor.eyebrow": "Advisor",
+        "advisor.title": "Champion Recommendations",
+        "advisor.champions": "champions",
+        "advisor.noData": "No advisor data is available for this lane.",
+        "advisor.recommendations": "Recommendations",
+        "common.refresh": "Refresh",
+        "advisor.localSample": "Local Sample",
+      };
+      return map[key] ?? key;
+    },
+    snapshot: null,
+    feedback: null,
+    clearFeedback: vi.fn(),
+    isLoading: false,
+    effectiveLanguage: "en",
+    setLanguagePreference: vi.fn(),
+  });
   mockUseAdvisor.mockReturnValue(defaultAdvisor());
   mockUseLeagueAssets.mockReturnValue({
     leagueImages: { profileIcons: {}, championIcons: {}, gameAssets: {} },

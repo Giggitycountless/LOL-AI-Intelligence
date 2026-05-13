@@ -14,7 +14,7 @@ const lanes: Array<{ id: RankedChampionLane; label: string }> = [
 
 export function Advisor() {
   const { t } = useAppCore();
-  const { advisorData, isAdvisorDataLoading, loadAdvisorData, refreshAdvisorData } = useAdvisor();
+  const { advisorData, isAdvisorDataLoading, advisorDataError, loadAdvisorData, refreshAdvisorData } = useAdvisor();
   const { leagueImages, loadLeagueChampionIcon } = useLeagueAssets();
   const [lane, setLane] = useState<RankedChampionLane>("top");
   const activeAdvisorData = advisorData?.lane === lane ? advisorData : null;
@@ -92,7 +92,7 @@ export function Advisor() {
 
           {records.length === 0 ? (
             <div className="px-5 py-8 text-sm font-medium text-zinc-500">
-              {isAdvisorDataLoading ? t("advisor.loading") : t("advisor.noData")}
+              {isAdvisorDataLoading ? t("advisor.loading") : advisorDataError ?? t("advisor.noData")}
             </div>
           ) : (
             <div className="grid gap-4 p-4 xl:grid-cols-2">

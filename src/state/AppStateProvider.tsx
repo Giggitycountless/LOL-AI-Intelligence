@@ -138,6 +138,7 @@ type AdvisorContextValue = {
   champSelectAdvisorSnapshot: ChampSelectAdvisorSnapshot | null;
   liveOverlaySnapshot: LiveOverlaySnapshot | null;
   isAdvisorDataLoading: boolean;
+  advisorDataError: string | null;
   loadAdvisorData: (input: AdvisorDataInput) => Promise<boolean>;
   refreshAdvisorData: (input: AdvisorDataRefreshInput) => Promise<boolean>;
   refreshChampSelectAdvisorSnapshot: () => Promise<boolean>;
@@ -163,6 +164,7 @@ export function AppStateProvider({ children, mode = "main" }: { children: ReactN
   const [liveOverlaySnapshot, setLiveOverlaySnapshot] = useState<LiveOverlaySnapshot | null>(null);
   const [rankedChampionStats, setRankedChampionStats] = useState<RankedChampionStatsResponse | null>(null);
   const [advisorData, setAdvisorData] = useState<AdvisorDataResponse | null>(null);
+  const [advisorDataError, setAdvisorDataError] = useState<string | null>(null);
   const [postMatchDetails, setPostMatchDetails] = useState<Record<number, PostMatchDetail>>({});
   const [participantProfiles, setParticipantProfiles] = useState<Record<string, ParticipantPublicProfile>>({});
   const [autoAcceptStatus, setAutoAcceptStatus] = useState<AutoAcceptStatus | null>(null);
@@ -283,15 +285,19 @@ export function AppStateProvider({ children, mode = "main" }: { children: ReactN
   }, [run]);
 
   const loadAdvisorDataAction = useCallback(async (input: AdvisorDataInput) => {
-    return run(
+    setAdvisorDataError(null);
+    const ok = await run(
       () => fetchAdvisorData(input),
       setIsAdvisorDataLoading,
       (response) => startTransition(() => setAdvisorData(response)),
     );
+    if (!ok) setAdvisorDataError("Failed to load advisor data");
+    return ok;
   }, [run]);
 
   const refreshAdvisorDataAction = useCallback(async (input: AdvisorDataRefreshInput) => {
-    return run(
+    setAdvisorDataError(null);
+    const ok = await run(
       () => refreshAdvisorData(input),
       setIsAdvisorDataLoading,
       (response) => {
@@ -302,6 +308,8 @@ export function AppStateProvider({ children, mode = "main" }: { children: ReactN
         });
       },
     );
+    if (!ok) setAdvisorDataError("Failed to refresh advisor data");
+    return ok;
   }, [run]);
 
   useEffect(() => {
@@ -871,6 +879,7 @@ export function AppStateProvider({ children, mode = "main" }: { children: ReactN
       champSelectAdvisorSnapshot,
       liveOverlaySnapshot,
       isAdvisorDataLoading,
+      advisorDataError,
       loadAdvisorData: loadAdvisorDataAction,
       refreshAdvisorData: refreshAdvisorDataAction,
       refreshChampSelectAdvisorSnapshot: refreshChampSelectAdvisorSnapshotAction,
@@ -878,6 +887,7 @@ export function AppStateProvider({ children, mode = "main" }: { children: ReactN
     }),
     [
       advisorData,
+      advisorDataError,
       champSelectAdvisorSnapshot,
       isAdvisorDataLoading,
       liveOverlaySnapshot,
