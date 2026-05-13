@@ -1,7 +1,7 @@
 import { useAppCore } from "../state/AppStateProvider";
 import type { LeagueClientStatus } from "../backend/types";
 import { Metric, RefreshIcon } from "../components/common";
-import { formatTimestamp, type T } from "../utils/formatting";
+import { formatTimestamp, formatLeaguePhase, type T } from "../utils/formatting";
 
 export function Dashboard() {
   const { snapshot, isLoading, leagueSelfSnapshot, isLeagueClientLoading, refreshLeagueClient, t } = useAppCore();
@@ -171,31 +171,6 @@ function StatusTile({ label, value, tone }: { label: string; value: string; tone
       </p>
     </div>
   );
-}
-
-function formatLeaguePhase(phase: LeagueClientStatus["phase"] | undefined, t: T) {
-  switch (phase) {
-    case "notRunning":
-      return "Not running";
-    case "lockfileMissing":
-      return "No lockfile";
-    case "unauthorized":
-      return "Unauthorized";
-    case "notLoggedIn":
-      return "Not logged in";
-    case "patching":
-      return "Preparing";
-    case "partialData":
-      return "Partial data";
-    case "unavailable":
-      return t("common.unavailable");
-    case "connecting":
-      return "Connecting";
-    case "connected":
-      return t("common.connected");
-    default:
-      return t("common.pending");
-  }
 }
 
 function leagueStatusMessage(status: LeagueClientStatus | undefined, isLoading: boolean, t: T) {

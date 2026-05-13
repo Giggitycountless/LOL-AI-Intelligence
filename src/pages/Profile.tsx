@@ -2,7 +2,7 @@ import { useEffect } from "react";
 
 import { useAppCore, useLeagueAssets } from "../state/AppStateProvider";
 import { Metric, RefreshIcon } from "../components/common";
-import { formatTimestamp, type T } from "../utils/formatting";
+import { formatTimestamp, formatLeaguePhase, type T } from "../utils/formatting";
 import type { KdaTag, RankedQueue, RankedQueueSummary, RecentChampionSummary } from "../backend/types";
 import type { TranslationKey } from "../i18n";
 
@@ -222,23 +222,6 @@ function performanceLabel(matchCount: number, t: (key: TranslationKey) => string
   }
 
   return `${matchCount} ${t("participant.recentMatches")}`;
-}
-
-function formatLeaguePhase(phase: string, t: (key: TranslationKey) => string) {
-  switch (phase) {
-    case "connected":
-      return t("common.connected");
-    case "partialData":
-      return "Partial data";
-    case "notLoggedIn":
-      return "Not logged in";
-    case "patching":
-      return "Preparing";
-    case "notRunning":
-      return "Not running";
-    default:
-      return t("common.unavailable");
-  }
 }
 
 function initials(value: string) {

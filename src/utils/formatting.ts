@@ -52,3 +52,28 @@ export function formatResult(result: MatchResult, t: T): string {
       return t("common.unknown");
   }
 }
+
+export function formatLeaguePhase(phase: string | undefined, t: T): string {
+  switch (phase) {
+    case "connected":
+      return t("common.connected");
+    case "partialData":
+      return "Partial data";
+    case "unauthorized":
+      return "Unauthorized";
+    case "notLoggedIn":
+      return "Not logged in";
+    case "patching":
+      return "Preparing";
+    case "notRunning":
+      return "Not running";
+    case "lockfileMissing":
+      return "No lockfile";
+    case "connecting":
+      return "Connecting";
+    case "unavailable":
+      return t("common.unavailable");
+    default:
+      return t("common.pending");
+  }
+}
