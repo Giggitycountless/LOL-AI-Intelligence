@@ -688,6 +688,10 @@ export function AppStateProvider({ children, mode = "main" }: { children: ReactN
       clearOverlayOpenTimer();
     });
 
+    const cleanupOverlayShortcut = listenWithCleanup("open-self-history-overlay", () => {
+      void openSelfHistoryOverlayWindow();
+    });
+
     void openSelfHistoryOverlayWindow();
 
     return () => {
@@ -695,6 +699,7 @@ export function AppStateProvider({ children, mode = "main" }: { children: ReactN
       cleanupFeedback();
       cleanupStatus();
       cleanupLeaguePhase();
+      cleanupOverlayShortcut();
     };
   }, [mode]);
 

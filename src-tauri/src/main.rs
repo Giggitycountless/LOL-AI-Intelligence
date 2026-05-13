@@ -1,4 +1,4 @@
-use tauri::{Manager, State};
+use tauri::{Emitter, Manager, State};
 use tauri_plugin_global_shortcut::ShortcutState;
 
 const SELF_HISTORY_OVERLAY_WINDOW_LABEL: &str = "self-history-overlay";
@@ -246,6 +246,7 @@ fn main() {
                     .map(|state| platform::can_open_self_history_overlay(state.inner()))
                     .unwrap_or(false);
                 let Some(window) = app.get_webview_window(SELF_HISTORY_OVERLAY_WINDOW_LABEL) else {
+                    let _ = app.emit("open-self-history-overlay", ());
                     return;
                 };
 
