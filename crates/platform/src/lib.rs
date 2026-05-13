@@ -3,8 +3,8 @@ use std::{
     error::Error,
     path::Path,
     sync::{
-        atomic::{AtomicBool, AtomicU64, Ordering},
         Arc, Mutex, MutexGuard,
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
     thread,
     time::{Duration, Instant},
@@ -15,11 +15,11 @@ use adapters::{
     RemoteAdvisorJsonProvider, RemoteRankedChampionJsonProvider,
 };
 use application::{
-    normalize_player_name, ActivityListInput, ActivityNoteInput, AdvisorDataInput,
-    AdvisorDataRefreshInput, ApplicationError, LeagueChampionDetailsInput, LeagueChampionIconInput,
-    LeagueClientReadError, LeagueClientReader, LeagueGameAssetInput, LeagueProfileIconInput,
-    LeagueSelfSnapshotInput, ParticipantPublicProfileInput, PostMatchDetailInput,
-    RankedChampionRefreshInput, RankedChampionStatsInput, SettingsInput,
+    ActivityListInput, ActivityNoteInput, AdvisorDataInput, AdvisorDataRefreshInput,
+    ApplicationError, LeagueChampionDetailsInput, LeagueChampionIconInput, LeagueClientReadError,
+    LeagueClientReader, LeagueGameAssetInput, LeagueProfileIconInput, LeagueSelfSnapshotInput,
+    ParticipantPublicProfileInput, PostMatchDetailInput, RankedChampionRefreshInput,
+    RankedChampionStatsInput, SettingsInput, normalize_player_name,
 };
 use domain::{
     ActivityEntry, ActivityKind, AdvisorDataResponse, AppSettings, AppSnapshot, AutoAcceptStatus,
@@ -689,6 +689,13 @@ pub struct CommandError {
     pub message: String,
 }
 
+impl CommandError {
+    fn with_source(mut self, source: &'static str) -> Self {
+        self.message = format!("{source}: {}", self.message);
+        self
+    }
+}
+
 impl From<ApplicationError> for CommandError {
     fn from(error: ApplicationError) -> Self {
         Self {
@@ -719,7 +726,19 @@ where
 
     log_auto_accept_monitor_event("league event service starting");
     set_auto_accept_idle_status(&app_handle, &state);
-    thread::spawn(move || league_event_loop(app_handle, state));
+    thread::spawn(move || {
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+            league_event_loop(app_handle, state);
+        }));
+        if let Err(panic) = result {
+            let message = panic
+                .downcast_ref::<&str>()
+                .map(|s| s.to_string())
+                .or_else(|| panic.downcast_ref::<String>().cloned())
+                .unwrap_or_else(|| "unknown panic".to_string());
+            eprintln!("[league-event-loop] PANIC: {message}");
+        }
+    });
     true
 }
 
@@ -910,10 +929,10 @@ where
         service_state.phase = Some(phase.clone());
     }
 
-    if phase == "ChampSelect" {
-        if let Some(fingerprint) = refresh_champ_select_from_event(app_handle, state) {
-            service_state.fingerprint = fingerprint;
-        }
+    if phase == "ChampSelect"
+        && let Some(fingerprint) = refresh_champ_select_from_event(app_handle, state)
+    {
+        service_state.fingerprint = fingerprint;
     }
 
     true
@@ -1415,7 +1434,9 @@ pub fn healthcheck(state: &AppState) -> HealthReport {
 }
 
 pub fn get_app_state(state: &AppState) -> Result<AppSnapshot, CommandError> {
-    application::app_snapshot(&state.store).map_err(CommandError::from)
+    application::app_snapshot(&state.store)
+        .map_err(CommandError::from)
+        .map_err(|e| e.with_source("get_app_state"))
 }
 
 pub fn get_settings(state: &AppState) -> Result<AppSettings, CommandError> {
@@ -1540,6 +1561,7 @@ pub fn get_league_self_snapshot(
         },
     )
     .map_err(CommandError::from)
+    .map_err(|e| e.with_source("get_league_self_snapshot"))
 }
 
 pub fn get_champ_select_snapshot(
@@ -1610,7 +1632,9 @@ fn build_champ_select_snapshot(
         cache_metrics: &state.cache_metrics,
     };
 
-    application::get_champ_select_snapshot(&cached_reader, recent_limit).map_err(CommandError::from)
+    application::get_champ_select_snapshot(&cached_reader, recent_limit)
+        .map_err(CommandError::from)
+        .map_err(|e| e.with_source("get_champ_select_snapshot"))
 }
 
 pub fn cache_metrics_snapshot(state: &AppState) -> CacheMetricsSnapshot {
@@ -1646,6 +1670,7 @@ pub fn get_ranked_champion_stats(
         },
     )
     .map_err(CommandError::from)
+    .map_err(|e| e.with_source("get_ranked_champion_stats"))
 }
 
 pub fn refresh_ranked_champion_stats(
@@ -1676,6 +1701,7 @@ pub fn get_advisor_data(
         },
     )
     .map_err(CommandError::from)
+    .map_err(|e| e.with_source("get_advisor_data"))
 }
 
 pub fn refresh_advisor_data(
@@ -1714,7 +1740,9 @@ pub fn get_champ_select_advisor_snapshot(
 }
 
 pub fn get_live_overlay_snapshot(state: &AppState) -> Result<LiveOverlaySnapshot, CommandError> {
-    application::get_live_overlay_snapshot(&state.league_client).map_err(CommandError::from)
+    application::get_live_overlay_snapshot(&state.league_client)
+        .map_err(CommandError::from)
+        .map_err(|e| e.with_source("get_live_overlay_snapshot"))
 }
 
 pub fn get_league_profile_icon(
