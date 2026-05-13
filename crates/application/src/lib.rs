@@ -35,7 +35,7 @@ fn log_auto_accept_attempt(attempt: usize, message: &str) {
     eprintln!("[auto-accept] attempt {attempt}: {message}");
 }
 
-use ranked_seeds::{RankedChampionSeed, RANKED_CHAMPION_SEEDS};
+use ranked_seeds::{RANKED_CHAMPION_SEEDS, RankedChampionSeed};
 
 pub trait AppStore {
     fn schema_version(&self) -> Result<i64, String>;
@@ -58,7 +58,7 @@ pub trait AppStore {
     fn save_player_note(&self, note: StoredPlayerNoteInput) -> Result<StoredPlayerNote, String>;
     fn clear_player_note(&self, player_puuid: &str) -> Result<bool, String>;
     fn latest_ranked_champion_snapshot(&self)
-        -> Result<Option<RankedChampionDataSnapshot>, String>;
+    -> Result<Option<RankedChampionDataSnapshot>, String>;
     fn replace_ranked_champion_snapshot(
         &self,
         snapshot: RankedChampionDataSnapshot,
@@ -74,7 +74,7 @@ pub trait LeagueClientReader {
     fn status(&self) -> Result<LeagueClientStatus, LeagueClientReadError>;
     fn self_data(&self, match_limit: i64) -> Result<LeagueSelfData, LeagueClientReadError>;
     fn profile_icon(&self, profile_icon_id: i64)
-        -> Result<LeagueImageAsset, LeagueClientReadError>;
+    -> Result<LeagueImageAsset, LeagueClientReadError>;
     fn champion_icon(&self, champion_id: i64) -> Result<LeagueImageAsset, LeagueClientReadError>;
     fn game_asset(
         &self,
@@ -1464,12 +1464,12 @@ fn normalize_player_note(note: Option<String>) -> Result<Option<String>, Applica
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty());
 
-    if let Some(value) = &note {
-        if value.chars().count() > MAX_PLAYER_NOTE_LEN {
-            return Err(ApplicationError::Validation(format!(
-                "Player note must be {MAX_PLAYER_NOTE_LEN} characters or fewer"
-            )));
-        }
+    if let Some(value) = &note
+        && value.chars().count() > MAX_PLAYER_NOTE_LEN
+    {
+        return Err(ApplicationError::Validation(format!(
+            "Player note must be {MAX_PLAYER_NOTE_LEN} characters or fewer"
+        )));
     }
 
     Ok(note)
@@ -1833,6 +1833,7 @@ fn sample_advisor_snapshot() -> AdvisorDataSnapshot {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn sample_advisor_record(
     champion_id: i64,
     champion_name: &str,
@@ -2004,12 +2005,12 @@ fn validate_activity_body(
         .as_ref()
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty());
-    if let Some(ref value) = trimmed {
-        if value.chars().count() > MAX_ACTIVITY_BODY_LEN {
-            return Err(ApplicationError::Validation(format!(
-                "{label} must be {MAX_ACTIVITY_BODY_LEN} characters or fewer"
-            )));
-        }
+    if let Some(ref value) = trimmed
+        && value.chars().count() > MAX_ACTIVITY_BODY_LEN
+    {
+        return Err(ApplicationError::Validation(format!(
+            "{label} must be {MAX_ACTIVITY_BODY_LEN} characters or fewer"
+        )));
     }
     Ok(trimmed)
 }
@@ -2242,8 +2243,8 @@ pub fn get_champ_select_snapshot(
         .values()
         .filter(|result| result.is_err())
         .count();
-    log_overlay_history_snapshot(
-        session.source,
+    log_overlay_history_snapshot(OverlayHistoryLogArgs {
+        source: session.source,
         player_count,
         resolved_identity_count,
         missing_identity_count,
@@ -2251,7 +2252,7 @@ pub fn get_champ_select_snapshot(
         recent_stats_success,
         recent_stats_failed,
         recent_limit,
-    );
+    });
     let players = seeds
         .into_iter()
         .map(|seed| {
@@ -2287,7 +2288,7 @@ pub fn get_champ_select_snapshot(
     })
 }
 
-fn log_overlay_history_snapshot(
+struct OverlayHistoryLogArgs {
     source: ChampSelectSessionSource,
     player_count: usize,
     resolved_identity_count: usize,
@@ -2296,18 +2297,23 @@ fn log_overlay_history_snapshot(
     recent_stats_success: usize,
     recent_stats_failed: usize,
     recent_limit: i64,
-) {
+}
+
+fn log_overlay_history_snapshot(args: OverlayHistoryLogArgs) {
     eprintln!(
         "[overlay-history] roster source={} players={} puuidResolved={} missingIdentity={} recentLimit={}",
-        source.as_log_label(),
-        player_count,
-        resolved_identity_count,
-        missing_identity_count,
-        recent_limit
+        args.source.as_log_label(),
+        args.player_count,
+        args.resolved_identity_count,
+        args.missing_identity_count,
+        args.recent_limit
     );
     eprintln!(
         "[overlay-history] recent stats requested={} success={} failed={} missingIdentity={}",
-        recent_stats_requested, recent_stats_success, recent_stats_failed, missing_identity_count
+        args.recent_stats_requested,
+        args.recent_stats_success,
+        args.recent_stats_failed,
+        args.missing_identity_count
     );
 }
 

@@ -100,9 +100,9 @@ fn ready_check_automation_records_system_activity_when_ready_check_stays_active(
     let error = run_ready_check_automation(&store, &reader).expect_err("automation should fail");
 
     assert_eq!(
-            error.to_string(),
-            "Auto-accept did not move the client out of ReadyCheck after multiple verification attempts"
-        );
+        error.to_string(),
+        "Auto-accept did not move the client out of ReadyCheck after multiple verification attempts"
+    );
     assert_eq!(reader.accept_ready_check_count(), 4);
     assert_eq!(store.created_entries.borrow().len(), 1);
     assert_eq!(store.created_entries.borrow()[0].kind, ActivityKind::System);
@@ -302,10 +302,12 @@ fn champ_select_snapshot_batches_recent_stats() {
     let snapshot = get_champ_select_snapshot(&reader, 6).expect("champ select snapshot reads");
 
     assert_eq!(snapshot.players.len(), 2);
-    assert!(snapshot
-        .players
-        .iter()
-        .all(|player| player.recent_stats.is_some()));
+    assert!(
+        snapshot
+            .players
+            .iter()
+            .all(|player| player.recent_stats.is_some())
+    );
     assert_eq!(
         reader.recent_stats_batch_calls(),
         vec![vec!["puuid-1".to_string(), "puuid-2".to_string()]]
@@ -433,14 +435,18 @@ fn ranked_champion_stats_filters_lane_and_sorts_by_win_rate() {
 
     assert_eq!(response.lane, Some(RankedChampionLane::Jungle));
     assert_eq!(response.sort_by, RankedChampionSort::WinRate);
-    assert!(response
-        .records
-        .iter()
-        .all(|record| record.lane == RankedChampionLane::Jungle));
-    assert!(response
-        .records
-        .windows(2)
-        .all(|records| records[0].win_rate >= records[1].win_rate));
+    assert!(
+        response
+            .records
+            .iter()
+            .all(|record| record.lane == RankedChampionLane::Jungle)
+    );
+    assert!(
+        response
+            .records
+            .windows(2)
+            .all(|records| records[0].win_rate >= records[1].win_rate)
+    );
 }
 
 #[test]
@@ -647,11 +653,12 @@ fn champ_select_advisor_snapshot_adds_tags_and_matchup_advice() {
 
     assert!(ally.tags.iter().any(|tag| tag.label == "Strong pick"));
     assert!(ally.tags.iter().any(|tag| tag.label.starts_with("Spike ")));
-    assert!(ally
-        .matchup_advice
-        .as_deref()
-        .unwrap_or_default()
-        .contains("Darius"));
+    assert!(
+        ally.matchup_advice
+            .as_deref()
+            .unwrap_or_default()
+            .contains("Darius")
+    );
 }
 
 #[test]
