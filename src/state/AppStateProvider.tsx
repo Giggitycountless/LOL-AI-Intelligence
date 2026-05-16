@@ -1,33 +1,26 @@
-import { createContext, startTransition, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { startTransition, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { clearActivityEntries, createActivityNote, listActivityEntries } from "../backend/activity";
-import { isCommandError } from "../backend/commands";
 import { exportLocalData, importLocalData } from "../backend/dataTools";
 import {
-  clearPlayerNote as clearPlayerNoteCommand,
-  fetchAdvisorData,
-  fetchAutoAcceptStatus,
-  fetchChampSelectAdvisorSnapshot,
-  fetchChampSelectSnapshot,
-  fetchLeagueChampionDetails,
-  fetchLeagueChampionIcon,
-  fetchLeagueGameAsset,
-  fetchLeagueProfileIcon,
   fetchLeagueSelfSnapshot,
-  fetchLiveOverlaySnapshot,
-  fetchPostMatchDetail,
-  fetchPostMatchParticipantProfile,
   fetchRankedChampionStats,
   refreshRankedChampionStats,
+  fetchAdvisorData,
   refreshAdvisorData,
+  clearPlayerNote as clearPlayerNoteCommand,
+  fetchPostMatchDetail,
+  fetchPostMatchParticipantProfile,
   savePlayerNote as savePlayerNoteCommand,
+  fetchChampSelectSnapshot,
+  fetchChampSelectAdvisorSnapshot,
+  fetchLiveOverlaySnapshot,
 } from "../backend/leagueClient";
 import { saveSettings } from "../backend/settings";
 import { createTranslator, resolveEffectiveLanguage, type EffectiveLanguage, type TranslationKey } from "../i18n";
 import { fetchAppState } from "../backend/system";
-import { listenWithCleanup } from "../backend/events";
 import { useAsyncAction } from "./useAsyncAction";
-import { openSelfHistoryOverlayWindow } from "../windows/selfHistoryOverlayWindow";
+import { participantProfileKey } from "./utils";
 import type {
   ActivityEntry,
   ActivityListInput,
@@ -41,11 +34,6 @@ import type {
   ChampSelectSnapshot,
   ChampSelectAdvisorSnapshot,
   Feedback,
-  LeagueChampionAbility,
-  LeagueChampionDetails,
-  LeagueGameAsset,
-  LeagueGameAssetKind,
-  LeagueImageAsset,
   LeagueSelfSnapshot,
   LeagueSelfSnapshotInput,
   LiveOverlaySnapshot,
@@ -59,101 +47,18 @@ import type {
   SavePlayerNoteInput,
   SaveSettingsInput,
 } from "../backend/types";
-
-type LeagueImageUrls = {
-  profileIcons: Record<number, string>;
-  championIcons: Record<number, string>;
-  gameAssets: Record<string, LeagueGameAssetView>;
-};
-
-export type AppWindowMode = "main" | "overlay" | "participant";
-
-export type LeagueGameAssetView = Omit<LeagueGameAsset, "image"> & {
-  imageUrl: string;
-};
-
-export type LeagueChampionAbilityView = Omit<LeagueChampionAbility, "icon"> & {
-  iconUrl: string | null;
-};
-
-export type LeagueChampionDetailsView = Omit<LeagueChampionDetails, "squarePortrait" | "abilities"> & {
-  squarePortraitUrl: string | null;
-  abilities: LeagueChampionAbilityView[];
-};
-
-type AppStateContextValue = {
-  // Compatibility hook shape. Prefer the narrower hooks below for new UI code.
-} & AppCoreContextValue & LeagueAssetsContextValue & ChampSelectContextValue & AdvisorContextValue;
-
-type AppCoreContextValue = {
-  snapshot: AppSnapshot | null;
-  activityEntries: ActivityEntry[];
-  leagueSelfSnapshot: LeagueSelfSnapshot | null;
-  rankedChampionStats: RankedChampionStatsResponse | null;
-  postMatchDetails: Record<number, PostMatchDetail>;
-  participantProfiles: Record<string, ParticipantPublicProfile>;
-  autoAcceptStatus: AutoAcceptStatus | null;
-  isLoading: boolean;
-  isActivityLoading: boolean;
-  isLeagueClientLoading: boolean;
-  isRankedChampionStatsLoading: boolean;
-  feedback: Feedback | null;
-  languagePreference: AppLanguagePreference;
-  effectiveLanguage: EffectiveLanguage;
-  t: (key: TranslationKey) => string;
-  clearFeedback: () => void;
-  refresh: () => Promise<boolean>;
-  loadActivityEntries: (input: ActivityListInput) => Promise<boolean>;
-  refreshLeagueClient: (input?: LeagueSelfSnapshotInput) => Promise<boolean>;
-  loadRankedChampionStats: (input: RankedChampionStatsInput) => Promise<boolean>;
-  refreshRankedChampionStats: (input: RankedChampionRefreshInput) => Promise<boolean>;
-  saveSettings: (settings: SaveSettingsInput) => Promise<boolean>;
-  setLanguagePreference: (language: AppLanguagePreference) => Promise<boolean>;
-  createActivityNote: (input: ActivityNoteInput) => Promise<boolean>;
-  clearActivityEntries: (confirm: boolean) => Promise<boolean>;
-  exportLocalData: () => Promise<string | null>;
-  importLocalData: (json: string) => Promise<boolean>;
-  loadPostMatchDetail: (gameId: number) => Promise<boolean>;
-  loadParticipantProfile: (input: ParticipantPublicProfileInput) => Promise<boolean>;
-  savePlayerNote: (input: SavePlayerNoteInput) => Promise<PlayerNoteView | null>;
-  clearPlayerNote: (gameId: number, participantId: number) => Promise<boolean>;
-};
-
-type LeagueAssetsContextValue = {
-  championDetailsById: Record<number, LeagueChampionDetailsView>;
-  leagueImages: LeagueImageUrls;
-  loadLeagueProfileIcon: (profileIconId: number | null | undefined) => Promise<boolean>;
-  loadLeagueChampionIcon: (championId: number | null | undefined) => Promise<boolean>;
-  loadLeagueChampionDetails: (championId: number | null | undefined) => Promise<boolean>;
-  loadLeagueGameAsset: (kind: LeagueGameAssetKind, assetId: number | null | undefined) => Promise<boolean>;
-};
-
-type ChampSelectContextValue = {
-  champSelectSnapshot: ChampSelectSnapshot | null;
-  refreshChampSelectSnapshot: () => Promise<boolean>;
-};
-
-type AdvisorContextValue = {
-  advisorData: AdvisorDataResponse | null;
-  champSelectAdvisorSnapshot: ChampSelectAdvisorSnapshot | null;
-  liveOverlaySnapshot: LiveOverlaySnapshot | null;
-  isAdvisorDataLoading: boolean;
-  advisorDataError: string | null;
-  loadAdvisorData: (input: AdvisorDataInput) => Promise<boolean>;
-  refreshAdvisorData: (input: AdvisorDataRefreshInput) => Promise<boolean>;
-  refreshChampSelectAdvisorSnapshot: () => Promise<boolean>;
-  refreshLiveOverlaySnapshot: () => Promise<boolean>;
-};
-
-const AppStateContext = createContext<AppStateContextValue | null>(null);
-const AppCoreContext = createContext<AppCoreContextValue | null>(null);
-const LeagueAssetsContext = createContext<LeagueAssetsContextValue | null>(null);
-const ChampSelectContext = createContext<ChampSelectContextValue | null>(null);
-const AdvisorContext = createContext<AdvisorContextValue | null>(null);
-const ASSET_LOAD_CONCURRENCY = 4;
-const ASSET_LOAD_DELAY_MS = 16;
-const CHAMP_SELECT_ADVISOR_REFRESH_DELAY_MS = 250;
-const SELF_HISTORY_OVERLAY_OPEN_DELAY_MS = 500;
+import type {
+  AppCoreContextValue,
+  LeagueAssetsContextValue,
+  ChampSelectContextValue,
+  AdvisorContextValue,
+  LeagueImageUrls,
+  AppWindowMode,
+} from "./types";
+import { AppCoreContext, LeagueAssetsContext, ChampSelectContext, AdvisorContext, AppStateContext } from "./hooks";
+import { useAssetLoader, leagueGameAssetKey } from "./useAssetLoader";
+import { useAppEffects } from "./useOverlayEvents";
+import { champSelectFingerprint as _champSelectFingerprint, errorMessage } from "./utils";
 
 export function AppStateProvider({ children, mode = "main" }: { children: ReactNode; mode?: AppWindowMode }) {
   const [snapshot, setSnapshot] = useState<AppSnapshot | null>(null);
@@ -168,17 +73,6 @@ export function AppStateProvider({ children, mode = "main" }: { children: ReactN
   const [postMatchDetails, setPostMatchDetails] = useState<Record<number, PostMatchDetail>>({});
   const [participantProfiles, setParticipantProfiles] = useState<Record<string, ParticipantPublicProfile>>({});
   const [autoAcceptStatus, setAutoAcceptStatus] = useState<AutoAcceptStatus | null>(null);
-  const [championDetailsById, setChampionDetailsById] = useState<Record<number, LeagueChampionDetailsView>>({});
-  const imageUrlsRef = useRef<LeagueImageUrls>({ profileIcons: {}, championIcons: {}, gameAssets: {} });
-  const championDetailsRef = useRef<Record<number, LeagueChampionDetailsView>>({});
-  const pendingImageKeysRef = useRef(new Set<string>());
-  const assetQueueRef = useRef<Array<() => void>>([]);
-  const activeAssetLoadsRef = useRef(0);
-  const assetQueueTimerRef = useRef<number | null>(null);
-  const drainAssetQueueRef = useRef<(() => void) | null>(null);
-  const imageFlushRef = useRef<number | null>(null);
-  const champSelectFingerprintRef = useRef("");
-  const [leagueImages, setLeagueImages] = useState<LeagueImageUrls>(imageUrlsRef.current);
   const [isLoading, setIsLoading] = useState(true);
   const [isActivityLoading, setIsActivityLoading] = useState(false);
   const [isLeagueClientLoading, setIsLeagueClientLoading] = useState(false);
@@ -190,58 +84,12 @@ export function AppStateProvider({ children, mode = "main" }: { children: ReactN
   const effectiveLanguage = useMemo(() => resolveEffectiveLanguage(languagePreference), [languagePreference]);
   const t = useMemo(() => createTranslator(effectiveLanguage), [effectiveLanguage]);
 
-  const scheduleLeagueImagesUpdate = useCallback(() => {
-    if (imageFlushRef.current !== null) {
-      return;
-    }
+  // ── Asset loader ──
+  const [championDetailsById, setChampionDetailsById] = useState<Record<number, import("./types").LeagueChampionDetailsView>>({});
+  const [leagueImages, setLeagueImages] = useState<LeagueImageUrls>({ profileIcons: {}, championIcons: {}, gameAssets: {} });
+  const assetLoader = useAssetLoader(setLeagueImages, setChampionDetailsById);
 
-    imageFlushRef.current = window.requestAnimationFrame(() => {
-      imageFlushRef.current = null;
-      setLeagueImages(imageUrlsRef.current);
-    });
-  }, []);
-
-  const scheduleAssetQueueDrain = useCallback(() => {
-    if (assetQueueTimerRef.current !== null) {
-      return;
-    }
-
-    assetQueueTimerRef.current = window.setTimeout(() => {
-      assetQueueTimerRef.current = null;
-      drainAssetQueueRef.current?.();
-    }, ASSET_LOAD_DELAY_MS);
-  }, []);
-
-  const enqueueAssetLoad = useCallback(
-    (task: () => Promise<boolean>) =>
-      new Promise<boolean>((resolve) => {
-        assetQueueRef.current.push(() => {
-          activeAssetLoadsRef.current += 1;
-          void task()
-            .then(resolve)
-            .catch(() => resolve(false))
-            .finally(() => {
-              activeAssetLoadsRef.current = Math.max(0, activeAssetLoadsRef.current - 1);
-              scheduleAssetQueueDrain();
-            });
-        });
-
-        scheduleAssetQueueDrain();
-      }),
-    [scheduleAssetQueueDrain],
-  );
-
-  drainAssetQueueRef.current = () => {
-    while (activeAssetLoadsRef.current < ASSET_LOAD_CONCURRENCY) {
-      const runNext = assetQueueRef.current.shift();
-      if (!runNext) {
-        return;
-      }
-
-      runNext();
-    }
-  };
-
+  // ── Data actions ──
   const refresh = useCallback(async () => {
     return run(() => fetchAppState(), setIsLoading, setSnapshot);
   }, [run]);
@@ -312,6 +160,58 @@ export function AppStateProvider({ children, mode = "main" }: { children: ReactN
     return ok;
   }, [run]);
 
+  // ── Champ select actions ──
+  const champSelectFingerprintRef = useRef("");
+
+  const applyChampSelectSnapshotAction = useCallback((snapshot: ChampSelectSnapshot) => {
+    const nextFingerprint = _champSelectFingerprint(snapshot);
+    if (champSelectFingerprintRef.current === nextFingerprint) {
+      return;
+    }
+    champSelectFingerprintRef.current = nextFingerprint;
+    startTransition(() => {
+      setChampSelectSnapshot(snapshot);
+    });
+    for (const player of snapshot.players) {
+      void assetLoader.loadLeagueChampionIcon(player.championId);
+      for (const match of player.recentStats?.recentMatches ?? []) {
+        void assetLoader.loadLeagueChampionIcon(match.championId);
+      }
+    }
+  }, [assetLoader.loadLeagueChampionIcon]);
+
+  const refreshChampSelectSnapshotAction = useCallback(async () => {
+    return run(() => fetchChampSelectSnapshot(6), undefined, applyChampSelectSnapshotAction);
+  }, [run, applyChampSelectSnapshotAction]);
+
+  const refreshChampSelectAdvisorSnapshotAction = useCallback(async () => {
+    try {
+      const snapshot = await fetchChampSelectAdvisorSnapshot(6);
+      startTransition(() => setChampSelectAdvisorSnapshot(snapshot));
+      for (const player of snapshot.players) {
+        void assetLoader.loadLeagueChampionIcon(player.championId);
+        for (const match of player.recentStats?.recentMatches ?? []) {
+          void assetLoader.loadLeagueChampionIcon(match.championId);
+        }
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  }, [assetLoader.loadLeagueChampionIcon]);
+
+  const refreshLiveOverlaySnapshotAction = useCallback(async () => {
+    try {
+      const snapshot = await fetchLiveOverlaySnapshot();
+      startTransition(() => setLiveOverlaySnapshot(snapshot));
+      return true;
+    } catch {
+      startTransition(() => setLiveOverlaySnapshot(null));
+      return false;
+    }
+  }, []);
+
+  // ── Effects ──
   useEffect(() => {
     void refresh();
     if (mode === "main") {
@@ -320,36 +220,21 @@ export function AppStateProvider({ children, mode = "main" }: { children: ReactN
   }, [mode, refresh, refreshLeagueClientAction]);
 
   useEffect(() => {
-    return () => {
-      for (const url of Object.values(imageUrlsRef.current.profileIcons)) {
-        URL.revokeObjectURL(url);
-      }
-      for (const url of Object.values(imageUrlsRef.current.championIcons)) {
-        URL.revokeObjectURL(url);
-      }
-      for (const asset of Object.values(imageUrlsRef.current.gameAssets)) {
-        URL.revokeObjectURL(asset.imageUrl);
-      }
-      for (const details of Object.values(championDetailsRef.current)) {
-        if (details.squarePortraitUrl) {
-          URL.revokeObjectURL(details.squarePortraitUrl);
-        }
-        for (const ability of details.abilities) {
-          if (ability.iconUrl) {
-            URL.revokeObjectURL(ability.iconUrl);
-          }
-        }
-      }
-      if (imageFlushRef.current !== null) {
-        window.cancelAnimationFrame(imageFlushRef.current);
-      }
-      if (assetQueueTimerRef.current !== null) {
-        window.clearTimeout(assetQueueTimerRef.current);
-      }
-      assetQueueRef.current = [];
-    };
-  }, []);
+    return assetLoader.cleanup;
+  }, [assetLoader.cleanup]);
 
+  useAppEffects({
+    mode,
+    champSelectFingerprintRef,
+    setChampSelectSnapshot,
+    setChampSelectAdvisorSnapshot,
+    setLiveOverlaySnapshot,
+    setAutoAcceptStatus,
+    setFeedback,
+    onChampSelectUpdate: applyChampSelectSnapshotAction,
+  });
+
+  // ── Settings / data actions ──
   const saveSettingsAction = useCallback(
     async (settings: SaveSettingsInput) => {
       try {
@@ -452,295 +337,6 @@ export function AppStateProvider({ children, mode = "main" }: { children: ReactN
     [refresh],
   );
 
-  const loadLeagueProfileIconAction = useCallback(async (profileIconId: number | null | undefined) => {
-    if (!profileIconId || imageUrlsRef.current.profileIcons[profileIconId]) {
-      return true;
-    }
-
-    const key = `profile:${profileIconId}`;
-    if (pendingImageKeysRef.current.has(key)) {
-      return true;
-    }
-
-    pendingImageKeysRef.current.add(key);
-    return enqueueAssetLoad(async () => {
-      try {
-        const asset = await fetchLeagueProfileIcon(profileIconId);
-        const url = imageAssetUrl(asset);
-        imageUrlsRef.current = {
-          ...imageUrlsRef.current,
-          profileIcons: {
-            ...imageUrlsRef.current.profileIcons,
-            [profileIconId]: url,
-          },
-        };
-        scheduleLeagueImagesUpdate();
-        return true;
-      } catch {
-        return false;
-      } finally {
-        pendingImageKeysRef.current.delete(key);
-      }
-    });
-  }, [enqueueAssetLoad, scheduleLeagueImagesUpdate]);
-
-  const loadLeagueChampionIconAction = useCallback(async (championId: number | null | undefined) => {
-    if (!championId || imageUrlsRef.current.championIcons[championId]) {
-      return true;
-    }
-
-    const key = `champion:${championId}`;
-    if (pendingImageKeysRef.current.has(key)) {
-      return true;
-    }
-
-    pendingImageKeysRef.current.add(key);
-    return enqueueAssetLoad(async () => {
-      try {
-        const asset = await fetchLeagueChampionIcon(championId);
-        const url = imageAssetUrl(asset);
-        imageUrlsRef.current = {
-          ...imageUrlsRef.current,
-          championIcons: {
-            ...imageUrlsRef.current.championIcons,
-            [championId]: url,
-          },
-        };
-        scheduleLeagueImagesUpdate();
-        return true;
-      } catch {
-        return false;
-      } finally {
-        pendingImageKeysRef.current.delete(key);
-      }
-    });
-  }, [enqueueAssetLoad, scheduleLeagueImagesUpdate]);
-
-  const applyChampSelectSnapshotAction = useCallback((snapshot: ChampSelectSnapshot) => {
-    const nextFingerprint = champSelectFingerprint(snapshot);
-    if (champSelectFingerprintRef.current === nextFingerprint) {
-      return;
-    }
-    champSelectFingerprintRef.current = nextFingerprint;
-    startTransition(() => {
-      setChampSelectSnapshot(snapshot);
-    });
-    for (const player of snapshot.players) {
-      void loadLeagueChampionIconAction(player.championId);
-      for (const match of player.recentStats?.recentMatches ?? []) {
-        void loadLeagueChampionIconAction(match.championId);
-      }
-    }
-  }, [loadLeagueChampionIconAction]);
-
-  const refreshChampSelectSnapshotAction = useCallback(async () => {
-    return run(() => fetchChampSelectSnapshot(6), undefined, applyChampSelectSnapshotAction);
-  }, [run, applyChampSelectSnapshotAction]);
-
-  const applyChampSelectAdvisorSnapshotAction = useCallback((snapshot: ChampSelectAdvisorSnapshot) => {
-    startTransition(() => {
-      setChampSelectAdvisorSnapshot(snapshot);
-    });
-    for (const player of snapshot.players) {
-      void loadLeagueChampionIconAction(player.championId);
-      for (const match of player.recentStats?.recentMatches ?? []) {
-        void loadLeagueChampionIconAction(match.championId);
-      }
-    }
-  }, [loadLeagueChampionIconAction]);
-
-  const refreshChampSelectAdvisorSnapshotAction = useCallback(async () => {
-    return run(() => fetchChampSelectAdvisorSnapshot(6), undefined, applyChampSelectAdvisorSnapshotAction);
-  }, [run, applyChampSelectAdvisorSnapshotAction]);
-
-  const refreshLiveOverlaySnapshotAction = useCallback(async () => {
-    try {
-      const snapshot = await fetchLiveOverlaySnapshot();
-      startTransition(() => setLiveOverlaySnapshot(snapshot));
-      return true;
-    } catch {
-      startTransition(() => setLiveOverlaySnapshot(null));
-      return false;
-    }
-  }, []);
-
-  const loadLeagueChampionDetailsAction = useCallback(async (championId: number | null | undefined) => {
-    if (!championId || championDetailsRef.current[championId]) {
-      return true;
-    }
-
-    const key = `champion-details:${championId}`;
-    if (pendingImageKeysRef.current.has(key)) {
-      return true;
-    }
-
-    pendingImageKeysRef.current.add(key);
-    try {
-      const details = await fetchLeagueChampionDetails(championId);
-      const view = championDetailsView(details);
-      championDetailsRef.current = {
-        ...championDetailsRef.current,
-        [championId]: view,
-      };
-      setChampionDetailsById(championDetailsRef.current);
-      return true;
-    } catch {
-      return false;
-    } finally {
-      pendingImageKeysRef.current.delete(key);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (mode !== "overlay") {
-      return;
-    }
-
-    let advisorRefreshTimer: number | null = null;
-    const clearAdvisorRefreshTimer = () => {
-      if (advisorRefreshTimer !== null) {
-        window.clearTimeout(advisorRefreshTimer);
-        advisorRefreshTimer = null;
-      }
-    };
-    const scheduleAdvisorRefresh = () => {
-      clearAdvisorRefreshTimer();
-      advisorRefreshTimer = window.setTimeout(() => {
-        advisorRefreshTimer = null;
-        void refreshChampSelectAdvisorSnapshotAction();
-      }, CHAMP_SELECT_ADVISOR_REFRESH_DELAY_MS);
-    };
-
-    const cleanupUpdate = listenWithCleanup<ChampSelectSnapshot>("champ-select-update", (event) => {
-      applyChampSelectSnapshotAction(event.payload);
-      scheduleAdvisorRefresh();
-    });
-
-    const cleanupClear = listenWithCleanup<void>("champ-select-clear", () => {
-      champSelectFingerprintRef.current = "";
-      setChampSelectSnapshot(null);
-      setChampSelectAdvisorSnapshot(null);
-      setLiveOverlaySnapshot(null);
-      clearAdvisorRefreshTimer();
-    });
-
-    void refreshChampSelectSnapshotAction();
-    void refreshChampSelectAdvisorSnapshotAction();
-    void refreshLiveOverlaySnapshotAction();
-    const liveTimer = window.setInterval(() => {
-      void refreshLiveOverlaySnapshotAction();
-    }, 5000);
-
-    return () => {
-      clearAdvisorRefreshTimer();
-      cleanupUpdate();
-      cleanupClear();
-      window.clearInterval(liveTimer);
-    };
-  }, [
-    applyChampSelectSnapshotAction,
-    mode,
-    refreshChampSelectAdvisorSnapshotAction,
-    refreshChampSelectSnapshotAction,
-    refreshLiveOverlaySnapshotAction,
-  ]);
-
-  useEffect(() => {
-    if (mode !== "main") {
-      return;
-    }
-
-    void fetchAutoAcceptStatus()
-      .then(setAutoAcceptStatus)
-      .catch(() => {
-        setAutoAcceptStatus(null);
-      });
-
-    const cleanupFeedback = listenWithCleanup<Feedback>("automation-feedback", (event) => {
-      setFeedback(event.payload);
-    });
-
-    const cleanupStatus = listenWithCleanup<AutoAcceptStatus>("auto-accept-status-update", (event) => {
-      setAutoAcceptStatus(event.payload);
-    });
-
-    let overlayOpenTimer: number | null = null;
-    const clearOverlayOpenTimer = () => {
-      if (overlayOpenTimer !== null) {
-        window.clearTimeout(overlayOpenTimer);
-        overlayOpenTimer = null;
-      }
-    };
-    const scheduleOverlayOpen = () => {
-      clearOverlayOpenTimer();
-      overlayOpenTimer = window.setTimeout(() => {
-        overlayOpenTimer = null;
-        void openSelfHistoryOverlayWindow();
-      }, SELF_HISTORY_OVERLAY_OPEN_DELAY_MS);
-    };
-
-    const cleanupLeaguePhase = listenWithCleanup<string>("league-phase-update", (event) => {
-      if (event.payload === "InProgress") {
-        scheduleOverlayOpen();
-        return;
-      }
-
-      clearOverlayOpenTimer();
-    });
-
-    const cleanupOverlayShortcut = listenWithCleanup("open-self-history-overlay", () => {
-      void openSelfHistoryOverlayWindow();
-    });
-
-    void openSelfHistoryOverlayWindow();
-
-    return () => {
-      clearOverlayOpenTimer();
-      cleanupFeedback();
-      cleanupStatus();
-      cleanupLeaguePhase();
-      cleanupOverlayShortcut();
-    };
-  }, [mode]);
-
-  const loadLeagueGameAssetAction = useCallback(async (kind: LeagueGameAssetKind, assetId: number | null | undefined) => {
-    if (!assetId) {
-      return true;
-    }
-
-    const key = leagueGameAssetKey(kind, assetId);
-    if (imageUrlsRef.current.gameAssets[key] || pendingImageKeysRef.current.has(key)) {
-      return true;
-    }
-
-    pendingImageKeysRef.current.add(key);
-    return enqueueAssetLoad(async () => {
-      try {
-        const asset = await fetchLeagueGameAsset(kind, assetId);
-        const imageUrl = imageAssetUrl(asset.image);
-        imageUrlsRef.current = {
-          ...imageUrlsRef.current,
-          gameAssets: {
-            ...imageUrlsRef.current.gameAssets,
-            [key]: {
-              kind: asset.kind,
-              assetId: asset.assetId,
-              name: asset.name,
-              description: asset.description,
-              imageUrl,
-            },
-          },
-        };
-        scheduleLeagueImagesUpdate();
-        return true;
-      } catch {
-        return false;
-      } finally {
-        pendingImageKeysRef.current.delete(key);
-      }
-    });
-  }, [enqueueAssetLoad, scheduleLeagueImagesUpdate]);
-
   const loadPostMatchDetailAction = useCallback(async (gameId: number) => {
     return run(
       () => fetchPostMatchDetail(gameId),
@@ -783,6 +379,7 @@ export function AppStateProvider({ children, mode = "main" }: { children: ReactN
     }
   }, [loadParticipantProfileAction, loadPostMatchDetailAction, t]);
 
+  // ── Context values ──
   const coreValue = useMemo<AppCoreContextValue>(
     () => ({
       snapshot,
@@ -855,18 +452,18 @@ export function AppStateProvider({ children, mode = "main" }: { children: ReactN
     () => ({
       championDetailsById,
       leagueImages,
-      loadLeagueProfileIcon: loadLeagueProfileIconAction,
-      loadLeagueChampionIcon: loadLeagueChampionIconAction,
-      loadLeagueChampionDetails: loadLeagueChampionDetailsAction,
-      loadLeagueGameAsset: loadLeagueGameAssetAction,
+      loadLeagueProfileIcon: assetLoader.loadLeagueProfileIcon,
+      loadLeagueChampionIcon: assetLoader.loadLeagueChampionIcon,
+      loadLeagueChampionDetails: assetLoader.loadLeagueChampionDetails,
+      loadLeagueGameAsset: assetLoader.loadLeagueGameAsset,
     }),
     [
       championDetailsById,
       leagueImages,
-      loadLeagueChampionDetailsAction,
-      loadLeagueChampionIconAction,
-      loadLeagueGameAssetAction,
-      loadLeagueProfileIconAction,
+      assetLoader.loadLeagueChampionDetails,
+      assetLoader.loadLeagueChampionIcon,
+      assetLoader.loadLeagueGameAsset,
+      assetLoader.loadLeagueProfileIcon,
     ],
   );
 
@@ -903,7 +500,7 @@ export function AppStateProvider({ children, mode = "main" }: { children: ReactN
     ],
   );
 
-  const legacyValue = useMemo<AppStateContextValue>(
+  const legacyValue = useMemo<import("./types").AppStateContextValue>(
     () => ({
       ...coreValue,
       ...assetsValue,
@@ -926,112 +523,13 @@ export function AppStateProvider({ children, mode = "main" }: { children: ReactN
   );
 }
 
-export function useAppState() {
-  const context = useContext(AppStateContext);
-
-  if (!context) {
-    throw new Error("AppStateProvider is missing");
-  }
-
-  return context;
-}
-
-export function useAppCore() {
-  const context = useContext(AppCoreContext);
-
-  if (!context) {
-    throw new Error("AppStateProvider is missing");
-  }
-
-  return context;
-}
-
-export function useLeagueAssets() {
-  const context = useContext(LeagueAssetsContext);
-
-  if (!context) {
-    throw new Error("AppStateProvider is missing");
-  }
-
-  return context;
-}
-
-export function useChampSelect() {
-  const context = useContext(ChampSelectContext);
-
-  if (!context) {
-    throw new Error("AppStateProvider is missing");
-  }
-
-  return context;
-}
-
-export function useAdvisor() {
-  const context = useContext(AdvisorContext);
-
-  if (!context) {
-    throw new Error("AppStateProvider is missing");
-  }
-
-  return context;
-}
-
-function errorMessage(error: unknown) {
-  if (isCommandError(error)) {
-    return error.message;
-  }
-
-  return error instanceof Error ? error.message : "Unexpected error";
-}
-
-function imageAssetUrl(asset: LeagueImageAsset) {
-  return URL.createObjectURL(new Blob([Uint8Array.from(asset.bytes)], { type: asset.mimeType }));
-}
-
-function championDetailsView(details: LeagueChampionDetails): LeagueChampionDetailsView {
-  return {
-    championId: details.championId,
-    championName: details.championName,
-    title: details.title,
-    squarePortraitUrl: details.squarePortrait ? imageAssetUrl(details.squarePortrait) : null,
-    abilities: details.abilities.map((ability) => ({
-      slot: ability.slot,
-      name: ability.name,
-      description: ability.description,
-      summaryDescription: ability.summaryDescription,
-      cooldown: ability.cooldown,
-      cost: ability.cost,
-      range: ability.range,
-      cooldownValues: ability.cooldownValues,
-      costValues: ability.costValues,
-      rangeValues: ability.rangeValues,
-      iconUrl: ability.icon ? imageAssetUrl(ability.icon) : null,
-    })),
-  };
-}
-
-function participantProfileKey(gameId: number, participantId: number) {
-  return `${gameId}:${participantId}`;
-}
-
-export function leagueGameAssetKey(kind: LeagueGameAssetKind, assetId: number) {
-  return `${kind}:${assetId}`;
-}
-
-// Computes a fingerprint from player identities + recentMatchIds for change detection.
-// NOTE: The Rust-side champ_select_fingerprint omits recentMatchIds (it uses puuid for
-// cache identity instead). These serve different purposes and are intentionally divergent.
-function champSelectFingerprint(snapshot: ChampSelectSnapshot) {
-  return snapshot.players
-    .map((player) => {
-      const recentMatchIds = player.recentStats?.recentMatches.map((match) => match.gameId).join(",") ?? "";
-      return [
-        player.summonerId,
-        player.displayName,
-        player.championId ?? "",
-        player.team,
-        recentMatchIds,
-      ].join(":");
-    })
-    .join("|");
-}
+// ── Re-exports for backwards compatibility ──
+export {
+  useAppState,
+  useAppCore,
+  useLeagueAssets,
+  useChampSelect,
+  useAdvisor,
+} from "./hooks";
+export type { AppWindowMode, LeagueChampionAbilityView, LeagueChampionDetailsView, LeagueGameAssetView } from "./types";
+export { leagueGameAssetKey } from "./useAssetLoader";
