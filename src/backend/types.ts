@@ -397,6 +397,12 @@ export type LeagueChampionSummary = {
   championName: string;
 };
 
+export type AbilityStat = {
+  label: string;
+  values: number[];
+  suffix: string;
+};
+
 export type LeagueChampionAbility = {
   slot: string;
   name: string;
@@ -409,6 +415,7 @@ export type LeagueChampionAbility = {
   cooldownValues: string[];
   costValues: string[];
   rangeValues: string[];
+  stats?: AbilityStat[];
 };
 
 export type LeagueChampionDetails = {
