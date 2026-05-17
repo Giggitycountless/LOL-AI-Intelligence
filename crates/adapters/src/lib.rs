@@ -1137,20 +1137,6 @@ fn section_error_message(section_name: &str, error: LcuRequestError) -> String {
 
 
 
-impl LcuChampSelectMember {
-    fn display_name(&self) -> Option<String> {
-        match (
-            non_empty(self.game_name.as_deref()),
-            non_empty(self.tag_line.as_deref()),
-        ) {
-            (Some(game_name), Some(tag_line)) => Some(format!("{game_name}#{tag_line}")),
-            (Some(game_name), None) => Some(game_name.to_string()),
-            _ => non_empty(self.display_name.as_deref())
-                .or_else(|| non_empty(self.summoner_name.as_deref()))
-                .map(str::to_string),
-        }
-    }
-}
 
 impl GameClientPlayer {
     fn display_name(&self) -> Option<String> {
@@ -2504,7 +2490,7 @@ fn round_to_tenth(value: f64) -> f64 {
     (value * 10.0).round() / 10.0
 }
 
-fn non_empty(value: Option<&str>) -> Option<&str> {
+pub(crate) fn non_empty(value: Option<&str>) -> Option<&str> {
     value.and_then(|inner| {
         let trimmed = inner.trim();
         if trimmed.is_empty() {

@@ -266,3 +266,20 @@ pub(crate) struct LcuChampionAbility {
     #[serde(default)]
     pub(crate) effect_amounts: HashMap<String, Vec<f64>>,
 }
+
+use crate::non_empty;
+
+impl LcuChampSelectMember {
+    pub(crate) fn display_name(&self) -> Option<String> {
+        match (
+            non_empty(self.game_name.as_deref()),
+            non_empty(self.tag_line.as_deref()),
+        ) {
+            (Some(game_name), Some(tag_line)) => Some(format!("{game_name}#{tag_line}")),
+            (Some(game_name), None) => Some(game_name.to_string()),
+            _ => non_empty(self.display_name.as_deref())
+                .or_else(|| non_empty(self.summoner_name.as_deref()))
+                .map(str::to_string),
+        }
+    }
+}
