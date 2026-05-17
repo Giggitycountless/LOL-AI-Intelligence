@@ -107,6 +107,8 @@ export function AppStateProvider({ children, mode = "main" }: { children: ReactN
       () => fetchLeagueSelfSnapshot(input),
       setIsLeagueClientLoading,
       (response) => startTransition(() => setLeagueSelfSnapshot(response)),
+      undefined, // use default 30s timeout
+      true,       // suppress error feedback — league client may not be running
     );
   }, [run]);
 

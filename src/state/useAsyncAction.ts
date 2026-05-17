@@ -52,6 +52,7 @@ export function useAsyncAction(setFeedback: (feedback: Feedback | null) => void)
       setLoading?: (value: boolean) => void,
       onSuccess?: (result: T) => void,
       timeoutMs?: number,
+      suppressFeedback?: boolean,
     ): Promise<boolean> => {
       setLoading?.(true);
 
@@ -59,18 +60,22 @@ export function useAsyncAction(setFeedback: (feedback: Feedback | null) => void)
         const result = await withTimeout(action(), timeoutMs ?? DEFAULT_TIMEOUT_MS);
 
         if (!result.ok) {
-          const seconds = (timeoutMs ?? DEFAULT_TIMEOUT_MS) / 1000;
-          feedbackRef.current({
-            kind: "error",
-            message: `Request timed out after ${seconds}s`,
-          });
+          if (!suppressFeedback) {
+            const seconds = (timeoutMs ?? DEFAULT_TIMEOUT_MS) / 1000;
+            feedbackRef.current({
+              kind: "error",
+              message: `Request timed out after ${seconds}s`,
+            });
+          }
           return false;
         }
 
         onSuccess?.(result.value);
         return true;
       } catch (caught: unknown) {
-        feedbackRef.current({ kind: "error", message: errorMessage(caught) });
+        if (!suppressFeedback) {
+          feedbackRef.current({ kind: "error", message: errorMessage(caught) });
+        }
         return false;
       } finally {
         setLoading?.(false);

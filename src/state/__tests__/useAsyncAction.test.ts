@@ -138,4 +138,46 @@ describe("useAsyncAction", () => {
     // timeout fires even after unmount, but ok should be false
     expect(ok).toBe(false);
   });
+
+  it("does not call setFeedback on error when suppressFeedback is true", async () => {
+    const setFeedback = vi.fn();
+
+    const { result } = renderHook(() => useAsyncAction(setFeedback));
+
+    let ok: boolean = true;
+    await act(async () => {
+      ok = await result.current.run(
+        () => Promise.reject(new Error("silent failure")),
+        undefined,
+        undefined,
+        undefined,
+        true,
+      );
+    });
+
+    expect(ok).toBe(false);
+    expect(setFeedback).not.toHaveBeenCalled();
+  });
+
+  it("still calls onSuccess when suppressFeedback is true and action succeeds", async () => {
+    const setFeedback = vi.fn();
+    const onSuccess = vi.fn();
+
+    const { result } = renderHook(() => useAsyncAction(setFeedback));
+
+    let ok: boolean = false;
+    await act(async () => {
+      ok = await result.current.run(
+        () => Promise.resolve("ok"),
+        undefined,
+        onSuccess,
+        undefined,
+        true,
+      );
+    });
+
+    expect(ok).toBe(true);
+    expect(onSuccess).toHaveBeenCalledWith("ok");
+    expect(setFeedback).not.toHaveBeenCalled();
+  });
 });
