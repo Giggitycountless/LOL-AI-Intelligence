@@ -268,6 +268,7 @@ pub(crate) struct LcuChampionAbility {
 }
 
 use crate::non_empty;
+use crate::{ids_match, strings_match};
 
 impl LcuChampSelectMember {
     pub(crate) fn display_name(&self) -> Option<String> {
@@ -281,5 +282,39 @@ impl LcuChampSelectMember {
                 .or_else(|| non_empty(self.summoner_name.as_deref()))
                 .map(str::to_string),
         }
+    }
+}
+
+use domain::CurrentSummonerProfile;
+
+impl LcuSummoner {
+    pub(crate) fn profile(&self) -> CurrentSummonerProfile {
+        CurrentSummonerProfile {
+            display_name: self.display_name(),
+            summoner_level: self.summoner_level.unwrap_or_default(),
+            profile_icon_id: self.profile_icon_id,
+        }
+    }
+
+    pub(crate) fn display_name(&self) -> String {
+        if let Some(value) = non_empty(self.display_name.as_deref()) {
+            return value.to_string();
+        }
+
+        match (
+            non_empty(self.game_name.as_deref()),
+            non_empty(self.tag_line.as_deref()),
+        ) {
+            (Some(game_name), Some(tag_line)) => format!("{game_name}#{tag_line}"),
+            (Some(game_name), None) => game_name.to_string(),
+            _ => "Current summoner".to_string(),
+        }
+    }
+
+    pub(crate) fn matches_player(&self, player: &LcuPlayer) -> bool {
+        ids_match(self.summoner_id, player.summoner_id)
+            || ids_match(self.account_id, player.account_id)
+            || ids_match(self.account_id, player.current_account_id)
+            || strings_match(self.puuid.as_deref(), player.puuid.as_deref())
     }
 }

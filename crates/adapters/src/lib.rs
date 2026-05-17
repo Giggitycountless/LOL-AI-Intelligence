@@ -1138,13 +1138,6 @@ fn section_error_message(section_name: &str, error: LcuRequestError) -> String {
 
 
 
-impl GameClientPlayer {
-    fn display_name(&self) -> Option<String> {
-        non_empty(self.riot_id.as_deref())
-            .or_else(|| non_empty(self.summoner_name.as_deref()))
-            .map(str::to_string)
-    }
-}
 
 const QUERY_ENCODE_SET: &AsciiSet = &CONTROLS
     .add(b' ')
@@ -1593,37 +1586,6 @@ fn map_summoner_batch_entry(summoner: LcuSummonerBatch) -> Option<SummonerBatchE
     })
 }
 
-impl LcuSummoner {
-    fn profile(&self) -> CurrentSummonerProfile {
-        CurrentSummonerProfile {
-            display_name: self.display_name(),
-            summoner_level: self.summoner_level.unwrap_or_default(),
-            profile_icon_id: self.profile_icon_id,
-        }
-    }
-
-    fn display_name(&self) -> String {
-        if let Some(value) = non_empty(self.display_name.as_deref()) {
-            return value.to_string();
-        }
-
-        match (
-            non_empty(self.game_name.as_deref()),
-            non_empty(self.tag_line.as_deref()),
-        ) {
-            (Some(game_name), Some(tag_line)) => format!("{game_name}#{tag_line}"),
-            (Some(game_name), None) => game_name.to_string(),
-            _ => "Current summoner".to_string(),
-        }
-    }
-
-    fn matches_player(&self, player: &LcuPlayer) -> bool {
-        ids_match(self.summoner_id, player.summoner_id)
-            || ids_match(self.account_id, player.account_id)
-            || ids_match(self.account_id, player.current_account_id)
-            || strings_match(self.puuid.as_deref(), player.puuid.as_deref())
-    }
-}
 
 
 fn map_champion_catalog(champions: Vec<LcuChampionSummary>) -> Vec<LeagueChampionSummary> {
@@ -2529,11 +2491,11 @@ fn non_empty_owned(value: String) -> Option<String> {
     }
 }
 
-fn ids_match(left: Option<i64>, right: Option<i64>) -> bool {
+pub(crate) fn ids_match(left: Option<i64>, right: Option<i64>) -> bool {
     left.zip(right).is_some_and(|(a, b)| a == b)
 }
 
-fn strings_match(left: Option<&str>, right: Option<&str>) -> bool {
+pub(crate) fn strings_match(left: Option<&str>, right: Option<&str>) -> bool {
     left.zip(right).is_some_and(|(a, b)| a == b)
 }
 

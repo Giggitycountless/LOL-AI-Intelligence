@@ -101,3 +101,13 @@ pub(crate) struct GameClientStats {
     pub(crate) game_mode: Option<String>,
     pub(crate) map_name: Option<String>,
 }
+
+use crate::non_empty;
+
+impl GameClientPlayer {
+    pub(crate) fn display_name(&self) -> Option<String> {
+        non_empty(self.riot_id.as_deref())
+            .or_else(|| non_empty(self.summoner_name.as_deref()))
+            .map(str::to_string)
+    }
+}
