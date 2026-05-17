@@ -573,6 +573,19 @@ impl LocalLeagueClient {
             }
             Err(_) => {
                 log_lcu_adapter_event("lockfile read failed");
+                // TOCTOU: process may have exited between discovery and read.
+                // Re-check before reporting Unavailable.
+                if matches!(
+                    self.discover_lockfile_path(),
+                    LockfileDiscovery::NotRunning
+                ) {
+                    return Err(unavailable_status(
+                        false,
+                        false,
+                        LeagueClientPhase::NotRunning,
+                        "League Client is not running",
+                    ));
+                }
                 return Err(unavailable_status(
                     true,
                     true,
@@ -2775,6 +2788,7 @@ mod tests {
         let session = LcuSession::new(LockfileCredentials {
             port: 1,
             password: "test".to_string(),
+            pid: 1234,
         })
         .expect("session builds");
 
