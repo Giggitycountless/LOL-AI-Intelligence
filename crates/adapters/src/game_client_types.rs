@@ -111,3 +111,56 @@ impl GameClientPlayer {
             .map(str::to_string)
     }
 }
+
+// ── tests ─────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn player(riot_id: Option<&str>, summoner_name: Option<&str>) -> GameClientPlayer {
+        GameClientPlayer {
+            summoner_name: summoner_name.map(str::to_string),
+            team: "ORDER".into(),
+            riot_id: riot_id.map(str::to_string),
+            champion_name: Some("Ahri".into()),
+            level: Some(18),
+            position: Some("MIDDLE".into()),
+            is_dead: false,
+            respawn_timer: None,
+            items: vec![],
+            scores: None,
+            summoner_spells: None,
+        }
+    }
+
+    #[test]
+    fn display_name_prefers_riot_id() {
+        let p = player(Some("Faker#KR1"), Some("OldSummoner"));
+        assert_eq!(p.display_name().as_deref(), Some("Faker#KR1"));
+    }
+
+    #[test]
+    fn display_name_falls_back_to_summoner_name() {
+        let p = player(None, Some("OldSummoner"));
+        assert_eq!(p.display_name().as_deref(), Some("OldSummoner"));
+    }
+
+    #[test]
+    fn display_name_returns_none_when_all_empty() {
+        let p = player(None, None);
+        assert_eq!(p.display_name(), None);
+    }
+
+    #[test]
+    fn display_name_ignores_empty_strings() {
+        let p = player(Some(""), Some(""));
+        assert_eq!(p.display_name(), None);
+    }
+
+    #[test]
+    fn display_name_riot_id_empty_falls_back() {
+        let p = player(Some(""), Some("RealName"));
+        assert_eq!(p.display_name().as_deref(), Some("RealName"));
+    }
+}
