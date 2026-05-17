@@ -98,6 +98,10 @@ impl Clone for LocalLeagueClient {
     }
 }
 
+
+fn lock_or_recover<T>(mutex: &std::sync::Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
 impl LocalLeagueClient {
     pub fn new() -> Self {
         Self::default()
@@ -495,7 +499,7 @@ impl LocalLeagueClient {
 
     fn open_session(&self) -> SessionOpenResult {
         // Try cached session first
-        if let Some(session) = self.session_cache.lock().unwrap().as_ref() {
+        if let Some(session) = lock_or_recover(&self.session_cache).as_ref() {
             let alive = session
                 .get_json::<LcuSummoner>("/lol-summoner/v1/current-summoner")
                 .is_ok();
@@ -515,7 +519,7 @@ impl LocalLeagueClient {
                     log_lcu_adapter_event(
                         format!("local session verification failed: {e:?}").as_str(),
                     );
-                    *self.session_cache.lock().unwrap() = None;
+                    *lock_or_recover(&self.session_cache) = None;
                     return SessionOpenResult::Status(unavailable_status(
                         true,
                         true,
@@ -524,14 +528,14 @@ impl LocalLeagueClient {
                     ));
                 }
                 log_lcu_adapter_event("local session created");
-                *self.session_cache.lock().unwrap() = Some(session.clone());
+                *lock_or_recover(&self.session_cache) = Some(session.clone());
                 SessionOpenResult::Ready(session)
             }
             Err(e) => {
                 log_lcu_adapter_event(
                     format!("local session creation failed: {e:?}").as_str(),
                 );
-                *self.session_cache.lock().unwrap() = None;
+                *lock_or_recover(&self.session_cache) = None;
                 SessionOpenResult::Status(unavailable_status(
                     true,
                     true,
@@ -545,7 +549,7 @@ impl LocalLeagueClient {
     fn read_lockfile_credentials(&self) -> Result<LockfileCredentials, LeagueClientStatus> {
         // Use cached credentials for up to 2 seconds to avoid repeated process scans.
         {
-            let cache = self.cached_credentials.lock().unwrap();
+            let cache = lock_or_recover(&self.cached_credentials);
             if let Some((cached_at, cached)) = cache.as_ref()
                 && cached_at.elapsed() < Duration::from_secs(2)
             {
@@ -560,7 +564,7 @@ impl LocalLeagueClient {
             }
             LockfileDiscovery::NotRunning => {
                 log_lcu_adapter_event("league client process not detected");
-                *self.cached_credentials.lock().unwrap() = None;
+                *lock_or_recover(&self.cached_credentials) = None;
                 return Err(unavailable_status(
                     false,
                     false,
@@ -570,7 +574,7 @@ impl LocalLeagueClient {
             }
             LockfileDiscovery::LockfileMissing => {
                 log_lcu_adapter_event("league client process detected without lockfile");
-                *self.cached_credentials.lock().unwrap() = None;
+                *lock_or_recover(&self.cached_credentials) = None;
                 return Err(unavailable_status(
                     true,
                     false,
@@ -612,7 +616,7 @@ impl LocalLeagueClient {
         match parse_lockfile(lockfile_contents.as_str()) {
             Ok(credentials) => {
                 log_lcu_adapter_event("lockfile parsed");
-                *self.cached_credentials.lock().unwrap() =
+                *lock_or_recover(&self.cached_credentials) =
                     Some((Instant::now(), credentials.clone()));
                 Ok(credentials)
             }
