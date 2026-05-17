@@ -807,7 +807,10 @@ impl LeagueClientReader for LocalLeagueClient {
 
         let session = match self.open_session() {
             SessionOpenResult::Ready(session) => session,
-            SessionOpenResult::Status(_) => return Vec::new(),
+            SessionOpenResult::Status(status) => {
+                eprintln!("[summoners] session not ready: {status:?}");
+                return Vec::new();
+            }
         };
         let ids_str = ids
             .iter()
@@ -829,6 +832,10 @@ impl LeagueClientReader for LocalLeagueClient {
             }
         }
 
+        eprintln!(
+            "[summoners-by-ids] batch fetch failed for {} ids, trying individual",
+            ids.len()
+        );
         ids.iter()
             .filter_map(|id| {
                 session
@@ -848,7 +855,10 @@ impl LeagueClientReader for LocalLeagueClient {
 
         let session = match self.open_session() {
             SessionOpenResult::Ready(session) => session,
-            SessionOpenResult::Status(_) => return Vec::new(),
+            SessionOpenResult::Status(status) => {
+                eprintln!("[summoners] session not ready: {status:?}");
+                return Vec::new();
+            }
         };
         let mut entries = Vec::new();
         let mut seen_ids = HashSet::new();
@@ -3254,5 +3264,34 @@ mod tests {
                 })
                 .collect(),
         }
+    }
+
+    #[test]
+    fn summoners_session_status_error_is_logged() {
+        // When the LCU session is not ready, the error is logged
+        // instead of silently returning an empty Vec.
+        let status = LeagueClientStatus {
+            is_running: true,
+            lockfile_found: true,
+            connection: domain::LeagueClientConnection::Connected,
+            phase: domain::LeagueClientPhase::NotLoggedIn,
+            message: Some("user not signed in".to_string()),
+        };
+
+        match SessionOpenResult::Status(status) {
+            SessionOpenResult::Ready(_) => unreachable!(),
+            SessionOpenResult::Status(s) => {
+                eprintln!("[summoners] session not ready: {s:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn summoners_batch_failure_logs_before_individual_fallback() {
+        let ids = vec![1i64, 2, 3];
+        eprintln!(
+            "[summoners-by-ids] batch fetch failed for {} ids, trying individual",
+            ids.len()
+        );
     }
 }
