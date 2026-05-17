@@ -1,6 +1,7 @@
 //! LCU API response types — champ select, gameflow, summoner.
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -104,4 +105,107 @@ pub(crate) struct LcuSummonerBatch {
     pub(crate) display_name: Option<String>,
     pub(crate) game_name: Option<String>,
     pub(crate) tag_line: Option<String>,
+}
+
+// ── Match history / participant types ──
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct LcuMatchHistoryResponse {
+    pub(crate) games: Option<LcuGames>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct LcuGames {
+    #[serde(default)]
+    pub(crate) games: Vec<LcuGame>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct LcuGame {
+    pub(crate) game_id: Option<i64>,
+    pub(crate) game_creation_date: Option<String>,
+    #[serde(rename = "gameCreation")]
+    pub(crate) game_creation: Option<Value>,
+    pub(crate) game_duration: Option<i64>,
+    pub(crate) queue_id: Option<i64>,
+    #[serde(default)]
+    pub(crate) participants: Vec<LcuParticipant>,
+    #[serde(default)]
+    pub(crate) participant_identities: Vec<LcuParticipantIdentity>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct LcuParticipant {
+    pub(crate) participant_id: Option<i64>,
+    pub(crate) team_id: Option<i64>,
+    pub(crate) champion_id: Option<i64>,
+    pub(crate) champion_name: Option<String>,
+    pub(crate) spell1_id: Option<i64>,
+    pub(crate) spell2_id: Option<i64>,
+    pub(crate) stats: Option<LcuParticipantStats>,
+    pub(crate) timeline: Option<LcuParticipantTimeline>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct LcuParticipantStats {
+    pub(crate) kills: Option<i64>,
+    pub(crate) deaths: Option<i64>,
+    pub(crate) assists: Option<i64>,
+    pub(crate) win: Option<bool>,
+    pub(crate) total_minions_killed: Option<i64>,
+    pub(crate) neutral_minions_killed: Option<i64>,
+    pub(crate) gold_earned: Option<i64>,
+    pub(crate) total_damage_dealt_to_champions: Option<i64>,
+    pub(crate) vision_score: Option<i64>,
+    pub(crate) item0: Option<i64>,
+    pub(crate) item1: Option<i64>,
+    pub(crate) item2: Option<i64>,
+    pub(crate) item3: Option<i64>,
+    pub(crate) item4: Option<i64>,
+    pub(crate) item5: Option<i64>,
+    pub(crate) item6: Option<i64>,
+    pub(crate) perk0: Option<i64>,
+    pub(crate) perk1: Option<i64>,
+    pub(crate) perk2: Option<i64>,
+    pub(crate) perk3: Option<i64>,
+    pub(crate) perk4: Option<i64>,
+    pub(crate) perk5: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct LcuParticipantTimeline {
+    pub(crate) role: Option<String>,
+    pub(crate) lane: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct LcuParticipantIdentity {
+    pub(crate) participant_id: Option<i64>,
+    pub(crate) player: Option<LcuPlayer>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct LcuPlayer {
+    pub(crate) summoner_name: Option<String>,
+    pub(crate) game_name: Option<String>,
+    pub(crate) tag_line: Option<String>,
+    pub(crate) summoner_id: Option<i64>,
+    pub(crate) account_id: Option<i64>,
+    pub(crate) current_account_id: Option<i64>,
+    pub(crate) profile_icon: Option<i64>,
+    pub(crate) profile_icon_id: Option<i64>,
+    pub(crate) puuid: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct LcuGameAssetMetadata {
+    pub(crate) name: Option<String>,
+    pub(crate) description: Option<String>,
+    pub(crate) icon_path: Option<String>,
 }
