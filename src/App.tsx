@@ -46,7 +46,7 @@ export function App() {
 }
 
 export function AppShell() {
-  const { snapshot, feedback, clearFeedback, isLoading, effectiveLanguage, setLanguagePreference, t } = useAppCore();
+  const { snapshot, feedback, clearFeedback, isLoading, refresh, effectiveLanguage, setLanguagePreference, t } = useAppCore();
   const [activePage, setActivePage] = useState<Page>("dashboard");
   const didApplyStartupPage = useRef(false);
   const didUserNavigate = useRef(false);
@@ -145,6 +145,18 @@ export function AppShell() {
         {isLoading && !snapshot && (
           <div className="border-b border-zinc-200 bg-white px-8 py-3 text-sm font-medium text-zinc-600">
             {t("app.loadingState")}
+          </div>
+        )}
+        {!isLoading && !snapshot && (
+          <div className="flex items-center justify-between gap-4 border-b border-red-200 bg-red-50 px-8 py-3 text-sm">
+            <span className="font-medium text-red-800">Failed to load application state</span>
+            <button
+              type="button"
+              onClick={() => void refresh()}
+              className="inline-flex h-8 items-center rounded-md bg-red-100 px-3 text-sm font-semibold text-red-700 transition hover:bg-red-200"
+            >
+              Retry
+            </button>
           </div>
         )}
         {activePage === "dashboard" && <Dashboard />}

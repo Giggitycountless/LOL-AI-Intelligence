@@ -60,6 +60,7 @@ function createCore(overrides: Record<string, unknown> = {}) {
     },
     feedback: null,
     clearFeedback: vi.fn(),
+    refresh: vi.fn().mockResolvedValue(true),
     isLoading: false,
     effectiveLanguage: "zh",
     setLanguagePreference: vi.fn().mockResolvedValue(true),
@@ -132,5 +133,30 @@ describe("AppShell", () => {
     render(React.createElement(AppShell));
 
     expect((screen.getByRole("button", { name: "EN" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("shows persistent error with retry button when app state fails to load", async () => {
+    const refreshMock = vi.fn().mockResolvedValue(false);
+    mockUseAppCore.mockReturnValue(
+      createCore({
+        snapshot: null,
+        isLoading: false,
+        feedback: null,
+        refresh: refreshMock,
+      }),
+    );
+
+    const { AppShell } = await import("../App");
+    render(React.createElement(AppShell));
+
+    // should show error message, not loading state
+    expect(screen.queryByText("Loading")).toBeNull();
+    expect(screen.getByText(/failed to load/i)).toBeDefined();
+
+    // retry button should call refresh
+    const retryButton = screen.getByRole("button", { name: /retry/i });
+    expect(retryButton).toBeDefined();
+    fireEvent.click(retryButton);
+    expect(refreshMock).toHaveBeenCalled();
   });
 });
