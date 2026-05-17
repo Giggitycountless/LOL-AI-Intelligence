@@ -33,6 +33,9 @@ pub mod data_providers;
 pub use data_providers::{RemoteRankedChampionJsonProvider, RemoteAdvisorJsonProvider, parse_advisor_snapshot_json, parse_ranked_champion_snapshot_json};
 use data_providers::unix_timestamp_seconds;
 
+mod game_client_types;
+pub(crate) use game_client_types::*;
+
 pub fn layer_name() -> &'static str {
     "adapters"
 }
@@ -1203,104 +1206,6 @@ struct LcuSummonerBatch {
     tag_line: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-#[allow(dead_code)]
-struct GameClientPlayer {
-    summoner_name: Option<String>,
-    team: String,
-    riot_id: Option<String>,
-    champion_name: Option<String>,
-    level: Option<i64>,
-    position: Option<String>,
-    #[serde(default)]
-    is_dead: bool,
-    respawn_timer: Option<f64>,
-    #[serde(default)]
-    items: Vec<GameClientItem>,
-    scores: Option<GameClientScores>,
-    summoner_spells: Option<GameClientSummonerSpells>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct GameClientActivePlayer {
-    summoner_name: String,
-    level: Option<i64>,
-    current_gold: Option<f64>,
-    champion_stats: Option<GameClientChampionStats>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct GameClientChampionStats {
-    resource_type: Option<String>,
-    resource_value: Option<f64>,
-    resource_max: Option<f64>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct GameClientItem {
-    #[serde(rename = "itemID")]
-    item_id: Option<i64>,
-    display_name: Option<String>,
-    price: Option<i64>,
-    count: Option<i64>,
-    slot: Option<i64>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct GameClientScores {
-    kills: Option<i64>,
-    deaths: Option<i64>,
-    assists: Option<i64>,
-    creep_score: Option<i64>,
-    ward_score: Option<f64>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct GameClientSummonerSpells {
-    summoner_spell_one: Option<GameClientNamedEntity>,
-    summoner_spell_two: Option<GameClientNamedEntity>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct GameClientNamedEntity {
-    display_name: Option<String>,
-    id: Option<i64>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-struct GameClientEventData {
-    #[serde(default)]
-    events: Vec<GameClientEvent>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-struct GameClientEvent {
-    #[serde(rename = "EventID")]
-    event_id: Option<i64>,
-    event_name: Option<String>,
-    event_time: Option<f64>,
-    killer_name: Option<String>,
-    victim_name: Option<String>,
-    #[serde(default)]
-    assisters: Vec<String>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct GameClientStats {
-    game_time: Option<f64>,
-    game_mode: Option<String>,
-    map_name: Option<String>,
-}
 
 impl LcuChampSelectMember {
     fn display_name(&self) -> Option<String> {
