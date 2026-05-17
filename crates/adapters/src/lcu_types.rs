@@ -334,9 +334,270 @@ impl LcuParticipantStats {
         [
             self.perk0, self.perk1, self.perk2, self.perk3, self.perk4, self.perk5,
         ]
-        .into_iter()
-        .flatten()
-        .filter(|value| *value > 0)
-        .collect()
+            .into_iter()
+            .flatten()
+            .filter(|value| *value > 0)
+            .collect()
+    }
+}
+
+// ── tests ─────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── LcuChampSelectMember::display_name ────────────────────────────────
+
+    fn member_with_game_tag(game_name: &str, tag_line: &str) -> LcuChampSelectMember {
+        LcuChampSelectMember {
+            summoner_id: None,
+            champion_id: None,
+            summoner_name: Some("Old Summoner Name".into()),
+            display_name: Some("Riot Display".into()),
+            game_name: Some(game_name.into()),
+            tag_line: Some(tag_line.into()),
+        }
+    }
+
+    #[test]
+    fn member_display_name_prefers_riot_id() {
+        let member = member_with_game_tag("Faker", "KR1");
+        assert_eq!(member.display_name().as_deref(), Some("Faker#KR1"));
+    }
+
+    #[test]
+    fn member_display_name_game_only_no_tag() {
+        let mut member = member_with_game_tag("HideOnBush", "KR1");
+        member.tag_line = None;
+        assert_eq!(member.display_name().as_deref(), Some("HideOnBush"));
+    }
+
+    #[test]
+    fn member_display_name_falls_back_to_display_name() {
+        let mut member = member_with_game_tag("", "");
+        member.summoner_name = None;
+        assert_eq!(member.display_name().as_deref(), Some("Riot Display"));
+    }
+
+    #[test]
+    fn member_display_name_falls_back_to_summoner_name() {
+        let mut member = member_with_game_tag("", "");
+        member.display_name = None;
+        assert_eq!(
+            member.display_name().as_deref(),
+            Some("Old Summoner Name")
+        );
+    }
+
+    #[test]
+    fn member_display_name_all_empty_returns_none() {
+        let member = LcuChampSelectMember {
+            summoner_id: None,
+            champion_id: None,
+            summoner_name: None,
+            display_name: None,
+            game_name: None,
+            tag_line: None,
+        };
+        assert_eq!(member.display_name(), None);
+    }
+
+    // ── LcuSummoner::display_name ─────────────────────────────────────────
+
+    fn summoner(display_name: Option<&str>, game_name: Option<&str>, tag_line: Option<&str>) -> LcuSummoner {
+        LcuSummoner {
+            display_name: display_name.map(str::to_string),
+            game_name: game_name.map(str::to_string),
+            tag_line: tag_line.map(str::to_string),
+            summoner_level: Some(100),
+            profile_icon_id: Some(42),
+            account_id: Some(1),
+            summoner_id: Some(2),
+            puuid: Some("puuid-abc".into()),
+        }
+    }
+
+    #[test]
+    fn summoner_display_name_uses_display_name_first() {
+        let s = summoner(Some("MyDisplay"), Some("Game"), Some("TAG"));
+        assert_eq!(s.display_name(), "MyDisplay");
+    }
+
+    #[test]
+    fn summoner_display_name_falls_back_to_riot_id() {
+        let s = summoner(None, Some("Faker"), Some("KR1"));
+        assert_eq!(s.display_name(), "Faker#KR1");
+    }
+
+    #[test]
+    fn summoner_display_name_game_only() {
+        let s = summoner(None, Some("HideOnBush"), None);
+        assert_eq!(s.display_name(), "HideOnBush");
+    }
+
+    #[test]
+    fn summoner_display_name_ultimate_fallback() {
+        let s = summoner(None, None, None);
+        assert_eq!(s.display_name(), "Current summoner");
+    }
+
+    #[test]
+    fn summoner_display_name_empty_strings_are_ignored() {
+        let s = summoner(Some(""), Some("  "), Some("\t"));
+        assert_eq!(s.display_name(), "Current summoner");
+    }
+
+    // ── LcuSummoner::profile ──────────────────────────────────────────────
+
+    #[test]
+    fn summoner_profile_uses_display_name() {
+        let s = summoner(Some("Test"), None, None);
+        let profile = s.profile();
+        assert_eq!(profile.display_name, "Test");
+        assert_eq!(profile.summoner_level, 100);
+        assert_eq!(profile.profile_icon_id, Some(42));
+    }
+
+    #[test]
+    fn summoner_profile_default_level_zero() {
+        let mut s = summoner(None, None, None);
+        s.summoner_level = None;
+        let profile = s.profile();
+        assert_eq!(profile.summoner_level, 0);
+    }
+
+    // ── LcuSummoner::matches_player ───────────────────────────────────────
+
+    #[test]
+    fn summoner_matches_by_summoner_id() {
+        let s = summoner(Some("A"), None, None);
+        let player = LcuPlayer {
+            summoner_name: None, game_name: None, tag_line: None,
+            summoner_id: Some(2), account_id: None, current_account_id: None,
+            profile_icon: None, profile_icon_id: None, puuid: None,
+        };
+        assert!(s.matches_player(&player));
+    }
+
+    #[test]
+    fn summoner_matches_by_account_id() {
+        let s = summoner(Some("A"), None, None);
+        let player = LcuPlayer {
+            summoner_name: None, game_name: None, tag_line: None,
+            summoner_id: None, account_id: Some(1), current_account_id: None,
+            profile_icon: None, profile_icon_id: None, puuid: None,
+        };
+        assert!(s.matches_player(&player));
+    }
+
+    #[test]
+    fn summoner_matches_by_current_account_id() {
+        let s = summoner(Some("A"), None, None);
+        let player = LcuPlayer {
+            summoner_name: None, game_name: None, tag_line: None,
+            summoner_id: None, account_id: None, current_account_id: Some(1),
+            profile_icon: None, profile_icon_id: None, puuid: None,
+        };
+        assert!(s.matches_player(&player));
+    }
+
+    #[test]
+    fn summoner_matches_by_puuid() {
+        let s = summoner(Some("A"), None, None);
+        let player = LcuPlayer {
+            summoner_name: None, game_name: None, tag_line: None,
+            summoner_id: None, account_id: None, current_account_id: None,
+            profile_icon: None, profile_icon_id: None, puuid: Some("puuid-abc".into()),
+        };
+        assert!(s.matches_player(&player));
+    }
+
+    #[test]
+    fn summoner_does_not_match_unrelated_player() {
+        let s = summoner(Some("A"), None, None);
+        let player = LcuPlayer {
+            summoner_name: None, game_name: None, tag_line: None,
+            summoner_id: Some(999), account_id: Some(999), current_account_id: Some(999),
+            profile_icon: None, profile_icon_id: None, puuid: Some("different".into()),
+        };
+        assert!(!s.matches_player(&player));
+    }
+
+    #[test]
+    fn summoner_does_not_match_when_none() {
+        let mut s = summoner(Some("A"), None, None);
+        s.summoner_id = None;
+        s.account_id = None;
+        s.puuid = None;
+        let player = LcuPlayer {
+            summoner_name: None, game_name: None, tag_line: None,
+            summoner_id: Some(2), account_id: None, current_account_id: None,
+            profile_icon: None, profile_icon_id: None, puuid: None,
+        };
+        assert!(!s.matches_player(&player));
+    }
+
+    // ── LcuParticipantStats::items ────────────────────────────────────────
+
+    fn stats_with_items(items: &[i64]) -> LcuParticipantStats {
+        LcuParticipantStats {
+            kills: None, deaths: None, assists: None, win: None,
+            total_minions_killed: None, neutral_minions_killed: None,
+            gold_earned: None, total_damage_dealt_to_champions: None,
+            vision_score: None,
+            item0: items.first().copied(), item1: items.get(1).copied(),
+            item2: items.get(2).copied(), item3: items.get(3).copied(),
+            item4: items.get(4).copied(), item5: items.get(5).copied(),
+            item6: items.get(6).copied(),
+            perk0: None, perk1: None, perk2: None,
+            perk3: None, perk4: None, perk5: None,
+        }
+    }
+
+    #[test]
+    fn items_filters_out_zero_and_none() {
+        let stats = stats_with_items(&[3031, 0, 3006, 0, 0, 0, 0]);
+        assert_eq!(stats.items(), vec![3031, 3006]);
+    }
+
+    #[test]
+    fn items_returns_empty_when_all_zero() {
+        let stats = stats_with_items(&[0, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(stats.items(), Vec::<i64>::new());
+    }
+
+    #[test]
+    fn items_all_nonzero() {
+        let stats = stats_with_items(&[1, 2, 3, 4, 5, 6, 7]);
+        assert_eq!(stats.items(), vec![1, 2, 3, 4, 5, 6, 7]);
+    }
+
+    // ── LcuParticipantStats::runes ────────────────────────────────────────
+
+    fn stats_with_runes(runes: &[i64]) -> LcuParticipantStats {
+        LcuParticipantStats {
+            kills: None, deaths: None, assists: None, win: None,
+            total_minions_killed: None, neutral_minions_killed: None,
+            gold_earned: None, total_damage_dealt_to_champions: None,
+            vision_score: None,
+            item0: None, item1: None, item2: None, item3: None,
+            item4: None, item5: None, item6: None,
+            perk0: runes.first().copied(), perk1: runes.get(1).copied(),
+            perk2: runes.get(2).copied(), perk3: runes.get(3).copied(),
+            perk4: runes.get(4).copied(), perk5: runes.get(5).copied(),
+        }
+    }
+
+    #[test]
+    fn runes_filters_out_zero_and_none() {
+        let stats = stats_with_runes(&[8008, 0, 9101, 0, 0, 8299]);
+        assert_eq!(stats.runes(), vec![8008, 9101, 8299]);
+    }
+
+    #[test]
+    fn runes_returns_empty_when_all_zero() {
+        let stats = stats_with_runes(&[0, 0, 0, 0, 0, 0]);
+        assert_eq!(stats.runes(), Vec::<i64>::new());
     }
 }
