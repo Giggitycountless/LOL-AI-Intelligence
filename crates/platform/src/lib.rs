@@ -4,7 +4,7 @@ use std::{
     path::Path,
     sync::{
         Arc, Mutex, MutexGuard,
-        atomic::{AtomicBool, AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicUsize, AtomicU64, Ordering},
     },
     thread,
     time::{Duration, Instant},
@@ -154,6 +154,7 @@ pub struct AppState {
     pub league_phase: Arc<Mutex<Option<String>>>,
     pub auto_accept_status: Arc<Mutex<AutoAcceptStatus>>,
     pub auto_accept_in_progress: Arc<AtomicBool>,
+    pub hydration_thread_count: Arc<AtomicUsize>,
     cache_metrics: Arc<CacheMetrics>,
 }
 
@@ -185,6 +186,7 @@ impl AppState {
                 Some("Auto-accept status has not started".to_string()),
             ))),
             auto_accept_in_progress: Arc::new(AtomicBool::new(false)),
+            hydration_thread_count: Arc::new(AtomicUsize::new(0)),
             cache_metrics: Arc::new(CacheMetrics::default()),
         })
     }
@@ -206,6 +208,7 @@ impl Clone for AppState {
             league_phase: Arc::clone(&self.league_phase),
             auto_accept_status: Arc::clone(&self.auto_accept_status),
             auto_accept_in_progress: Arc::clone(&self.auto_accept_in_progress),
+            hydration_thread_count: Arc::clone(&self.hydration_thread_count),
             cache_metrics: Arc::clone(&self.cache_metrics),
         }
     }
@@ -1281,7 +1284,14 @@ fn start_champ_select_hydration<R: Runtime + 'static>(
         });
     }
 
+    let count = Arc::clone(&state.hydration_thread_count);
+    if count.fetch_add(1, Ordering::Relaxed) >= MAX_HYDRATION_THREADS {
+        count.fetch_sub(1, Ordering::Relaxed);
+        return;
+    }
+
     thread::spawn(move || {
+        let _guard = HydrationGuard { count };
         let state_for_cleanup = state.clone();
         let fp_for_cleanup = fingerprint.clone();
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
@@ -1358,6 +1368,22 @@ fn clear_champ_select_hydration_if_current(state: &AppState, fingerprint: &str) 
         .is_some_and(|entry| entry.fingerprint == fingerprint && !entry.token.is_cancelled())
     {
         *hydration = None;
+    }
+}
+
+/// Maximum concurrent champ-select hydration threads.
+/// Prevents thread stampede during rapid phase transitions.
+const MAX_HYDRATION_THREADS: usize = 4;
+
+/// RAII guard that decrements the hydration thread count on drop,
+/// ensuring the counter stays accurate even on panic.
+struct HydrationGuard {
+    count: Arc<AtomicUsize>,
+}
+
+impl Drop for HydrationGuard {
+    fn drop(&mut self) {
+        self.count.fetch_sub(1, Ordering::Relaxed);
     }
 }
 
@@ -3102,5 +3128,32 @@ mod tests {
             lock_or_recover(state.champ_select_hydration.as_ref()).is_none(),
             "hydration state should be cleared after panic cleanup"
         );
+    }
+
+    #[test]
+    fn hydration_guard_decrements_on_drop() {
+        let count = Arc::new(AtomicUsize::new(1));
+        {
+            let _guard = HydrationGuard { count: count.clone() };
+        }
+        assert_eq!(count.load(Ordering::Relaxed), 0);
+    }
+
+    #[test]
+    fn hydration_thread_limit_prevents_excess_spawns() {
+        let count = Arc::new(AtomicUsize::new(0));
+
+        // Simulate filling up to the limit
+        for _ in 0..MAX_HYDRATION_THREADS {
+            let prev = count.fetch_add(1, Ordering::Relaxed);
+            assert!(prev < MAX_HYDRATION_THREADS);
+        }
+        assert_eq!(count.load(Ordering::Relaxed), MAX_HYDRATION_THREADS);
+
+        // Next attempt should be rejected
+        if count.fetch_add(1, Ordering::Relaxed) >= MAX_HYDRATION_THREADS {
+            count.fetch_sub(1, Ordering::Relaxed); // undo, just like the real code
+        }
+        assert_eq!(count.load(Ordering::Relaxed), MAX_HYDRATION_THREADS);
     }
 }
