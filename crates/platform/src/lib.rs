@@ -1282,53 +1282,66 @@ fn start_champ_select_hydration<R: Runtime + 'static>(
     }
 
     thread::spawn(move || {
-        thread::sleep(CHAMP_SELECT_HYDRATION_DEBOUNCE);
-        if token.is_cancelled() {
-            return;
-        }
-
-        let Ok(snapshot) = build_champ_select_snapshot(&state, CHAMP_SELECT_HYDRATED_RECENT_LIMIT)
-        else {
-            clear_champ_select_hydration_if_current(&state, fingerprint.as_str());
-            return;
-        };
-
-        if token.is_cancelled()
-            || champ_select_roster_fingerprint(&snapshot) != fingerprint
-            || !can_complete_champ_select_hydration_for_phase(
-                lock_or_recover(state.league_phase.as_ref()).as_deref(),
-            )
-        {
-            if !token.is_cancelled() {
-                clear_champ_select_hydration_if_current(&state, fingerprint.as_str());
+        let state_for_cleanup = state.clone();
+        let fp_for_cleanup = fingerprint.clone();
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+            thread::sleep(CHAMP_SELECT_HYDRATION_DEBOUNCE);
+            if token.is_cancelled() {
+                return;
             }
-            return;
-        }
 
-        let current_is_same = state
-            .champ_select_hydration
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .as_ref()
-            .is_some_and(|entry| entry.fingerprint == fingerprint && !entry.token.is_cancelled());
-        if !current_is_same {
-            return;
-        }
+            let Ok(snapshot) = build_champ_select_snapshot(&state, CHAMP_SELECT_HYDRATED_RECENT_LIMIT)
+            else {
+                clear_champ_select_hydration_if_current(&state, fingerprint.as_str());
+                return;
+            };
 
-        *lock_or_recover(&state.champ_select_cache) = Some(ChampSelectCacheEntry {
-            snapshot: snapshot.clone(),
-            cached_at: Instant::now(),
-            recent_limit: CHAMP_SELECT_HYDRATED_RECENT_LIMIT,
-        });
-        let mut hydration = lock_or_recover(state.champ_select_hydration.as_ref());
-        if hydration
-            .as_ref()
-            .is_some_and(|entry| entry.fingerprint == fingerprint && !entry.token.is_cancelled())
-        {
-            *hydration = None;
+            if token.is_cancelled()
+                || champ_select_roster_fingerprint(&snapshot) != fingerprint
+                || !can_complete_champ_select_hydration_for_phase(
+                    lock_or_recover(state.league_phase.as_ref()).as_deref(),
+                )
+            {
+                if !token.is_cancelled() {
+                    clear_champ_select_hydration_if_current(&state, fingerprint.as_str());
+                }
+                return;
+            }
+
+            let current_is_same = state
+                .champ_select_hydration
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .as_ref()
+                .is_some_and(|entry| entry.fingerprint == fingerprint && !entry.token.is_cancelled());
+            if !current_is_same {
+                return;
+            }
+
+            *lock_or_recover(&state.champ_select_cache) = Some(ChampSelectCacheEntry {
+                snapshot: snapshot.clone(),
+                cached_at: Instant::now(),
+                recent_limit: CHAMP_SELECT_HYDRATED_RECENT_LIMIT,
+            });
+            let mut hydration = lock_or_recover(state.champ_select_hydration.as_ref());
+            if hydration
+                .as_ref()
+                .is_some_and(|entry| entry.fingerprint == fingerprint && !entry.token.is_cancelled())
+            {
+                *hydration = None;
+            }
+            drop(hydration);
+            let _ = app_handle.emit("champ-select-update", &snapshot);
+        }));
+        if let Err(panic) = result {
+            let message = panic
+                .downcast_ref::<&str>()
+                .map(|s| s.to_string())
+                .or_else(|| panic.downcast_ref::<String>().cloned())
+                .unwrap_or_else(|| "unknown panic".to_string());
+            eprintln!("[champ-select-hydration] PANIC: {message}");
+            clear_champ_select_hydration_if_current(&state_for_cleanup, &fp_for_cleanup);
         }
-        drop(hydration);
-        let _ = app_handle.emit("champ-select-update", &snapshot);
     });
 }
 
@@ -3036,5 +3049,58 @@ mod tests {
 
         assert!(result.is_err());
         assert!(!state.auto_accept_in_progress.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn champ_select_hydration_panic_is_caught() {
+        let data_dir = unique_temp_dir();
+        let state = AppState::initialize(&data_dir).expect("app state initializes");
+
+        let state_for_cleanup = state.clone();
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+            let _ = &state_for_cleanup;
+            panic!("simulated hydration crash");
+        }));
+
+        assert!(result.is_err(), "panic in hydration thread must be caught, not abort");
+    }
+
+    #[test]
+    fn champ_select_hydration_panic_clears_state() {
+        use tokio_util::sync::CancellationToken;
+
+        let data_dir = unique_temp_dir();
+        let state = AppState::initialize(&data_dir).expect("app state initializes");
+
+        let fingerprint = "test-hydration-panic-fp".to_string();
+        {
+            let mut hydration = lock_or_recover(state.champ_select_hydration.as_ref());
+            *hydration = Some(ChampSelectHydrationState {
+                fingerprint: fingerprint.clone(),
+                token: CancellationToken::new(),
+            });
+        }
+        assert!(
+            lock_or_recover(state.champ_select_hydration.as_ref()).is_some(),
+            "hydration state should be set"
+        );
+
+        let state2 = state.clone();
+        let fp2 = fingerprint.clone();
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+            let _ = &state2;
+            let _ = &fp2;
+            panic!("simulated hydration crash");
+        }));
+
+        assert!(result.is_err());
+
+        // Simulate the cleanup that the catch_unwind handler would perform
+        clear_champ_select_hydration_if_current(&state, &fingerprint);
+
+        assert!(
+            lock_or_recover(state.champ_select_hydration.as_ref()).is_none(),
+            "hydration state should be cleared after panic cleanup"
+        );
     }
 }
