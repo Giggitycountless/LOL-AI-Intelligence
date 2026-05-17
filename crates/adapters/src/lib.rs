@@ -102,6 +102,21 @@ impl Clone for LocalLeagueClient {
 fn lock_or_recover<T>(mutex: &std::sync::Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
 }
+
+/// Check whether a process with the given PID is still alive.
+/// Uses /proc on Linux; on other platforms always returns true
+/// (cache staleness window remains but is bounded by the 2-second TTL).
+fn is_pid_alive(pid: u32) -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        std::path::Path::new(&format!("/proc/{pid}")).exists()
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = pid;
+        true
+    }
+}
 impl LocalLeagueClient {
     pub fn new() -> Self {
         Self::default()
@@ -548,10 +563,13 @@ impl LocalLeagueClient {
 
     fn read_lockfile_credentials(&self) -> Result<LockfileCredentials, LeagueClientStatus> {
         // Use cached credentials for up to 2 seconds to avoid repeated process scans.
+        // Also verify the cached PID is still alive — if the process died
+        // (LCU restart), the credentials are stale and must be re-read.
         {
             let cache = lock_or_recover(&self.cached_credentials);
             if let Some((cached_at, cached)) = cache.as_ref()
                 && cached_at.elapsed() < Duration::from_secs(2)
+                && is_pid_alive(cached.pid)
             {
                 return Ok(cached.clone());
             }
@@ -3293,5 +3311,36 @@ mod tests {
             "[summoners-by-ids] batch fetch failed for {} ids, trying individual",
             ids.len()
         );
+    }
+
+    // ── is_pid_alive ──────────────────────────────────────────────
+
+    #[test]
+    fn pid_alive_detects_current_process() {
+        let pid = std::process::id();
+        assert!(
+            is_pid_alive(pid),
+            "the current process ({pid}) should be alive"
+        );
+    }
+
+    #[test]
+    fn pid_alive_detects_dead_process() {
+        // PID n+2 is very unlikely to exist on any system.
+        // On non-Linux this returns true (PID check skipped),
+        // so only assert on Linux.
+        let bogus_pid = u32::MAX - 1;
+        #[cfg(target_os = "linux")]
+        assert!(
+            !is_pid_alive(bogus_pid),
+            "pid {bogus_pid} should not exist"
+        );
+    }
+
+    #[test]
+    fn pid_alive_init_is_alive_on_linux() {
+        // PID 1 (init/systemd) always exists on Linux.
+        #[cfg(target_os = "linux")]
+        assert!(is_pid_alive(1), "pid 1 (init) should be alive on Linux");
     }
 }
