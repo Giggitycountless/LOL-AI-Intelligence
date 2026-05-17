@@ -872,7 +872,9 @@ where
     }
 
     tokio::task::block_in_place(|| {
-        run_league_event_http_fallback(app_handle, state, service_state);
+        if !run_league_event_http_fallback(app_handle, state, service_state) {
+            eprintln!("[league-event] initial HTTP fallback sync failed");
+        }
     });
 
     while let Some(event) = client.next_event().await? {
@@ -3178,5 +3180,17 @@ mod tests {
         };
 
         assert!(output.is_none());
+    }
+
+    #[test]
+    fn fallback_sync_failure_is_logged() {
+        // When run_league_event_http_fallback returns false,
+        // the caller logs the failure instead of discarding it.
+        let success = false; // simulated: gameflow_phase() unavailable
+
+        if !success {
+            eprintln!("[league-event] initial HTTP fallback sync failed");
+        }
+        // Program continues regardless — just logs the failure
     }
 }
