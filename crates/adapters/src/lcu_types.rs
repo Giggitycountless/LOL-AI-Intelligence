@@ -318,3 +318,25 @@ impl LcuSummoner {
             || strings_match(self.puuid.as_deref(), player.puuid.as_deref())
     }
 }
+
+impl LcuParticipantStats {
+    pub(crate) fn items(&self) -> Vec<i64> {
+        [
+            self.item0, self.item1, self.item2, self.item3, self.item4, self.item5, self.item6,
+        ]
+        .into_iter()
+        .flatten()
+        .filter(|value| *value > 0)
+        .collect()
+    }
+
+    pub(crate) fn runes(&self) -> Vec<i64> {
+        [
+            self.perk0, self.perk1, self.perk2, self.perk3, self.perk4, self.perk5,
+        ]
+        .into_iter()
+        .flatten()
+        .filter(|value| *value > 0)
+        .collect()
+    }
+}
