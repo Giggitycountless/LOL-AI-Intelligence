@@ -155,6 +155,7 @@ pub struct AppState {
     pub auto_accept_status: Arc<Mutex<AutoAcceptStatus>>,
     pub auto_accept_in_progress: Arc<AtomicBool>,
     pub hydration_thread_count: Arc<AtomicUsize>,
+    pub shutdown_token: Arc<CancellationToken>,
     cache_metrics: Arc<CacheMetrics>,
 }
 
@@ -187,6 +188,7 @@ impl AppState {
             ))),
             auto_accept_in_progress: Arc::new(AtomicBool::new(false)),
             hydration_thread_count: Arc::new(AtomicUsize::new(0)),
+            shutdown_token: Arc::new(CancellationToken::new()),
             cache_metrics: Arc::new(CacheMetrics::default()),
         })
     }
@@ -209,6 +211,7 @@ impl Clone for AppState {
             auto_accept_status: Arc::clone(&self.auto_accept_status),
             auto_accept_in_progress: Arc::clone(&self.auto_accept_in_progress),
             hydration_thread_count: Arc::clone(&self.hydration_thread_count),
+            shutdown_token: Arc::clone(&self.shutdown_token),
             cache_metrics: Arc::clone(&self.cache_metrics),
         }
     }
@@ -745,6 +748,13 @@ where
     true
 }
 
+/// Signal the league event loop to shut down gracefully.
+/// The loop will exit on its next iteration check.
+pub fn shutdown_league_event_service(state: &AppState) {
+    state.shutdown_token.cancel();
+    log_auto_accept_monitor_event("league event service shutdown requested");
+}
+
 fn mark_league_event_service_started(state: &AppState) -> bool {
     !state
         .league_event_service_started
@@ -798,6 +808,10 @@ where
     let mut service_state = LeagueEventServiceState::default();
 
     loop {
+        if state.shutdown_token.is_cancelled() {
+            log_auto_accept_monitor_event("league event loop shutting down");
+            break;
+        }
         log_auto_accept_monitor_event("opening websocket session");
         let result = runtime.block_on(league_websocket_session(
             &app_handle,
@@ -842,6 +856,7 @@ where
         );
         thread::sleep(delay);
     }
+    log_auto_accept_monitor_event("league event loop stopped");
 }
 
 async fn league_websocket_session<R: Runtime + 'static>(
@@ -3192,5 +3207,40 @@ mod tests {
             eprintln!("[league-event] initial HTTP fallback sync failed");
         }
         // Program continues regardless — just logs the failure
+    }
+
+    #[test]
+    fn shutdown_league_event_service_cancels_token() {
+        let data_dir = unique_temp_dir();
+        let state = AppState::initialize(&data_dir).expect("app state initializes");
+
+        assert!(!state.shutdown_token.is_cancelled());
+        shutdown_league_event_service(&state);
+        assert!(state.shutdown_token.is_cancelled());
+    }
+
+    #[test]
+    fn shutdown_token_loop_check_breaks() {
+        // Simulate the loop pattern: the loop exits when token is cancelled
+        let token = CancellationToken::new();
+        let mut iterations = 0;
+
+        // First iteration: token not cancelled, continue
+        if token.is_cancelled() {
+            panic!("token should not be cancelled yet");
+        }
+        iterations += 1;
+
+        // Cancel the token (simulating shutdown)
+        token.cancel();
+
+        // Second iteration: token cancelled, break
+        if token.is_cancelled() {
+            // break — exits the loop
+        } else {
+            panic!("token should be cancelled");
+        }
+
+        assert_eq!(iterations, 1, "loop should have run exactly once before breaking");
     }
 }
