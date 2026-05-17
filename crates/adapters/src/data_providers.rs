@@ -563,3 +563,279 @@ pub(crate) fn unix_timestamp_seconds() -> String {
         .map(|duration| duration.as_secs().to_string())
         .unwrap_or_else(|_| "0".to_string())
 }
+
+// ── tests ─────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use application::RankedChampionDataError;
+    use domain::RankedChampionLane;
+
+    // ── validate_rate ────────────────────────────────────────────────────
+
+    #[test]
+    fn validate_rate_accepts_zero() {
+        assert!(validate_rate(0.0, "winRate").is_ok());
+    }
+
+    #[test]
+    fn validate_rate_accepts_one_hundred() {
+        assert!(validate_rate(100.0, "pickRate").is_ok());
+    }
+
+    #[test]
+    fn validate_rate_accepts_mid_range() {
+        assert!(validate_rate(52.3, "banRate").is_ok());
+    }
+
+    #[test]
+    fn validate_rate_rejects_negative() {
+        let err = validate_rate(-0.1, "winRate").unwrap_err();
+        assert!(matches!(err, RankedChampionDataError::InvalidData(_)));
+        assert!(err.to_string().contains("winRate"));
+    }
+
+    #[test]
+    fn validate_rate_rejects_over_one_hundred() {
+        let err = validate_rate(100.1, "pickRate").unwrap_err();
+        assert!(matches!(err, RankedChampionDataError::InvalidData(_)));
+    }
+
+    #[test]
+    fn validate_rate_rejects_nan() {
+        let err = validate_rate(f64::NAN, "banRate").unwrap_err();
+        assert!(matches!(err, RankedChampionDataError::InvalidData(_)));
+    }
+
+    #[test]
+    fn validate_rate_rejects_infinity() {
+        let err = validate_rate(f64::INFINITY, "overallScore").unwrap_err();
+        assert!(matches!(err, RankedChampionDataError::InvalidData(_)));
+    }
+
+    // ── optional_non_empty ────────────────────────────────────────────────
+
+    #[test]
+    fn optional_non_empty_none_is_none() {
+        assert_eq!(optional_non_empty(None), None);
+    }
+
+    #[test]
+    fn optional_non_empty_empty_string_is_none() {
+        assert_eq!(optional_non_empty(Some("".to_string())), None);
+    }
+
+    #[test]
+    fn optional_non_empty_whitespace_only_is_none() {
+        assert_eq!(optional_non_empty(Some("   ".to_string())), None);
+        assert_eq!(optional_non_empty(Some("\n\t".to_string())), None);
+    }
+
+    #[test]
+    fn optional_non_empty_keeps_value() {
+        assert_eq!(
+            optional_non_empty(Some("hello".to_string())),
+            Some("hello".to_string())
+        );
+    }
+
+    #[test]
+    fn optional_non_empty_trims_whitespace() {
+        assert_eq!(
+            optional_non_empty(Some("  world  ".to_string())),
+            Some("world".to_string())
+        );
+    }
+
+    #[test]
+    fn optional_non_empty_whitespace_around_text() {
+        assert_eq!(
+            optional_non_empty(Some("\t  hello\n".to_string())),
+            Some("hello".to_string())
+        );
+    }
+
+    // ── ranked_lane_from_remote ───────────────────────────────────────────
+
+    #[test]
+    fn ranked_lane_parses_top() {
+        assert_eq!(ranked_lane_from_remote("top"), Some(RankedChampionLane::Top));
+    }
+
+    #[test]
+    fn ranked_lane_parses_jungle_and_jug() {
+        assert_eq!(ranked_lane_from_remote("jungle"), Some(RankedChampionLane::Jungle));
+        assert_eq!(ranked_lane_from_remote("jug"), Some(RankedChampionLane::Jungle));
+    }
+
+    #[test]
+    fn ranked_lane_parses_middle_and_mid() {
+        assert_eq!(ranked_lane_from_remote("middle"), Some(RankedChampionLane::Middle));
+        assert_eq!(ranked_lane_from_remote("mid"), Some(RankedChampionLane::Middle));
+    }
+
+    #[test]
+    fn ranked_lane_parses_bottom_bot_and_adc() {
+        assert_eq!(ranked_lane_from_remote("bottom"), Some(RankedChampionLane::Bottom));
+        assert_eq!(ranked_lane_from_remote("bot"), Some(RankedChampionLane::Bottom));
+        assert_eq!(ranked_lane_from_remote("adc"), Some(RankedChampionLane::Bottom));
+    }
+
+    #[test]
+    fn ranked_lane_parses_support_and_sup() {
+        assert_eq!(ranked_lane_from_remote("support"), Some(RankedChampionLane::Support));
+        assert_eq!(ranked_lane_from_remote("sup"), Some(RankedChampionLane::Support));
+    }
+
+    #[test]
+    fn ranked_lane_is_case_insensitive() {
+        assert_eq!(ranked_lane_from_remote("TOP"), Some(RankedChampionLane::Top));
+        assert_eq!(ranked_lane_from_remote("JuNgLe"), Some(RankedChampionLane::Jungle));
+        assert_eq!(ranked_lane_from_remote("MiD"), Some(RankedChampionLane::Middle));
+    }
+
+    #[test]
+    fn ranked_lane_trims_whitespace() {
+        assert_eq!(ranked_lane_from_remote("  top  "), Some(RankedChampionLane::Top));
+        assert_eq!(ranked_lane_from_remote("\tmid\n"), Some(RankedChampionLane::Middle));
+    }
+
+    #[test]
+    fn ranked_lane_rejects_unknown() {
+        assert_eq!(ranked_lane_from_remote("aram"), None);
+        assert_eq!(ranked_lane_from_remote("carry"), None);
+    }
+
+    #[test]
+    fn ranked_lane_rejects_empty() {
+        assert_eq!(ranked_lane_from_remote(""), None);
+        assert_eq!(ranked_lane_from_remote("   "), None);
+    }
+
+    // ── parse_ranked_champion_snapshot_json ──────────────────────────────
+
+    fn ranked_champion_json(champions: &str) -> String {
+        format!(
+            r#"{{"formatVersion":1,"source":"test","patch":"26.08","region":"KR","queue":"RANKED_SOLO_5X5","tier":"EMERALD_PLUS","generatedAt":"2026-05-16T00:00:00Z","champions":[{champions}]}}"#
+        )
+    }
+
+    fn ranked_champion_entry_json(champion_id: i64, champion_name: &str, lane: &str) -> String {
+        format!(
+            r#"{{"championId":{champion_id},"championName":"{champion_name}","lane":"{lane}","games":1000,"winRate":51.4,"pickRate":10.2,"banRate":8.0}}"#
+        )
+    }
+
+    #[test]
+    fn parse_ranked_valid_json() {
+        let json = ranked_champion_json(&ranked_champion_entry_json(103, "Ahri", "mid"));
+        let result = parse_ranked_champion_snapshot_json(&json);
+        assert!(result.is_ok(), "expected ok, got {result:?}");
+        let snapshot = result.unwrap();
+        assert_eq!(snapshot.records.len(), 1);
+        assert_eq!(snapshot.records[0].champion_id, 103);
+        assert_eq!(snapshot.records[0].champion_name, "Ahri");
+        assert_eq!(snapshot.records[0].lane, RankedChampionLane::Middle);
+    }
+
+    #[test]
+    fn parse_ranked_rejects_malformed_json() {
+        let result = parse_ranked_champion_snapshot_json("not json at all");
+        assert!(matches!(result, Err(RankedChampionDataError::InvalidData(_))));
+    }
+
+    #[test]
+    fn parse_ranked_rejects_wrong_format_version() {
+        let json = r#"{"formatVersion":999,"source":"t","champions":[]}"#;
+        let result = parse_ranked_champion_snapshot_json(json);
+        assert!(matches!(result, Err(RankedChampionDataError::InvalidData(_))));
+    }
+
+    #[test]
+    fn parse_ranked_rejects_empty_champions() {
+        let json = r#"{"formatVersion":1,"source":"t","champions":[]}"#;
+        let result = parse_ranked_champion_snapshot_json(json);
+        assert!(matches!(result, Err(RankedChampionDataError::InvalidData(_))));
+    }
+
+    #[test]
+    fn parse_ranked_rejects_duplicate_champion_lane() {
+        let entry = ranked_champion_entry_json(103, "Ahri", "mid");
+        let json = ranked_champion_json(&format!("{entry},{entry}"));
+        let result = parse_ranked_champion_snapshot_json(&json);
+        assert!(matches!(result, Err(RankedChampionDataError::InvalidData(_))));
+    }
+
+    #[test]
+    fn parse_ranked_rejects_negative_games() {
+        let json = ranked_champion_json(
+            r#"{"championId":1,"championName":"Ahri","lane":"mid","games":-1,"winRate":50.0,"pickRate":10.0,"banRate":5.0}"#,
+        );
+        let result = parse_ranked_champion_snapshot_json(&json);
+        assert!(matches!(result, Err(RankedChampionDataError::InvalidData(_))));
+    }
+
+    #[test]
+    fn parse_ranked_rejects_rate_out_of_range() {
+        let json = ranked_champion_json(
+            r#"{"championId":1,"championName":"Ahri","lane":"mid","games":100,"winRate":101.0,"pickRate":10.0,"banRate":5.0}"#,
+        );
+        let result = parse_ranked_champion_snapshot_json(&json);
+        assert!(matches!(result, Err(RankedChampionDataError::InvalidData(_))));
+    }
+
+    #[test]
+    fn parse_ranked_rejects_missing_champion_name() {
+        let json = ranked_champion_json(
+            r#"{"championId":1,"championName":"","lane":"mid","games":100,"winRate":50.0,"pickRate":10.0,"banRate":5.0}"#,
+        );
+        let result = parse_ranked_champion_snapshot_json(&json);
+        assert!(matches!(result, Err(RankedChampionDataError::InvalidData(_))));
+    }
+
+    // ── parse_advisor_snapshot_json ───────────────────────────────────────
+
+    fn advisor_json(champions: &str) -> String {
+        format!(
+            r#"{{"formatVersion":1,"source":"test","patch":"26.08","region":"KR","queue":"RANKED_SOLO_5X5","tier":"EMERALD_PLUS","generatedAt":"2026-05-16T00:00:00Z","champions":[{champions}]}}"#
+        )
+    }
+
+    fn advisor_entry_json(champion_id: i64, champion_name: &str, lane: &str) -> String {
+        format!(
+            r#"{{"championId":{champion_id},"championName":"{champion_name}","lane":"{lane}","games":1000,"winRate":51.4,"pickRate":10.2,"banRate":8.0,"runes":{{"primaryStyle":"Precision","secondaryStyle":"Domination","primaryRunes":[{{"id":8008,"name":"Lethal Tempo"}}],"secondaryRunes":[{{"id":9101,"name":"Triumph"}}],"statShards":["Attack Speed","Adaptive","Health"]}},"summonerSpells":[{{"id":6,"name":"Ghost"}}],"skillOrder":{{"maxOrder":["Q","E","W"],"earlyOrder":["Q","E","Q"]}},"itemBuild":{{"starter":[{{"id":1054,"name":"Doran's Blade"}}],"core":[{{"id":3031,"name":"Infinity Edge"}}],"boots":[{{"id":3006,"name":"Berserker's Greaves"}}],"late":[{{"id":3094,"name":"Rapid Firecannon"}}],"situational":[{{"id":3026,"name":"Guardian Angel"}}]}},"strongAgainst":[{{"championId":1,"championName":"Annie","note":"Easy"}}],"weakAgainst":[{{"championId":2,"championName":"Olaf","note":"Hard"}}],"powerSpikes":[{{"timing":"Level 6","label":"Spike","description":"Unlocks ultimate"}}],"laneAdvice":"Play safe early","teamfightAdvice":"Focus carries"}}"#
+        )
+    }
+
+    #[test]
+    fn parse_advisor_valid_json() {
+        let json = advisor_json(&advisor_entry_json(103, "Ahri", "mid"));
+        let result = parse_advisor_snapshot_json(&json);
+        assert!(result.is_ok(), "expected ok, got {result:?}");
+        let snapshot = result.unwrap();
+        assert_eq!(snapshot.records.len(), 1);
+        assert_eq!(snapshot.records[0].champion_id, 103);
+        assert_eq!(snapshot.records[0].champion_name, "Ahri");
+    }
+
+    #[test]
+    fn parse_advisor_rejects_malformed_json() {
+        let result = parse_advisor_snapshot_json("garbage");
+        assert!(matches!(result, Err(RankedChampionDataError::InvalidData(_))));
+    }
+
+    #[test]
+    fn parse_advisor_rejects_wrong_format_version() {
+        let json = r#"{"formatVersion":999,"source":"t","champions":[]}"#;
+        let result = parse_advisor_snapshot_json(json);
+        assert!(matches!(result, Err(RankedChampionDataError::InvalidData(_))));
+    }
+
+    #[test]
+    fn parse_advisor_rejects_empty_champions() {
+        let json = r#"{"formatVersion":1,"source":"t","champions":[]}"#;
+        let result = parse_advisor_snapshot_json(json);
+        assert!(matches!(result, Err(RankedChampionDataError::InvalidData(_))));
+    }
+}
