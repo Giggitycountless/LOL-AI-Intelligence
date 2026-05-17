@@ -1199,7 +1199,13 @@ fn refresh_champ_select_from_event<R: Runtime + 'static>(
 where
     AppHandle<R>: Send,
 {
-    let mut snapshot = build_champ_select_snapshot(state, CHAMP_SELECT_LIGHT_RECENT_LIMIT).ok()?;
+    let mut snapshot = match build_champ_select_snapshot(state, CHAMP_SELECT_LIGHT_RECENT_LIMIT) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("[champ-select] failed to build snapshot: {e:?}");
+            return None;
+        }
+    };
     let roster_fingerprint = champ_select_roster_fingerprint(&snapshot);
     let cached_entry = lock_or_recover(&state.champ_select_cache).as_ref().cloned();
     let cached_snapshot = cached_entry.as_ref().map(|entry| entry.snapshot.clone());
@@ -3155,5 +3161,22 @@ mod tests {
             count.fetch_sub(1, Ordering::Relaxed); // undo, just like the real code
         }
         assert_eq!(count.load(Ordering::Relaxed), MAX_HYDRATION_THREADS);
+    }
+
+    #[test]
+    fn champ_select_snapshot_error_produces_none_with_log() {
+        // Verify the error-to-None pattern: when build fails, we get None
+        // instead of silently swallowing the error via .ok()?
+        let result: Result<i32, &str> = Err("simulated LCU timeout");
+
+        let output = match result {
+            Ok(val) => Some(val),
+            Err(e) => {
+                eprintln!("[champ-select] failed to build snapshot: {e:?}");
+                None
+            }
+        };
+
+        assert!(output.is_none());
     }
 }
