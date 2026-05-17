@@ -21,7 +21,6 @@ use domain::{
 use percent_encoding::{AsciiSet, CONTROLS, percent_encode};
 use rayon::prelude::*;
 use reqwest::blocking::Client;
-use serde::Deserialize;
 use serde_json::Value;
 use sysinfo::{ProcessesToUpdate, System};
 
@@ -47,6 +46,37 @@ pub(crate) fn log_lcu_adapter_event(message: &str) {
     eprintln!("[lcu-adapter] {message}");
 }
 
+
+
+fn map_ranked_queues(stats: LcuRankedStats) -> Vec<RankedQueueSummary> {
+    stats
+        .queues
+        .into_iter()
+        .filter_map(|queue| {
+            let queue_type = queue.queue_type.as_deref()?;
+            let queue_kind = match queue_type {
+                "RANKED_SOLO_5x5" => RankedQueue::SoloDuo,
+                "RANKED_FLEX_SR" => RankedQueue::Flex,
+                _ => RankedQueue::Other,
+            };
+            let tier = queue.tier.and_then(non_empty_owned);
+            let division = queue.division.and_then(non_empty_owned);
+            let is_ranked = tier
+                .as_deref()
+                .is_some_and(|value| value != "NONE" && value != "UNRANKED");
+
+            Some(RankedQueueSummary {
+                queue: queue_kind,
+                tier,
+                division,
+                league_points: queue.league_points,
+                wins: queue.wins.unwrap_or_default(),
+                losses: queue.losses.unwrap_or_default(),
+                is_ranked,
+            })
+        })
+        .collect()
+}
 #[derive(Debug, Default)]
 pub struct LocalLeagueClient {
     lockfile_override: Option<PathBuf>,
@@ -1609,89 +1639,6 @@ impl LcuSummoner {
     }
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct LcuRankedStats {
-    #[serde(default)]
-    queues: Vec<LcuRankedQueue>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct LcuRankedQueue {
-    queue_type: Option<String>,
-    tier: Option<String>,
-    division: Option<String>,
-    league_points: Option<i64>,
-    wins: Option<i64>,
-    losses: Option<i64>,
-}
-
-fn map_ranked_queues(stats: LcuRankedStats) -> Vec<RankedQueueSummary> {
-    stats
-        .queues
-        .into_iter()
-        .filter_map(|queue| {
-            let queue_type = queue.queue_type.as_deref()?;
-            let queue_kind = match queue_type {
-                "RANKED_SOLO_5x5" => RankedQueue::SoloDuo,
-                "RANKED_FLEX_SR" => RankedQueue::Flex,
-                _ => RankedQueue::Other,
-            };
-            let tier = queue.tier.and_then(non_empty_owned);
-            let division = queue.division.and_then(non_empty_owned);
-            let is_ranked = tier
-                .as_deref()
-                .is_some_and(|value| value != "NONE" && value != "UNRANKED");
-
-            Some(RankedQueueSummary {
-                queue: queue_kind,
-                tier,
-                division,
-                league_points: queue.league_points,
-                wins: queue.wins.unwrap_or_default(),
-                losses: queue.losses.unwrap_or_default(),
-                is_ranked,
-            })
-        })
-        .collect()
-}
-
-#[derive(Debug, Deserialize)]
-struct LcuChampionSummary {
-    id: i64,
-    name: String,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct LcuChampionDetails {
-    name: Option<String>,
-    title: Option<String>,
-    square_portrait_path: Option<String>,
-    passive: Option<LcuChampionAbility>,
-    #[serde(default)]
-    spells: Vec<LcuChampionAbility>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct LcuChampionAbility {
-    name: Option<String>,
-    description: Option<String>,
-    dynamic_description: Option<String>,
-    ability_icon_path: Option<String>,
-    spell_key: Option<String>,
-    cooldown: Option<Value>,
-    cost: Option<Value>,
-    range: Option<Value>,
-    #[serde(default)]
-    cooldown_coefficients: Vec<f64>,
-    #[serde(default)]
-    cost_coefficients: Vec<f64>,
-    #[serde(default)]
-    effect_amounts: HashMap<String, Vec<f64>>,
-}
 
 fn map_champion_catalog(champions: Vec<LcuChampionSummary>) -> Vec<LeagueChampionSummary> {
     champions

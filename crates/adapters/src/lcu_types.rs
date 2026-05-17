@@ -2,6 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::HashMap;
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -208,4 +209,60 @@ pub(crate) struct LcuGameAssetMetadata {
     pub(crate) name: Option<String>,
     pub(crate) description: Option<String>,
     pub(crate) icon_path: Option<String>,
+}
+
+// ── Champion data types ──
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct LcuRankedStats {
+    #[serde(default)]
+    pub(crate) queues: Vec<LcuRankedQueue>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct LcuRankedQueue {
+    pub(crate) queue_type: Option<String>,
+    pub(crate) tier: Option<String>,
+    pub(crate) division: Option<String>,
+    pub(crate) league_points: Option<i64>,
+    pub(crate) wins: Option<i64>,
+    pub(crate) losses: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct LcuChampionSummary {
+    pub(crate) id: i64,
+    pub(crate) name: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct LcuChampionDetails {
+    pub(crate) name: Option<String>,
+    pub(crate) title: Option<String>,
+    pub(crate) square_portrait_path: Option<String>,
+    pub(crate) passive: Option<LcuChampionAbility>,
+    #[serde(default)]
+    pub(crate) spells: Vec<LcuChampionAbility>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct LcuChampionAbility {
+    pub(crate) name: Option<String>,
+    pub(crate) description: Option<String>,
+    pub(crate) dynamic_description: Option<String>,
+    pub(crate) ability_icon_path: Option<String>,
+    pub(crate) spell_key: Option<String>,
+    pub(crate) cooldown: Option<Value>,
+    pub(crate) cost: Option<Value>,
+    pub(crate) range: Option<Value>,
+    #[serde(default)]
+    pub(crate) cooldown_coefficients: Vec<f64>,
+    #[serde(default)]
+    pub(crate) cost_coefficients: Vec<f64>,
+    #[serde(default)]
+    pub(crate) effect_amounts: HashMap<String, Vec<f64>>,
 }
