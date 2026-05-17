@@ -511,12 +511,26 @@ impl LocalLeagueClient {
 
         match LcuSession::new(credentials) {
             Ok(session) => {
+                if let Err(e) = session.verify() {
+                    log_lcu_adapter_event(
+                        format!("local session verification failed: {e:?}").as_str(),
+                    );
+                    *self.session_cache.lock().unwrap() = None;
+                    return SessionOpenResult::Status(unavailable_status(
+                        true,
+                        true,
+                        LeagueClientPhase::Unavailable,
+                        "League Client local connection could not be prepared",
+                    ));
+                }
                 log_lcu_adapter_event("local session created");
                 *self.session_cache.lock().unwrap() = Some(session.clone());
                 SessionOpenResult::Ready(session)
             }
-            Err(_) => {
-                log_lcu_adapter_event("local session creation failed");
+            Err(e) => {
+                log_lcu_adapter_event(
+                    format!("local session creation failed: {e:?}").as_str(),
+                );
                 *self.session_cache.lock().unwrap() = None;
                 SessionOpenResult::Status(unavailable_status(
                     true,

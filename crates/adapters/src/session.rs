@@ -40,6 +40,21 @@ impl LcuSession {
         })
     }
 
+    /// Sends a lightweight request to verify that the LCU is reachable and
+    /// the credentials are valid. Called by `open_session` before returning Ready.
+    pub(crate) fn verify(&self) -> Result<(), LcuAdapterError> {
+        let url = format!(
+            "https://{LOCAL_LCU_HOST}:{}/",
+            self.credentials.port
+        );
+        self.http_client
+            .get(&url)
+            .basic_auth("riot", Some(self.credentials.password.as_str()))
+            .send()
+            .map_err(|_| LcuAdapterError::Http)?;
+        Ok(())
+    }
+
     pub(crate) fn get_json<T: for<'de> Deserialize<'de>>(&self, path: &str) -> Result<T, LcuRequestError> {
         let url = format!("https://{LOCAL_LCU_HOST}:{}{}", self.credentials.port, path);
         let response = self
@@ -194,4 +209,39 @@ pub(crate) fn validate_lcu_status(status: StatusCode) -> Result<(), LcuRequestEr
     }
 
     Ok(())
+}
+
+// ── tests ─────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::lockfile::LockfileCredentials;
+
+    fn dummy() -> LockfileCredentials {
+        LockfileCredentials {
+            port: 1,
+            password: "test".to_string(),
+            pid: 1234,
+        }
+    }
+
+    #[test]
+    fn new_constructs_without_network() {
+        let session = LcuSession::new(dummy()).expect("builds");
+        assert_eq!(session.credentials.port, 1);
+    }
+
+    #[test]
+    fn verify_fails_when_no_server() {
+        let session = LcuSession::new(dummy()).expect("builds");
+        assert!(session.verify().is_err());
+    }
+
+    #[test]
+    fn debug_redacts_password() {
+        let session = LcuSession::new(dummy()).expect("builds");
+        let msg = format!("{session:?}");
+        assert!(!msg.contains("test"));
+    }
 }
