@@ -195,3 +195,81 @@ pub(crate) fn champion_name_map(champions: Vec<LcuChampionSummary>) -> HashMap<i
         .map(|champion| (champion.id, champion.name))
         .collect()
 }
+
+// ── tests ─────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn summary(id: i64, name: &str) -> LcuChampionSummary {
+        LcuChampionSummary {
+            id,
+            name: name.to_string(),
+        }
+    }
+
+    // ── map_champion_catalog ──────────────────────────────────────────────
+
+    #[test]
+    fn catalog_maps_valid_champions() {
+        let input = vec![summary(103, "Ahri"), summary(1, "Annie")];
+        let result = map_champion_catalog(input);
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].champion_id, 103);
+        assert_eq!(result[0].champion_name, "Ahri");
+    }
+
+    #[test]
+    fn catalog_filters_non_positive_id() {
+        let input = vec![summary(0, "Zero"), summary(-1, "Negative"), summary(1, "Annie")];
+        let result = map_champion_catalog(input);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].champion_id, 1);
+    }
+
+    #[test]
+    fn catalog_filters_empty_name() {
+        let input = vec![summary(1, ""), summary(2, "  "), summary(3, "Ahri")];
+        let result = map_champion_catalog(input);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].champion_name, "Ahri");
+    }
+
+    #[test]
+    fn catalog_trims_name_whitespace() {
+        let input = vec![summary(103, "  Ahri  ")];
+        let result = map_champion_catalog(input);
+        assert_eq!(result[0].champion_name, "Ahri");
+    }
+
+    #[test]
+    fn catalog_empty_input() {
+        let result = map_champion_catalog(vec![]);
+        assert!(result.is_empty());
+    }
+
+    // ── champion_name_map ─────────────────────────────────────────────────
+
+    #[test]
+    fn name_map_builds_from_valid_champions() {
+        let input = vec![summary(103, "Ahri"), summary(1, "Annie")];
+        let map = champion_name_map(input);
+        assert_eq!(map.len(), 2);
+        assert_eq!(map.get(&103), Some(&"Ahri".to_string()));
+        assert_eq!(map.get(&1), Some(&"Annie".to_string()));
+    }
+
+    #[test]
+    fn name_map_filters_invalid_entries() {
+        let input = vec![summary(0, "Bad"), summary(-1, "Bad"), summary(1, "")];
+        let map = champion_name_map(input);
+        assert!(map.is_empty());
+    }
+
+    #[test]
+    fn name_map_empty_input() {
+        let map = champion_name_map(vec![]);
+        assert!(map.is_empty());
+    }
+}
