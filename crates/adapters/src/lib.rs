@@ -21,7 +21,7 @@ use domain::{
 use percent_encoding::{AsciiSet, CONTROLS, percent_encode};
 use rayon::prelude::*;
 use reqwest::blocking::Client;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::Value;
 use sysinfo::{ProcessesToUpdate, System};
 
@@ -35,6 +35,9 @@ use data_providers::unix_timestamp_seconds;
 
 mod game_client_types;
 pub(crate) use game_client_types::*;
+
+mod lcu_types;
+pub(crate) use lcu_types::*;
 
 pub fn layer_name() -> &'static str {
     "adapters"
@@ -1102,109 +1105,6 @@ fn section_error_message(section_name: &str, error: LcuRequestError) -> String {
     }
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct LcuSummoner {
-    display_name: Option<String>,
-    game_name: Option<String>,
-    tag_line: Option<String>,
-    summoner_level: Option<i64>,
-    profile_icon_id: Option<i64>,
-    account_id: Option<i64>,
-    summoner_id: Option<i64>,
-    puuid: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct LcuChampSelectSession {
-    local_player_cell_id: Option<i64>,
-    #[serde(default)]
-    actions: Vec<Vec<LcuChampSelectAction>>,
-    #[serde(default)]
-    my_team: Vec<LcuChampSelectMember>,
-    #[serde(default)]
-    their_team: Vec<LcuChampSelectMember>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct LcuGameflowSession {
-    game_data: Option<LcuGameflowGameData>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct LcuGameflowGameData {
-    #[serde(default)]
-    team_one: Vec<LcuGameflowParticipant>,
-    #[serde(default)]
-    team_two: Vec<LcuGameflowParticipant>,
-    #[serde(default)]
-    player_champion_selections: Vec<LcuGameflowChampionSelection>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct LcuGameflowParticipant {
-    summoner_id: Option<i64>,
-    puuid: Option<String>,
-    summoner_name: Option<String>,
-    display_name: Option<String>,
-    game_name: Option<String>,
-    tag_line: Option<String>,
-    champion_id: Option<i64>,
-    selected_champion_id: Option<i64>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct LcuGameflowChampionSelection {
-    summoner_id: Option<i64>,
-    puuid: Option<String>,
-    champion_id: Option<i64>,
-    selected_champion_id: Option<i64>,
-    team_id: Option<i64>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct LcuChampSelectAction {
-    id: Option<i64>,
-    actor_cell_id: Option<i64>,
-    completed: Option<bool>,
-    is_ally_action: Option<bool>,
-    #[serde(rename = "type")]
-    action_type: Option<String>,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct LcuChampSelectActionUpdate {
-    champion_id: i64,
-    completed: bool,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct LcuChampSelectMember {
-    summoner_id: Option<i64>,
-    champion_id: Option<i64>,
-    summoner_name: Option<String>,
-    display_name: Option<String>,
-    game_name: Option<String>,
-    tag_line: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct LcuSummonerBatch {
-    puuid: Option<String>,
-    summoner_id: Option<i64>,
-    display_name: Option<String>,
-    game_name: Option<String>,
-    tag_line: Option<String>,
-}
 
 
 impl LcuChampSelectMember {
