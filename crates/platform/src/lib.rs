@@ -756,6 +756,20 @@ fn clear_auto_accept_started(state: &AppState) {
     state.auto_accept_in_progress.store(false, Ordering::SeqCst);
 }
 
+/// RAII guard that clears `auto_accept_in_progress` on drop.
+///
+/// Ensures the lock is released even if the automation logic panics,
+/// preventing the auto-accept feature from being silently disabled.
+struct AutoAcceptGuard<'a> {
+    state: &'a AppState,
+}
+
+impl<'a> Drop for AutoAcceptGuard<'a> {
+    fn drop(&mut self) {
+        clear_auto_accept_started(self.state);
+    }
+}
+
 fn reset_league_event_session_state(state: &AppState, service_state: &mut LeagueEventServiceState) {
     service_state.phase = None;
     service_state.fingerprint.clear();
@@ -989,8 +1003,8 @@ fn run_ready_check_automation_guarded<R: Runtime>(app_handle: &AppHandle<R>, sta
         Some("Accepting ready check"),
     );
 
+    let _guard = AutoAcceptGuard { state };
     let result = run_ready_check_automation(state);
-    clear_auto_accept_started(state);
 
     match result {
         Ok(()) => set_auto_accept_status(
@@ -2994,5 +3008,33 @@ mod tests {
             },
             warnings: Vec::new(),
         }
+    }
+
+    #[test]
+    fn auto_accept_guard_clears_on_drop() {
+        let data_dir = unique_temp_dir();
+        let state = AppState::initialize(&data_dir).expect("app state initializes");
+        state.auto_accept_in_progress.store(true, Ordering::SeqCst);
+
+        {
+            let _guard = AutoAcceptGuard { state: &state };
+        }
+
+        assert!(!state.auto_accept_in_progress.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn auto_accept_guard_clears_on_panic() {
+        let data_dir = unique_temp_dir();
+        let state = AppState::initialize(&data_dir).expect("app state initializes");
+        state.auto_accept_in_progress.store(true, Ordering::SeqCst);
+
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _guard = AutoAcceptGuard { state: &state };
+            panic!("simulated crash in ready check automation");
+        }));
+
+        assert!(result.is_err());
+        assert!(!state.auto_accept_in_progress.load(Ordering::SeqCst));
     }
 }
