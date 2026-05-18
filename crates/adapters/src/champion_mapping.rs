@@ -95,19 +95,22 @@ pub(crate) fn map_champion_ability(
                 .get_image_asset(path.as_str(), CHAMPION_ICON_MIME)
                 .ok()
         });
-    let raw_description = ability
+    // Raw HTML description from the LCU — HTML tags preserved intentionally so
+    // that <magicDamage>, <passive>, <active> etc. survive into the frontend.
+    let raw_html = ability
         .dynamic_description
         .or(ability.description)
-        .map(clean_game_asset_text)
-        .and_then(non_empty_owned)
+        .unwrap_or_default();
+
+    // HTML-stripped fallback used for the summary tooltip and as last resort.
+    let raw_clean = non_empty_owned(clean_game_asset_text(raw_html.clone()))
         .unwrap_or_else(|| "No description available".to_string());
+
     let ability_name = ability
         .name
         .and_then(non_empty_owned)
         .unwrap_or_else(|| slot.to_string());
 
-    // Resolve @Token@ placeholders using CommunityDragon bin data
-    let summary_description = raw_description.clone();
     let effect_values = ability
         .effect_amounts
         .iter()
@@ -116,27 +119,59 @@ pub(crate) fn map_champion_ability(
             values: values.clone(),
         })
         .collect::<Vec<_>>();
-    let description = bin_spell
-        .map(|spell| {
-            community_dragon::resolve_spell_tokens_with_fallbacks(
-                &raw_description,
-                spell,
-                &effect_values,
-            )
-        })
-        .map(|resolution| {
-            if !resolution.unresolved_tokens.is_empty() {
-                log_lcu_adapter_event(
-                    format!(
-                        "unresolved champion ability tokens champion={champion_name} slot={slot} ability={} tokens={:?}",
-                        ability_name, resolution.unresolved_tokens
-                    )
-                    .as_str(),
-                );
-            }
-            resolution.text
-        })
-        .unwrap_or(raw_description);
+
+    // summary_description: plain text used for the hover tooltip (no HTML).
+    let summary_description = raw_clean.clone();
+
+    // Resolve @Token@ placeholders.  We pass raw_html so that color markup
+    // (<magicDamage>, <physicalDamage>, etc.) is preserved for the frontend.
+    let (description, unresolved_tokens) = if let Some(spell) = bin_spell {
+        // CommunityDragon available: full resolution with calculations.
+        let resolution = community_dragon::resolve_spell_tokens_with_fallbacks(
+            &raw_html,
+            spell,
+            &effect_values,
+        );
+        if !resolution.unresolved_tokens.is_empty() {
+            log_lcu_adapter_event(
+                format!(
+                    "unresolved champion ability tokens champion={champion_name} slot={slot} ability={} tokens={:?}",
+                    ability_name, resolution.unresolved_tokens
+                )
+                .as_str(),
+            );
+        }
+        let text = if resolution.text.is_empty() { raw_clean } else { resolution.text };
+        (text, resolution.unresolved_tokens)
+    } else if !effect_values.is_empty() {
+        // CDragon unavailable. LCU effectAmounts keys are positional
+        // (Effect1Amount, Effect2Amount, …) and don't match the semantic token
+        // names in the template (@MSAmount*100@, @BaseDamage@, …).
+        // Re-key by position so the n-th template token resolves against
+        // Effect(n)Amount.
+        let rank_count = match slot {
+            "Passive" => 1,
+            "R" => 3,
+            _ => 5,
+        };
+        let positional = community_dragon::positional_fallback_values(&raw_html, &effect_values);
+        let resolution = community_dragon::resolve_with_lcu_values(&raw_html, &positional, rank_count);
+        if !resolution.unresolved_tokens.is_empty() {
+            log_lcu_adapter_event(
+                format!(
+                    "unresolved lcu-positional tokens champion={champion_name} slot={slot} ability={} tokens={:?}",
+                    ability_name, resolution.unresolved_tokens
+                )
+                .as_str(),
+            );
+        }
+        let text = if resolution.text.is_empty() { raw_clean } else { resolution.text };
+        (text, resolution.unresolved_tokens)
+    } else {
+        (raw_clean, Vec::new())
+    };
+
+    let cdragon_available = bin_spell.is_some();
 
     let cooldown_values = coefficient_values(&ability.cooldown_coefficients, true);
     let cost_values = coefficient_values(&ability.cost_coefficients, true);
@@ -185,6 +220,8 @@ pub(crate) fn map_champion_ability(
         cost_values,
         range_values,
         stats,
+        unresolved_tokens,
+        cdragon_available,
     }
 }
 
@@ -206,6 +243,7 @@ mod tests {
         LcuChampionSummary {
             id,
             name: name.to_string(),
+            alias: None,
         }
     }
 

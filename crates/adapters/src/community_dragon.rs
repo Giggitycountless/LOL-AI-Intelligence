@@ -7,7 +7,12 @@ use serde::Deserialize;
 
 const COMMUNITY_DRAGON_BASE: &str = "https://raw.communitydragon.org/latest/game/data/characters";
 const CACHE_TTL: Duration = Duration::from_secs(3600);
-const REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
+/// Total read timeout for a CDragon bin.json fetch.  The files are several MB,
+/// so connections to distant CDN nodes (common in some regions) need more time
+/// than a localhost LCU call.
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(20);
+/// Separate connect timeout: if the host is unreachable we want to fail fast.
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(8);
 
 const NON_DISPLAY_TOKENS: &[&str] = &["SpellModifierDescriptionAppend"];
 
@@ -69,7 +74,9 @@ struct RawSpell {
 
 #[derive(Debug, Deserialize)]
 struct RawDataValue {
+    #[serde(alias = "mDataValue")]
     name: Option<String>,
+    #[serde(alias = "mValues")]
     values: Option<Vec<f64>>,
 }
 
@@ -123,6 +130,7 @@ impl CommunityDragonClient {
     pub fn new() -> Self {
         let http = Client::builder()
             .timeout(REQUEST_TIMEOUT)
+            .connect_timeout(CONNECT_TIMEOUT)
             .build()
             .expect("CommunityDragon HTTP client builds");
         Self {
@@ -146,12 +154,34 @@ impl CommunityDragonClient {
         }
 
         let url = format!("{COMMUNITY_DRAGON_BASE}/{cd_name}/{cd_name}.bin.json");
-        let response = self.http.get(&url).send().ok()?;
+        let response = match self.http.get(&url).send() {
+            Ok(r) => r,
+            Err(err) => {
+                eprintln!("[community-dragon] fetch failed champion={cd_name} url={url} err={err}");
+                return None;
+            }
+        };
         if !response.status().is_success() {
+            eprintln!(
+                "[community-dragon] fetch failed champion={cd_name} url={url} status={}",
+                response.status()
+            );
             return None;
         }
-        let raw: HashMap<String, serde_json::Value> = response.json().ok()?;
-        let parsed = parse_bin_json(&raw, &cd_name)?;
+        let raw: HashMap<String, serde_json::Value> = match response.json() {
+            Ok(r) => r,
+            Err(err) => {
+                eprintln!("[community-dragon] json parse failed champion={cd_name} err={err}");
+                return None;
+            }
+        };
+        let parsed = match parse_bin_json(&raw, &cd_name) {
+            Some(p) => p,
+            None => {
+                eprintln!("[community-dragon] bin parse produced no spells champion={cd_name}");
+                return None;
+            }
+        };
 
         if let Ok(mut cache) = self.cache.lock() {
             cache.insert(
@@ -625,6 +655,79 @@ pub(crate) fn resolve_tokens(description: &str, data_values: &[DataValue]) -> To
     resolve_tokens_with_context(description, data_values, &[], None, 5)
 }
 
+/// Resolve `@Token@` placeholders using only LCU `effectAmounts` values, with
+/// no CDragon bin data or calculations. Used when CDragon is unavailable so
+/// simple tokens still resolve. HTML markup in `description` is preserved.
+pub(crate) fn resolve_with_lcu_values(
+    description: &str,
+    data_values: &[DataValue],
+    rank_count: usize,
+) -> TokenResolution {
+    resolve_tokens_with_context(description, data_values, &[], None, rank_count)
+}
+
+/// Extract unique semantic token names from a description in first-appearance order.
+/// Strips multiplier suffixes: `@MSAmount*100@` → `"MSAmount"`.
+/// Skips `NON_DISPLAY_TOKENS` (e.g. `SpellModifierDescriptionAppend`).
+fn extract_ordered_token_names(description: &str) -> Vec<String> {
+    let mut names = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    let mut rest = description;
+    while let Some(start) = rest.find('@') {
+        let after = &rest[start + 1..];
+        let Some(end) = after.find('@') else { break };
+        let body = &after[..end];
+        rest = &after[end + 1..];
+        if body.is_empty() {
+            continue;
+        }
+        if NON_DISPLAY_TOKENS.iter().any(|s| body.contains(s)) {
+            continue;
+        }
+        let name = body.split('*').next().unwrap_or(body);
+        if seen.insert(name.to_string()) {
+            names.push(name.to_string());
+        }
+    }
+    names
+}
+
+/// When CDragon is unavailable the LCU provides positional `effectAmounts`
+/// (`Effect1Amount`, `Effect2Amount`, …) whose per-rank values match CDragon
+/// DataValues but whose keys don't match the template token names.
+///
+/// Re-keys those values by position: the n-th unique token name found in the
+/// description template is assigned the values of Effect(n)Amount (sorted
+/// numerically so `Effect10Amount` comes after `Effect9Amount`, not before
+/// `Effect2Amount` as lexicographic order would give).
+///
+/// Returns a `Vec<DataValue>` ready to pass to `resolve_with_lcu_values`.
+pub(crate) fn positional_fallback_values(
+    description: &str,
+    effect_amounts: &[DataValue],
+) -> Vec<DataValue> {
+    let token_names = extract_ordered_token_names(description);
+    if token_names.is_empty() || effect_amounts.is_empty() {
+        return Vec::new();
+    }
+    let mut sorted = effect_amounts.to_vec();
+    sorted.sort_by_key(|dv| {
+        dv.name
+            .trim_start_matches("Effect")
+            .trim_end_matches("Amount")
+            .parse::<u32>()
+            .unwrap_or(u32::MAX)
+    });
+    token_names
+        .into_iter()
+        .zip(sorted)
+        .map(|(name, mut effect)| {
+            effect.name = name;
+            effect
+        })
+        .collect()
+}
+
 #[cfg(test)]
 pub(crate) fn resolve_spell_tokens(description: &str, spell: &BinSpellData) -> TokenResolution {
     resolve_spell_tokens_with_fallbacks(description, spell, &[])
@@ -799,10 +902,18 @@ fn calculation_text(
             continue;
         }
 
-        if let Some(values) = formula_part_values(part, data_values, fallback_values, rank_count)
-            && let Some(text) = display_values(&values, display_as_percent)
-        {
-            flat_parts.push(text);
+        if let Some(values) = formula_part_values(part, data_values, fallback_values, rank_count) {
+            // When the calculation is flagged as a percentage the raw values are
+            // fractions (e.g. 0.01 = 1%).  Use display_percent_values so they
+            // are multiplied by 100 before formatting instead of just appending %.
+            let text = if display_as_percent {
+                display_percent_values(values)
+            } else {
+                display_values(&values, false)
+            };
+            if let Some(text) = text {
+                flat_parts.push(text);
+            }
         }
     }
 
@@ -951,13 +1062,13 @@ fn format_f64(value: f64) -> String {
         return value.to_string();
     }
     let rounded = value.round();
-    if (value - rounded).abs() < 0.01 {
+    // Treat as an integer when within 0.01 of a whole number.  Use <=  so
+    // values like 0.01 (float32 sentinel for 1%) round to 0 here rather than
+    // falling through to the 1-decimal formatter and showing "0.0".
+    if (value - rounded).abs() <= 0.01 {
         return format!("{}", rounded as i64);
     }
-    // Show 1 decimal
-    let s = format!("{:.1}", value);
-    // Should already be trimmed by {:.1}
-    s
+    format!("{:.1}", value)
 }
 
 // ---------------------------------------------------------------------------
@@ -1122,8 +1233,8 @@ mod tests {
                     "mSpell": {
                         "DataValues": [
                             {
-                                "name": "BaseDamage",
-                                "values": [10.0, 35.0, 60.0, 85.0, 110.0, 135.0, 160.0]
+                                "mDataValue": "BaseDamage",
+                                "mValues": [10.0, 35.0, 60.0, 85.0, 110.0, 135.0, 160.0]
                             }
                         ],
                         "mSpellCalculations": {
@@ -1145,24 +1256,24 @@ mod tests {
                     "mSpell": {
                         "DataValues": [
                             {
-                                "name": "BaseDamage",
-                                "values": [0.0, 10.0, 20.0, 30.0, 40.0, 50.0, 60.0]
+                                "mDataValue": "BaseDamage",
+                                "mValues": [0.0, 10.0, 20.0, 30.0, 40.0, 50.0, 60.0]
                             },
                             {
-                                "name": "MSAmount",
-                                "values": [0.30000001192092896, 0.30000001192092896, 0.30000001192092896]
+                                "mDataValue": "MSAmount",
+                                "mValues": [0.30000001192092896, 0.30000001192092896, 0.30000001192092896]
                             },
                             {
-                                "name": "MSDuration",
-                                "values": [1.5, 1.5, 1.5]
+                                "mDataValue": "MSDuration",
+                                "mValues": [1.5, 1.5, 1.5]
                             },
                             {
-                                "name": "EnemyMaxHealthDamage",
-                                "values": [0.009999999776482582, 0.009999999776482582]
+                                "mDataValue": "EnemyMaxHealthDamage",
+                                "mValues": [0.009999999776482582, 0.009999999776482582]
                             },
                             {
-                                "name": "MaxHealthTADRatio",
-                                "values": [0.00004999999873689376, 0.00009999999747378752]
+                                "mDataValue": "MaxHealthTADRatio",
+                                "mValues": [0.00004999999873689376, 0.00009999999747378752]
                             }
                         ],
                         "mSpellCalculations": {
@@ -1227,6 +1338,245 @@ mod tests {
         assert!(resolved_sett.text.contains("10/20/30/40/50 plus"));
     }
 
+    // -----------------------------------------------------------------------
+    // positional_fallback_values tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn positional_fallback_maps_effect_amounts_to_token_names() {
+        let desc = "gaining @MSAmount*100@% for @MSDuration@ seconds, @BaseDamage@ damage";
+        let effects = vec![
+            DataValue { name: "Effect1Amount".to_string(), values: vec![0.3, 0.3, 0.3] },
+            DataValue { name: "Effect2Amount".to_string(), values: vec![1.5, 1.5, 1.5] },
+            DataValue { name: "Effect3Amount".to_string(), values: vec![10.0, 20.0, 30.0] },
+        ];
+        let mapped = positional_fallback_values(desc, &effects);
+        assert_eq!(mapped.len(), 3);
+        assert_eq!(mapped[0].name, "MSAmount");
+        assert_eq!(mapped[0].values, vec![0.3, 0.3, 0.3]);
+        assert_eq!(mapped[1].name, "MSDuration");
+        assert_eq!(mapped[1].values, vec![1.5, 1.5, 1.5]);
+        assert_eq!(mapped[2].name, "BaseDamage");
+        assert_eq!(mapped[2].values, vec![10.0, 20.0, 30.0]);
+    }
+
+    #[test]
+    fn positional_fallback_resolves_sett_q_tokens_when_cdragon_unavailable() {
+        // Simulates: CDragon unreachable, LCU effectAmounts available.
+        // Values mirror real Sett Q CDragon DataValues (fractions, not pre-scaled).
+        let desc = "gaining @MSAmount*100@% Move Speed for @MSDuration@ seconds. \
+                    @BaseDamage@ plus @MaxHealthDamageCalc@ max HP damage.";
+        let effects = vec![
+            DataValue { name: "Effect1Amount".to_string(), values: vec![0.0, 0.3, 0.3, 0.3, 0.3, 0.3] },
+            DataValue { name: "Effect2Amount".to_string(), values: vec![1.5, 1.5, 1.5, 1.5, 1.5, 1.5] },
+            DataValue { name: "Effect3Amount".to_string(), values: vec![0.0, 10.0, 20.0, 30.0, 40.0, 50.0] },
+        ];
+        let mapped = positional_fallback_values(desc, &effects);
+        let resolution = resolve_with_lcu_values(desc, &mapped, 5);
+
+        assert!(resolution.text.contains("30%"), "speed token: {}", resolution.text);
+        assert!(resolution.text.contains("1.5"), "duration token: {}", resolution.text);
+        assert!(resolution.text.contains("10/20/30/40/50"), "damage token: {}", resolution.text);
+        // MaxHealthDamageCalc has no Effect slot — stays unresolved
+        assert!(resolution.unresolved_tokens.contains(&"MaxHealthDamageCalc".to_string()));
+    }
+
+    #[test]
+    fn positional_fallback_deduplicates_repeated_token_names() {
+        // BaseDamage appears twice — should be counted as one position
+        let desc = "@BaseDamage@ damage (+@ADRatio*100@% AD) total @BaseDamage@";
+        let effects = vec![
+            DataValue { name: "Effect1Amount".to_string(), values: vec![50.0] },
+            DataValue { name: "Effect2Amount".to_string(), values: vec![1.2] },
+        ];
+        let mapped = positional_fallback_values(desc, &effects);
+        assert_eq!(mapped.len(), 2);
+        assert_eq!(mapped[0].name, "BaseDamage");
+        assert_eq!(mapped[1].name, "ADRatio");
+    }
+
+    #[test]
+    fn positional_fallback_sorts_effect_numbers_numerically() {
+        // Lexicographic sort would put Effect10 before Effect2 ("1" < "2").
+        // Numeric sort must put Effect2 first.
+        let desc = "@First@ and @Second@";
+        let effects = vec![
+            DataValue { name: "Effect10Amount".to_string(), values: vec![10.0] },
+            DataValue { name: "Effect2Amount".to_string(),  values: vec![2.0] },
+        ];
+        let mapped = positional_fallback_values(desc, &effects);
+        assert_eq!(mapped[0].name, "First");
+        assert_eq!(mapped[0].values, vec![2.0],  "Effect2 should map to position 1");
+        assert_eq!(mapped[1].name, "Second");
+        assert_eq!(mapped[1].values, vec![10.0], "Effect10 should map to position 2");
+    }
+
+    // -----------------------------------------------------------------------
+    // Real CDragon data — values taken from:
+    // https://raw.communitydragon.org/latest/game/data/characters/sett/sett.bin.json
+    // CDragon uses "name"/"values" field names for DataValues items.
+    // These tests cover exactly the tokens that show blank in the live client.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn sett_q_resolves_movement_speed_and_duration_tokens() {
+        let raw = serde_json::from_value::<HashMap<String, serde_json::Value>>(serde_json::json!({
+            "Characters/Sett/Spells/SettQAbility/SettQ": {
+                "mSpell": {
+                    "DataValues": [
+                        {"name": "BaseDamage",   "values": [0.0,  10.0,  20.0,  30.0,  40.0,  50.0,  60.0]},
+                        {"name": "MSAmount",     "values": [0.3,   0.3,   0.3,   0.3,   0.3,   0.3,   0.3]},
+                        {"name": "MSDuration",   "values": [1.5,   1.5,   1.5,   1.5,   1.5,   1.5,   1.5]},
+                        {"name": "ADRatio",      "values": [1.2,   1.2,   1.2,   1.2,   1.2,   1.2,   1.2]},
+                        {"name": "EnemyMaxHealthDamage", "values": [0.01,  0.01,  0.01,  0.01,  0.01,  0.01,  0.01]},
+                        {"name": "MaxHealthTADRatio",    "values": [5e-5, 1e-4, 1.5e-4, 2e-4, 2.5e-4, 3e-4, 3.5e-4]},
+                        {"name": "QMinimumDamage",       "values": [5.0,  10.0,  15.0,  20.0,  25.0,  30.0,  35.0]}
+                    ],
+                    "mSpellCalculations": {
+                        "MaxHealthDamageCalc": {
+                            "mFormulaParts": [
+                                {"mDataValue": "EnemyMaxHealthDamage"},
+                                {"mStat": 2, "mDataValue": "MaxHealthTADRatio"}
+                            ],
+                            "mDisplayAsPercent": true
+                        }
+                    },
+                    "mClientData": {
+                        "mTooltipData": {"mLists": {"LevelUp": {"levelCount": 5}}}
+                    }
+                }
+            }
+        })).unwrap();
+        let data = parse_bin_json(&raw, "sett").unwrap();
+        let q = data.get_spell("Q").unwrap();
+
+        // These are the blank slots from the live Chinese client output
+        assert_eq!(resolve_spell_tokens("@MSAmount*100@", q).text, "30");
+        assert_eq!(resolve_spell_tokens("@MSDuration@", q).text, "1.5");
+        assert_eq!(resolve_spell_tokens("@BaseDamage@", q).text, "10/20/30/40/50");
+        assert_eq!(resolve_spell_tokens("@ADRatio*100@", q).text, "120");
+
+        // MaxHealthDamageCalc must resolve — no raw @ tokens should remain
+        let calc = resolve_spell_tokens("@MaxHealthDamageCalc@ max HP", q);
+        assert!(
+            !calc.text.contains('@'),
+            "MaxHealthDamageCalc left raw token: {}",
+            calc.text
+        );
+        assert!(calc.unresolved_tokens.is_empty());
+    }
+
+    #[test]
+    fn sett_w_resolves_damage_conversion_and_shield_tokens() {
+        let raw = serde_json::from_value::<HashMap<String, serde_json::Value>>(serde_json::json!({
+            "Characters/Sett/Spells/SettWAbility/SettW": {
+                "mSpell": {
+                    "DataValues": [
+                        {"name": "BaseDamage",          "values": [60.0,  80.0, 100.0, 120.0, 140.0, 160.0, 180.0]},
+                        {"name": "DamageConversionBase","values": [0.25,  0.25,  0.25,  0.25,  0.25,  0.25,  0.25]},
+                        {"name": "StoredHealth",         "values": [0.5,   0.5,   0.5,   0.5,   0.5,   0.5,   0.5]},
+                        {"name": "GreyHealthDuration",   "values": [3.0,   3.0,   3.0,   3.0,   3.0,   3.0,   3.0]},
+                        {"name": "ShieldDecayDelay",     "values": [0.75,  0.75,  0.75,  0.75,  0.75,  0.75,  0.75]}
+                    ],
+                    "mSpellCalculations": {
+                        "DamageCalc": {
+                            "mFormulaParts": [{"mDataValue": "BaseDamage"}]
+                        },
+                        "DamageConversion": {
+                            "mFormulaParts": [
+                                {"mDataValue": "DamageConversionBase"},
+                                {"mStat": 2, "mCoefficient": 0.0025}
+                            ],
+                            "mDisplayAsPercent": true
+                        },
+                        "MaxGrit": {
+                            "mFormulaParts": [{"mStat": 12, "mDataValue": "StoredHealth"}]
+                        }
+                    },
+                    "mClientData": {
+                        "mTooltipData": {"mLists": {"LevelUp": {"levelCount": 5}}}
+                    }
+                }
+            }
+        })).unwrap();
+        let data = parse_bin_json(&raw, "sett").unwrap();
+        let w = data.get_spell("W").unwrap();
+
+        assert_eq!(resolve_spell_tokens("@BaseDamage@", w).text, "80/100/120/140/160");
+        // format_f64 uses 1 decimal place: 0.75 rounds to 0.8 (IEEE 754 round-half-to-even)
+        assert_eq!(resolve_spell_tokens("@ShieldDecayDelay@", w).text, "0.8");
+        assert_eq!(resolve_spell_tokens("@GreyHealthDuration@", w).text, "3");
+
+        // DamageCalc = BaseDamage flat parts only
+        let dmg = resolve_spell_tokens("@DamageCalc@", w);
+        assert_eq!(dmg.text, "80/100/120/140/160");
+        assert!(dmg.unresolved_tokens.is_empty());
+
+        // DamageConversion: 25% base + small AD ratio; mDisplayAsPercent applies to flat part
+        let conv = resolve_spell_tokens("@DamageConversion@", w);
+        assert!(
+            !conv.text.contains('@'),
+            "DamageConversion left raw token: {}",
+            conv.text
+        );
+        assert!(conv.unresolved_tokens.is_empty());
+    }
+
+    #[test]
+    fn sett_e_resolves_slow_and_stun_tokens() {
+        let raw = serde_json::from_value::<HashMap<String, serde_json::Value>>(serde_json::json!({
+            "Characters/Sett/Spells/SettEAbility/SettE": {
+                "mSpell": {
+                    "DataValues": [
+                        {"name": "BaseDamage",   "values": [30.0,  50.0,  70.0,  90.0, 110.0, 130.0, 150.0]},
+                        {"name": "SlowAmount",   "values": [0.7,   0.7,   0.7,   0.7,   0.7,   0.7,   0.7]},
+                        {"name": "SlowDuration", "values": [0.5,   0.5,   0.5,   0.5,   0.5,   0.5,   0.5]},
+                        {"name": "StunDuration", "values": [1.0,   1.0,   1.0,   1.0,   1.0,   1.0,   1.0]}
+                    ],
+                    "mClientData": {
+                        "mTooltipData": {"mLists": {"LevelUp": {"levelCount": 5}}}
+                    }
+                }
+            }
+        })).unwrap();
+        let data = parse_bin_json(&raw, "sett").unwrap();
+        let e = data.get_spell("E").unwrap();
+
+        // These are the blank slots from the live Chinese client output for E
+        assert_eq!(resolve_spell_tokens("@SlowAmount*100@", e).text, "70");
+        assert_eq!(resolve_spell_tokens("@SlowDuration@", e).text, "0.5");
+        assert_eq!(resolve_spell_tokens("@StunDuration@", e).text, "1");
+        assert_eq!(resolve_spell_tokens("@BaseDamage@", e).text, "50/70/90/110/130");
+    }
+
+    #[test]
+    fn sett_r_resolves_max_hp_damage_and_slow_tokens() {
+        // R has 3 ranks in game; levelCount drives rank_count = 3
+        let raw = serde_json::from_value::<HashMap<String, serde_json::Value>>(serde_json::json!({
+            "Characters/Sett/Spells/SettRAbility/SettR": {
+                "mSpell": {
+                    "DataValues": [
+                        {"name": "MaxHealthDamage", "values": [0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]},
+                        {"name": "BaseDamage",      "values": [100.0, 200.0, 300.0, 400.0, 500.0, 600.0, 700.0]},
+                        {"name": "SlowAmount",      "values": [0.99, 0.99, 0.99, 0.99, 0.99, 0.99, 0.99]},
+                        {"name": "SlowDuration",    "values": [1.0,  1.0,  1.0,  1.0,  1.0,  1.0,  1.0]}
+                    ],
+                    "mClientData": {
+                        "mTooltipData": {"mLists": {"LevelUp": {"levelCount": 3}}}
+                    }
+                }
+            }
+        })).unwrap();
+        let data = parse_bin_json(&raw, "sett").unwrap();
+        let r = data.get_spell("R").unwrap();
+
+        // These are the blank slots from the live Chinese client output for R
+        assert_eq!(resolve_spell_tokens("@MaxHealthDamage*100@", r).text, "40/50/60");
+        assert_eq!(resolve_spell_tokens("@SlowAmount*100@", r).text, "99");
+        assert_eq!(resolve_spell_tokens("@SlowDuration@", r).text, "1");
+        assert_eq!(resolve_spell_tokens("@BaseDamage@", r).text, "200/300/400");
+    }
+
     #[test]
     fn resolves_m_data_values_alias_and_fallback_effect_amounts() {
         let raw = serde_json::from_value::<HashMap<String, serde_json::Value>>(serde_json::json!({
@@ -1234,8 +1584,8 @@ mod tests {
                 "mSpell": {
                     "mDataValues": [
                         {
-                            "name": "AliasDamage",
-                            "values": [0.0, 11.0, 22.0, 33.0, 44.0, 55.0]
+                            "mDataValue": "AliasDamage",
+                            "mValues": [0.0, 11.0, 22.0, 33.0, 44.0, 55.0]
                         }
                     ]
                 }
@@ -1257,6 +1607,198 @@ mod tests {
         assert_eq!(fallback_result.text, "10/20/30/40/50");
         assert!(alias_result.unresolved_tokens.is_empty());
         assert!(fallback_result.unresolved_tokens.is_empty());
+    }
+
+    #[test]
+    fn resolves_data_values_with_cdragon_field_names() {
+        // Real CDragon bin.json uses mDataValue/mValues, not name/values.
+        // This test would fail before the serde alias fix and guards against regression.
+        let raw = serde_json::from_value::<HashMap<String, serde_json::Value>>(serde_json::json!({
+            "Characters/Sett/Spells/SettQAbility/SettQ": {
+                "mSpell": {
+                    "DataValues": [
+                        { "mDataValue": "BaseDamage", "mValues": [0.0, 10.0, 20.0, 30.0, 40.0, 50.0] },
+                        { "mDataValue": "MSAmount",   "mValues": [0.3, 0.3, 0.3] }
+                    ]
+                }
+            }
+        }))
+        .expect("fixture is valid JSON");
+        let data = parse_bin_json(&raw, "sett").expect("fixture parses");
+        let spell = data.get_spell("Q").expect("Sett Q is present");
+
+        assert_eq!(resolve_spell_tokens("@BaseDamage@", spell).text, "10/20/30/40/50");
+        assert_eq!(resolve_spell_tokens("@MSAmount*100@", spell).text, "30");
+        assert!(resolve_spell_tokens("@BaseDamage@", spell).unresolved_tokens.is_empty());
+    }
+
+    #[test]
+    fn display_as_percent_scales_flat_formula_values() {
+        // mDisplayAsPercent: true means raw fraction values (e.g. 0.04 = 4% max HP)
+        // are multiplied by 100 and shown with % per value, not displayed raw.
+        let spell = BinSpellData {
+            data_values: vec![DataValue {
+                name: "MaxHPDamage".to_string(),
+                values: vec![0.0, 0.04, 0.05, 0.06, 0.07, 0.08],
+            }],
+            rank_count: 5,
+            calculations: HashMap::from([(
+                "MaxHPDamageCalc".to_string(),
+                serde_json::json!({
+                    "mFormulaParts": [{ "mDataValue": "MaxHPDamage" }],
+                    "mDisplayAsPercent": true
+                }),
+            )]),
+        };
+        let result = resolve_spell_tokens("@MaxHPDamageCalc@", &spell);
+        // rank_values skips index 0 → [0.04..0.08]; *100 → each gets "%"
+        assert_eq!(result.text, "4%/5%/6%/7%/8%");
+        assert!(result.unresolved_tokens.is_empty());
+    }
+
+    #[test]
+    fn display_as_percent_with_stat_ratio_produces_combined_output() {
+        // Mixed formula: flat percent base + stat-ratio percent part.
+        // Use values large enough that format_f64 doesn't round them to 0
+        // (format_f64 treats values within ±0.01 of an integer as that integer).
+        let spell = BinSpellData {
+            data_values: vec![
+                DataValue {
+                    name: "PercentBase".to_string(),
+                    values: vec![0.0, 0.05, 0.06, 0.07, 0.08, 0.09],
+                },
+                DataValue {
+                    name: "StatCoeff".to_string(),
+                    values: vec![0.30, 0.30],
+                },
+            ],
+            rank_count: 5,
+            calculations: HashMap::from([(
+                "PercentCalc".to_string(),
+                serde_json::json!({
+                    "mFormulaParts": [
+                        { "mDataValue": "PercentBase" },
+                        { "mStat": 2, "mDataValue": "StatCoeff" }
+                    ],
+                    "mDisplayAsPercent": true
+                }),
+            )]),
+        };
+        let result = resolve_spell_tokens("@PercentCalc@", &spell);
+        // flat: [0.05..0.09]*100 = 5%/6%/7%/8%/9%  |  stat ratio: 0.30*100 deduped = +30%
+        assert_eq!(result.text, "5%/6%/7%/8%/9% (+30%)");
+        assert!(result.unresolved_tokens.is_empty());
+    }
+
+    #[test]
+    fn resolves_modified_game_calculation_redirect() {
+        let spell = BinSpellData {
+            data_values: sample_data_values(),
+            rank_count: 5,
+            calculations: HashMap::from([
+                (
+                    "ActualDamage".to_string(),
+                    serde_json::json!({ "mFormulaParts": [{ "mDataValue": "BaseDamage" }] }),
+                ),
+                (
+                    "TotalDamage".to_string(),
+                    serde_json::json!({ "mModifiedGameCalculation": "ActualDamage" }),
+                ),
+            ]),
+        };
+        let result = resolve_spell_tokens("@TotalDamage@ damage", &spell);
+        assert_eq!(result.text, "10/20/30/40/50 damage");
+        assert!(result.unresolved_tokens.is_empty());
+    }
+
+    #[test]
+    fn resolves_nested_modified_game_calculation_chain() {
+        let spell = BinSpellData {
+            data_values: sample_data_values(),
+            rank_count: 5,
+            calculations: HashMap::from([
+                (
+                    "LevelC".to_string(),
+                    serde_json::json!({ "mFormulaParts": [{ "mDataValue": "BaseDamage" }] }),
+                ),
+                (
+                    "LevelB".to_string(),
+                    serde_json::json!({ "mModifiedGameCalculation": "LevelC" }),
+                ),
+                (
+                    "LevelA".to_string(),
+                    serde_json::json!({ "mModifiedGameCalculation": "LevelB" }),
+                ),
+            ]),
+        };
+        let result = resolve_spell_tokens("@LevelA@", &spell);
+        assert_eq!(result.text, "10/20/30/40/50");
+        assert!(result.unresolved_tokens.is_empty());
+    }
+
+    #[test]
+    fn empty_formula_parts_yields_unresolved_token() {
+        let spell = BinSpellData {
+            data_values: sample_data_values(),
+            rank_count: 5,
+            calculations: HashMap::from([(
+                "EmptyCalc".to_string(),
+                serde_json::json!({ "mFormulaParts": [] }),
+            )]),
+        };
+        let result = resolve_spell_tokens("@EmptyCalc@", &spell);
+        assert_eq!(result.text, "[EmptyCalc]");
+        assert_eq!(result.unresolved_tokens, vec!["EmptyCalc"]);
+    }
+
+    #[test]
+    fn data_value_item_without_mvalues_is_silently_skipped() {
+        let raw = serde_json::from_value::<HashMap<String, serde_json::Value>>(serde_json::json!({
+            "Characters/Sett/Spells/SettQAbility/SettQ": {
+                "mSpell": {
+                    "DataValues": [
+                        { "mDataValue": "BaseDamage" },
+                        { "mDataValue": "MSAmount", "mValues": [0.3] }
+                    ]
+                }
+            }
+        }))
+        .unwrap();
+        let data = parse_bin_json(&raw, "sett").expect("parses — valid entry exists");
+        let spell = data.get_spell("Q").expect("Q present");
+        assert_eq!(resolve_spell_tokens("@MSAmount@", spell).text, "0.3");
+        let missing = resolve_spell_tokens("@BaseDamage@", spell);
+        assert_eq!(missing.text, "[BaseDamage]");
+        assert_eq!(missing.unresolved_tokens, vec!["BaseDamage"]);
+    }
+
+    #[test]
+    fn mvalues_shorter_than_rank_count_uses_available_values() {
+        let raw = serde_json::from_value::<HashMap<String, serde_json::Value>>(serde_json::json!({
+            "Characters/Sett/Spells/SettQAbility/SettQ": {
+                "mSpell": {
+                    "DataValues": [
+                        { "mDataValue": "BaseDamage", "mValues": [10.0, 20.0] }
+                    ]
+                }
+            }
+        }))
+        .unwrap();
+        let data = parse_bin_json(&raw, "sett").expect("parses");
+        let spell = data.get_spell("Q").expect("Q present");
+        // rank_count defaults to 5 but only 2 values exist → returns both
+        let result = resolve_spell_tokens("@BaseDamage@", spell);
+        assert_eq!(result.text, "10/20");
+        assert!(result.unresolved_tokens.is_empty());
+    }
+
+    #[test]
+    fn malformed_multiplier_suffix_defaults_to_one() {
+        let dvs = sample_data_values();
+        // "@BaseDamage*@" has empty factor after * → parse fails → unwrap_or(1.0)
+        let result = resolve_tokens("@BaseDamage*@", &dvs);
+        assert_eq!(result.text, "10/20/30/40/50");
+        assert!(result.unresolved_tokens.is_empty());
     }
 
     #[test]
