@@ -11,8 +11,9 @@ use std::{
 };
 
 use adapters::{
-    LcuSubscription, LcuWebSocketError, LcuWebSocketEvent, LocalLeagueClient,
-    RemoteAdvisorJsonProvider, RemoteRankedChampionJsonProvider,
+    LcuSubscription, LcuWebSocketError,
+    LcuWebSocketEvent, LocalLeagueClient, RemoteAdvisorJsonProvider,
+    RemoteRankedChampionJsonProvider,
 };
 use application::{
     ActivityListInput, ActivityNoteInput, AdvisorDataInput, AdvisorDataRefreshInput,
@@ -145,10 +146,10 @@ pub struct AppState {
     league_client: LocalLeagueClient,
     ranked_champion_provider: RemoteRankedChampionJsonProvider,
     advisor_provider: RemoteAdvisorJsonProvider,
-    pub champ_select_cache: Mutex<Option<ChampSelectCacheEntry>>,
-    pub recent_stats_cache: Mutex<HashMap<String, RecentStatsCacheEntry>>,
-    pub summoner_id_cache: Mutex<HashMap<i64, SummonerCacheEntry>>,
-    pub summoner_name_cache: Mutex<HashMap<String, SummonerCacheEntry>>,
+    pub champ_select_cache: Arc<Mutex<Option<ChampSelectCacheEntry>>>,
+    pub recent_stats_cache: Arc<Mutex<HashMap<String, RecentStatsCacheEntry>>>,
+    pub summoner_id_cache: Arc<Mutex<HashMap<i64, SummonerCacheEntry>>>,
+    pub summoner_name_cache: Arc<Mutex<HashMap<String, SummonerCacheEntry>>>,
     pub league_event_service_started: Arc<AtomicBool>,
     pub champ_select_hydration: Arc<Mutex<Option<ChampSelectHydrationState>>>,
     pub league_phase: Arc<Mutex<Option<String>>>,
@@ -162,7 +163,10 @@ pub struct AppState {
 fn lock_or_recover<'a, T>(mutex: &'a Mutex<T>) -> MutexGuard<'a, T> {
     match mutex.lock() {
         Ok(guard) => guard,
-        Err(poisoned) => poisoned.into_inner(),
+        Err(poisoned) => {
+            tracing::warn!("recovering from poisoned mutex — thread may have panicked");
+            poisoned.into_inner()
+        }
     }
 }
 
@@ -175,10 +179,10 @@ impl AppState {
                 DEFAULT_RANKED_CHAMPION_DATA_URL,
             ),
             advisor_provider: RemoteAdvisorJsonProvider::new(DEFAULT_ADVISOR_DATA_URL),
-            champ_select_cache: Mutex::new(None),
-            recent_stats_cache: Mutex::new(HashMap::new()),
-            summoner_id_cache: Mutex::new(HashMap::new()),
-            summoner_name_cache: Mutex::new(HashMap::new()),
+            champ_select_cache: Arc::new(Mutex::new(None)),
+            recent_stats_cache: Arc::new(Mutex::new(HashMap::new())),
+            summoner_id_cache: Arc::new(Mutex::new(HashMap::new())),
+            summoner_name_cache: Arc::new(Mutex::new(HashMap::new())),
             league_event_service_started: Arc::new(AtomicBool::new(false)),
             champ_select_hydration: Arc::new(Mutex::new(None)),
             league_phase: Arc::new(Mutex::new(None)),
@@ -201,10 +205,10 @@ impl Clone for AppState {
             league_client: self.league_client.clone(),
             ranked_champion_provider: self.ranked_champion_provider.clone(),
             advisor_provider: self.advisor_provider.clone(),
-            champ_select_cache: Mutex::new(lock_or_recover(&self.champ_select_cache).clone()),
-            recent_stats_cache: Mutex::new(lock_or_recover(&self.recent_stats_cache).clone()),
-            summoner_id_cache: Mutex::new(lock_or_recover(&self.summoner_id_cache).clone()),
-            summoner_name_cache: Mutex::new(lock_or_recover(&self.summoner_name_cache).clone()),
+            champ_select_cache: Arc::clone(&self.champ_select_cache),
+            recent_stats_cache: Arc::clone(&self.recent_stats_cache),
+            summoner_id_cache: Arc::clone(&self.summoner_id_cache),
+            summoner_name_cache: Arc::clone(&self.summoner_name_cache),
             league_event_service_started: Arc::clone(&self.league_event_service_started),
             champ_select_hydration: Arc::clone(&self.champ_select_hydration),
             league_phase: Arc::clone(&self.league_phase),
@@ -274,10 +278,7 @@ impl LeagueClientReader for CachedLeagueClientReader<'_> {
         limit: i64,
     ) -> Result<ParticipantRecentStats, LeagueClientReadError> {
         let cache_key = recent_stats_cache_key(player_puuid, limit);
-        if let Some(result) = self
-            .recent_stats_cache
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+        if let Some(result) = lock_or_recover(self.recent_stats_cache)
             .get(cache_key.as_str())
             .filter(|entry| recent_stats_cache_is_fresh(entry))
             .map(|entry| entry.result.clone())
@@ -892,6 +893,23 @@ where
         }
     });
 
+    {
+        let client_for_prefetch = state.league_client.clone();
+        std::thread::spawn(move || {
+            match application::get_league_champion_catalog(&client_for_prefetch) {
+                Ok(catalog) => {
+                    let ids: Vec<i64> = catalog.iter().map(|c| c.champion_id).collect();
+                    eprintln!("[tencent-api] prefetching {} champions", ids.len());
+                    client_for_prefetch.prefetch_tencent_cache(&ids);
+                    eprintln!("[tencent-api] prefetch complete");
+                }
+                Err(e) => {
+                    eprintln!("[tencent-api] prefetch skipped — catalog unavailable: {e:?}");
+                }
+            }
+        });
+    }
+
     while let Some(event) = client.next_event().await? {
         let was_handled = tokio::task::block_in_place(|| {
             handle_lcu_websocket_event(app_handle, state, service_state, &event)
@@ -988,6 +1006,16 @@ fn handle_league_phase_change<R: Runtime + 'static>(
     }
 
     match phase {
+        "InProgress" => {
+            // Reopen the overlay if it was destroyed during a WebSocket reconnect
+            // while the game was already in progress.
+            if app_handle
+                .get_webview_window(SELF_HISTORY_OVERLAY_WINDOW_LABEL)
+                .is_none()
+            {
+                let _ = app_handle.emit("open-self-history-overlay", ());
+            }
+        }
         "ReadyCheck" => {
             run_ready_check_automation_guarded(app_handle, state);
         }

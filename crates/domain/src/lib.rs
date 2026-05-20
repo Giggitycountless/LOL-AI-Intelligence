@@ -387,15 +387,6 @@ pub struct LeagueChampionAbility {
     pub range_values: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub stats: Vec<AbilityStat>,
-    /// Tokens that could not be resolved during description rendering.
-    /// Empty in normal operation; non-empty when CDragon data is absent or a
-    /// token name has no matching DataValue or calculation.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub unresolved_tokens: Vec<String>,
-    /// False when CDragon was unreachable and the LCU-only positional fallback
-    /// was used. Serialises as `"cdragonAvailable": false` in the JSON response.
-    #[serde(default)]
-    pub cdragon_available: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -405,6 +396,7 @@ pub struct AbilityStat {
     pub values: Vec<f64>,
     pub suffix: String,
 }
+
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]

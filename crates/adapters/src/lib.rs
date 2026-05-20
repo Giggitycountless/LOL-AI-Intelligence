@@ -25,6 +25,8 @@ use sysinfo::{ProcessesToUpdate, System};
 
 mod community_dragon;
 mod constants;
+mod tencent_lol_api;
+pub use tencent_lol_api::TencentLolClient;
 use constants::*;
 
 pub mod data_providers;
@@ -83,8 +85,13 @@ fn map_ranked_queues(stats: LcuRankedStats) -> Vec<RankedQueueSummary> {
 pub struct LocalLeagueClient {
     lockfile_override: Option<PathBuf>,
     community_dragon: community_dragon::CommunityDragonClient,
+    tencent: tencent_lol_api::TencentLolClient,
     cached_credentials: Arc<Mutex<Option<(Instant, LockfileCredentials)>>>,
     session_cache: Arc<Mutex<Option<LcuSession>>>,
+    /// champion_id → English alias (e.g. 876 → "Sett").
+    /// Populated lazily from /lol-game-data/assets/v1/champion-summary.json
+    /// so CDragon bin URLs always use English names regardless of client language.
+    champion_aliases: Arc<Mutex<HashMap<i64, String>>>,
 }
 
 impl Clone for LocalLeagueClient {
@@ -92,8 +99,10 @@ impl Clone for LocalLeagueClient {
         Self {
             lockfile_override: self.lockfile_override.clone(),
             community_dragon: self.community_dragon.clone(),
+            tencent: self.tencent.clone(),
             cached_credentials: self.cached_credentials.clone(),
             session_cache: self.session_cache.clone(),
+            champion_aliases: Arc::clone(&self.champion_aliases),
         }
     }
 }
@@ -126,9 +135,18 @@ impl LocalLeagueClient {
         Self {
             lockfile_override: Some(path.into()),
             community_dragon: community_dragon::CommunityDragonClient::default(),
+            tencent: tencent_lol_api::TencentLolClient::default(),
             cached_credentials: Arc::default(),
             session_cache: Arc::default(),
+            champion_aliases: Arc::default(),
         }
+    }
+
+    /// Warm the Tencent cache for all supplied champion IDs in a rayon thread pool.
+    /// Call this after the LCU champion catalog is available; errors are silently
+    /// discarded so a CDN failure never blocks startup.
+    pub fn prefetch_tencent_cache(&self, champion_ids: &[i64]) {
+        self.tencent.prefetch_all(champion_ids);
     }
 
     pub fn gameflow_phase(&self) -> Result<String, LeagueClientReadError> {
@@ -228,12 +246,66 @@ impl LocalLeagueClient {
             .get_json::<LcuChampionDetails>(champion_details_path(champion_id).as_str())
             .map_err(read_error_from_request)?;
 
-        let bin_data = details
-            .name
+        // Resolve the English champion alias for CDragon.  The LCU returns
+        // champion names in the client's language (e.g. "腕豪" for Sett when the
+        // client is set to Chinese), but CDragon URLs always use English names.
+        let cd_name = self.resolve_champion_alias(&session, champion_id, details.name.as_deref());
+
+        // Tencent API — primary source for spell numerics and descriptions.
+        // CDragon is fetched as fallback; it is only consulted by the mapper
+        // for fields that Tencent does not cover (e.g. ability stats DataValues).
+        let tencent_data = self
+            .tencent
+            .fetch_champion_data(champion_id, cd_name.as_deref());
+        let bin_data = cd_name
             .as_deref()
             .and_then(|name| self.community_dragon.fetch_champion_bin(name));
 
-        map_champion_details(&session, champion_id, details, bin_data.as_ref())
+        map_champion_details(
+            &session,
+            champion_id,
+            details,
+            bin_data.as_ref(),
+            tencent_data.as_ref(),
+        )
+    }
+
+    /// Returns the English alias for a champion ID (e.g. 876 → "Sett"), using
+    /// a locally cached map that is populated on first call from the champion
+    /// summary endpoint.  Falls back to the localized name if the alias is
+    /// unavailable so existing behaviour is preserved.
+    fn resolve_champion_alias(
+        &self,
+        session: &LcuSession,
+        champion_id: i64,
+        localized_name: Option<&str>,
+    ) -> Option<String> {
+        {
+            let cache = lock_or_recover(&self.champion_aliases);
+            if let Some(alias) = cache.get(&champion_id) {
+                return Some(alias.clone());
+            }
+        }
+
+        // Cache miss: fetch the full summary list once and populate every entry.
+        // This is a localhost request so it is essentially instant.
+        if let Ok(summaries) = session
+            .get_json::<Vec<LcuChampionSummary>>("/lol-game-data/assets/v1/champion-summary.json")
+        {
+            let mut cache = lock_or_recover(&self.champion_aliases);
+            for summary in &summaries {
+                if let Some(alias) = &summary.alias {
+                    if !alias.is_empty() {
+                        cache.insert(summary.id, alias.clone());
+                    }
+                }
+            }
+            if let Some(alias) = cache.get(&champion_id) {
+                return Some(alias.clone());
+            }
+        }
+
+        localized_name.map(str::to_string)
     }
 
     fn read_game_asset(
@@ -2840,7 +2912,6 @@ mod tests {
 
         let ability = map_champion_ability(
             &session,
-            "Ahri",
             "Q",
             LcuChampionAbility {
                 name: Some("Orb of Deception".to_string()),
@@ -2855,8 +2926,8 @@ mod tests {
                 ])),
                 cooldown_coefficients: vec![9.0, 8.0, 7.0, 6.0, 5.0, 5.0],
                 cost_coefficients: vec![55.0, 65.0, 75.0, 85.0, 95.0, 95.0],
-                effect_amounts: HashMap::new(),
             },
+            None,
             None,
         );
 
@@ -3126,6 +3197,7 @@ mod tests {
             Ok(vec![LcuChampionSummary {
                 id: 103,
                 name: "Ahri".to_string(),
+                alias: Some("Ahri".to_string()),
             }]),
             Err(LcuRequestError::Unavailable),
             Ok(empty_match_history()),

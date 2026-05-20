@@ -42,7 +42,6 @@ export function Settings() {
   const [isExporting, setIsExporting] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [isClearing, setIsClearing] = useState(false);
-
   const persisted = snapshot?.settings;
   const defaults = snapshot?.settingsDefaults;
 
@@ -396,6 +395,7 @@ export function Settings() {
             </div>
           </div>
         </section>
+
       </div>
     </main>
   );
