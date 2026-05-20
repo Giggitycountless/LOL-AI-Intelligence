@@ -229,9 +229,16 @@ fn clear_player_note(
     platform::clear_player_note(state.inner(), input)
 }
 
-/// Low-level keyboard hook using rdev. Tracks Shift state manually and toggles
-/// the self-history overlay on Shift+Tab, matching Frank's global_key.rs approach.
-/// Runs on a dedicated blocking thread — rdev::listen() never returns on success.
+/// Called from the frontend after the window loads (mirrors Frank's init_keyboard command).
+/// Spawns a blocking thread for rdev so the hook is registered after Tauri's message
+/// loop is fully running — same timing as Frank's approach.
+#[tauri::command]
+fn init_overlay_hotkey(app: tauri::AppHandle) {
+    std::thread::spawn(move || {
+        listen_for_overlay_hotkey(app);
+    });
+}
+
 fn listen_for_overlay_hotkey(app: tauri::AppHandle) {
     use rdev::{listen, Event, EventType, Key};
 
@@ -245,7 +252,9 @@ fn listen_for_overlay_hotkey(app: tauri::AppHandle) {
             EventType::KeyRelease(Key::ShiftLeft | Key::ShiftRight) => {
                 shift_down = false;
             }
-            EventType::KeyPress(Key::Tab) if shift_down => {
+            // Trigger on KeyRelease, not KeyPress — prevents key-repeat from
+            // toggling the overlay twice (show then immediately hide).
+            EventType::KeyRelease(Key::Tab) if shift_down => {
                 toggle_overlay(&app);
             }
             _ => {}
@@ -292,15 +301,6 @@ fn main() {
             let state = app.state::<platform::AppState>().inner().clone();
             platform::start_league_event_service(app_handle, state);
 
-            // Spawn a dedicated thread for the rdev low-level keyboard hook.
-            // rdev::listen() blocks forever; it must run outside the async runtime.
-            // WH_KEYBOARD_LL fires before League of Legends can consume the key,
-            // which is why this works in-game while RegisterHotKey-based shortcuts don't.
-            let hotkey_handle = app.handle().clone();
-            std::thread::spawn(move || {
-                listen_for_overlay_hotkey(hotkey_handle);
-            });
-
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -334,7 +334,8 @@ fn main() {
             get_post_match_detail,
             get_post_match_participant_profile,
             save_player_note,
-            clear_player_note
+            clear_player_note,
+            init_overlay_hotkey
         ])
         .run(tauri::generate_context!())
     {

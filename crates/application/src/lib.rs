@@ -237,9 +237,55 @@ pub struct RankedChampionStatsInput {
     pub sort_by: Option<RankedChampionSort>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum RankedChampionDataSource {
+    #[default]
+    GitHubJson,
+    Tencent,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChampionHint {
+    pub id: i64,
+    pub name: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RankedChampionRefreshInput {
     pub url: Option<String>,
+    pub source: RankedChampionDataSource,
+    pub champion_hints: Vec<ChampionHint>,
+    pub tier: u32,
+    pub lane: Option<RankedChampionLane>,
+}
+
+impl Default for RankedChampionRefreshInput {
+    fn default() -> Self {
+        Self {
+            url: None,
+            source: RankedChampionDataSource::GitHubJson,
+            champion_hints: vec![],
+            tier: 200,
+            lane: None,
+        }
+    }
+}
+
+pub fn seed_champion_hints() -> Vec<ChampionHint> {
+    let mut seen = std::collections::HashSet::new();
+    RANKED_CHAMPION_SEEDS
+        .iter()
+        .filter_map(|seed| {
+            if seen.insert(seed.champion_id) {
+                Some(ChampionHint {
+                    id: seed.champion_id,
+                    name: seed.champion_name.to_string(),
+                })
+            } else {
+                None
+            }
+        })
+        .collect()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

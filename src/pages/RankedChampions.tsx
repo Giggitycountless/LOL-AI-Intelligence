@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { ChampionImage } from "../components/common";
 import { useAppCore, useLeagueAssets } from "../state/AppStateProvider";
-import type { RankedChampionDataStatus, RankedChampionLane, RankedChampionSort, RankedChampionStat } from "../backend/types";
+import type { RankedChampionDataSource, RankedChampionDataStatus, RankedChampionLane, RankedChampionSort, RankedChampionStat } from "../backend/types";
 import { initials, type T } from "../utils/formatting";
 
 const lanes: Array<{ id: RankedChampionLane; label: string; shortLabel: string }> = [
@@ -11,6 +11,18 @@ const lanes: Array<{ id: RankedChampionLane; label: string; shortLabel: string }
   { id: "middle", label: "Mid", shortLabel: "MID" },
   { id: "bottom", label: "Bot", shortLabel: "BOT" },
   { id: "support", label: "Support", shortLabel: "SUP" },
+];
+
+const sources: Array<{ id: RankedChampionDataSource; label: string; description: string }> = [
+  { id: "tencent", label: "Tencent CN", description: "国服实时数据" },
+  { id: "github", label: "GitHub JSON", description: "静态样本数据" },
+];
+
+const tencentTiers: Array<{ value: number; label: string }> = [
+  { value: 200, label: "全段位" },
+  { value: 120, label: "黄金+" },
+  { value: 40, label: "钻石+" },
+  { value: 0, label: "王者" },
 ];
 
 const sorts: Array<{ id: RankedChampionSort; label: string; metric: keyof RankedChampionStat }> = [
@@ -32,6 +44,8 @@ export function RankedChampions() {
   const { leagueImages, loadLeagueChampionIcon } = useLeagueAssets();
   const [lane, setLane] = useState<RankedChampionLane>("top");
   const [sortBy, setSortBy] = useState<RankedChampionSort>("overall");
+  const [source, setSource] = useState<RankedChampionDataSource>("tencent");
+  const [tencentTier, setTencentTier] = useState<number>(200);
   const [visibleCount, setVisibleCount] = useState(RANKED_RENDER_BATCH);
   const activeSort = useMemo(() => sorts.find((sort) => sort.id === sortBy) ?? sorts[0], [sortBy]);
   const records = rankedChampionStats?.records ?? [];
@@ -76,11 +90,48 @@ export function RankedChampions() {
             <p className="text-sm font-medium uppercase tracking-wide text-rose-700">{t("ranked.eyebrow")}</p>
             <h1 className="mt-2 text-3xl font-semibold text-zinc-950">{t("ranked.title")}</h1>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex rounded-md border border-zinc-200 bg-white">
+              {sources.map((s) => (
+                <button
+                  className={[
+                    "h-9 px-3 text-sm font-semibold transition first:rounded-l-md last:rounded-r-md",
+                    source === s.id
+                      ? "bg-zinc-950 text-white"
+                      : "text-zinc-600 hover:bg-zinc-50",
+                  ].join(" ")}
+                  key={s.id}
+                  onClick={() => setSource(s.id)}
+                  title={s.description}
+                  type="button"
+                >
+                  {s.label}
+                </button>
+              ))}
+            </div>
+            {source === "tencent" && (
+              <div className="flex rounded-md border border-zinc-200 bg-white">
+                {tencentTiers.map((tier) => (
+                  <button
+                    className={[
+                      "h-9 px-3 text-sm font-semibold transition first:rounded-l-md last:rounded-r-md",
+                      tencentTier === tier.value
+                        ? "bg-rose-700 text-white"
+                        : "text-zinc-600 hover:bg-zinc-50",
+                    ].join(" ")}
+                    key={tier.value}
+                    onClick={() => setTencentTier(tier.value)}
+                    type="button"
+                  >
+                    {tier.label}
+                  </button>
+                ))}
+              </div>
+            )}
             <button
               className="inline-flex h-10 items-center gap-2 rounded-md border border-zinc-300 bg-white px-3 text-sm font-semibold text-zinc-700 transition hover:border-zinc-400 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60"
               disabled={isRankedChampionStatsLoading}
-              onClick={() => void refreshRankedChampionStats({ lane, sortBy })}
+              onClick={() => void refreshRankedChampionStats({ lane, sortBy, source, tier: source === "tencent" ? tencentTier : undefined })}
               type="button"
             >
               <RefreshIcon />

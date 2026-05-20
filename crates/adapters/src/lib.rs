@@ -30,7 +30,7 @@ pub use tencent_lol_api::TencentLolClient;
 use constants::*;
 
 pub mod data_providers;
-pub use data_providers::{RemoteRankedChampionJsonProvider, RemoteAdvisorJsonProvider, parse_advisor_snapshot_json, parse_ranked_champion_snapshot_json};
+pub use data_providers::{DispatchingRankedChampionProvider, RemoteAdvisorJsonProvider, RemoteRankedChampionJsonProvider, parse_advisor_snapshot_json, parse_ranked_champion_snapshot_json};
 use data_providers::unix_timestamp_seconds;
 
 mod game_client_types;

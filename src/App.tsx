@@ -1,4 +1,5 @@
 import { startTransition, useCallback, useEffect, useRef, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 
 import { Activity } from "./pages/Activity";
 import { Dashboard } from "./pages/Dashboard";
@@ -31,6 +32,12 @@ export function App() {
   const participantProfileSelection = selectionFromParticipantProfileHash(window.location.hash);
   const isSelfHistoryOverlay = isSelfHistoryOverlayHash(window.location.hash);
   const mode: AppWindowMode = participantProfileSelection ? "participant" : isSelfHistoryOverlay ? "overlay" : "main";
+
+  useEffect(() => {
+    if (mode === "main") {
+      void invoke("init_overlay_hotkey");
+    }
+  }, [mode]);
 
   return (
     <AppStateProvider mode={mode}>

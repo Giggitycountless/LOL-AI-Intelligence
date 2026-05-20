@@ -111,8 +111,8 @@ export function Matches() {
   }
 
   return (
-    <main className="min-h-0 flex-1 overflow-auto px-8 py-7">
-      <div className="mx-auto w-full max-w-7xl">
+    <main className="min-h-0 flex-1 overflow-auto px-6 py-7">
+      <div className="w-full">
         <div className="flex min-w-0 flex-col gap-7">
           <header className="flex flex-wrap items-end justify-between gap-4">
             <div>
@@ -220,7 +220,7 @@ function MatchCard({
 
       {isExpanded && (
         <div className="grid gap-4 border-t border-zinc-200 bg-white p-4">
-          <div className="grid gap-3 sm:grid-cols-4">
+          <div className="grid gap-3 grid-cols-4">
             <Detail label={t("matches.result")} value={formatResult(match.result, t)} />
             <Detail label={t("matches.duration")} value={formatDuration(match.gameDurationSeconds, t)} />
             <Detail label={t("matches.played")} value={formatTimestamp(match.playedAt, t)} />

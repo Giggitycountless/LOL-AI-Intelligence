@@ -163,8 +163,12 @@ export type RankedChampionStatsResponse = {
   statusMessage: string | null;
 };
 
+export type RankedChampionDataSource = "github" | "tencent";
+
 export type RankedChampionRefreshInput = RankedChampionStatsInput & {
   url?: string | null;
+  source?: RankedChampionDataSource;
+  tier?: number;
 };
 
 export type AdvisorNamedRef = {

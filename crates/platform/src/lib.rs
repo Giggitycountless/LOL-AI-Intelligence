@@ -11,15 +11,14 @@ use std::{
 };
 
 use adapters::{
-    LcuSubscription, LcuWebSocketError,
+    DispatchingRankedChampionProvider, LcuSubscription, LcuWebSocketError,
     LcuWebSocketEvent, LocalLeagueClient, RemoteAdvisorJsonProvider,
-    RemoteRankedChampionJsonProvider,
 };
 use application::{
     ActivityListInput, ActivityNoteInput, AdvisorDataInput, AdvisorDataRefreshInput,
     ApplicationError, LeagueChampionDetailsInput, LeagueChampionIconInput, LeagueClientReadError,
     LeagueClientReader, LeagueGameAssetInput, LeagueProfileIconInput, LeagueSelfSnapshotInput,
-    ParticipantPublicProfileInput, PostMatchDetailInput, RankedChampionRefreshInput,
+    ParticipantPublicProfileInput, PostMatchDetailInput,
     RankedChampionStatsInput, SettingsInput, normalize_player_name,
 };
 use domain::{
@@ -144,7 +143,7 @@ pub struct CacheMetricsSnapshot {
 pub struct AppState {
     store: SqliteStore,
     league_client: LocalLeagueClient,
-    ranked_champion_provider: RemoteRankedChampionJsonProvider,
+    ranked_champion_provider: DispatchingRankedChampionProvider,
     advisor_provider: RemoteAdvisorJsonProvider,
     pub champ_select_cache: Arc<Mutex<Option<ChampSelectCacheEntry>>>,
     pub recent_stats_cache: Arc<Mutex<HashMap<String, RecentStatsCacheEntry>>>,
@@ -175,7 +174,7 @@ impl AppState {
         Ok(Self {
             store: SqliteStore::initialize(data_dir)?,
             league_client: LocalLeagueClient::new(),
-            ranked_champion_provider: RemoteRankedChampionJsonProvider::new(
+            ranked_champion_provider: DispatchingRankedChampionProvider::new(
                 DEFAULT_RANKED_CHAMPION_DATA_URL,
             ),
             advisor_provider: RemoteAdvisorJsonProvider::new(DEFAULT_ADVISOR_DATA_URL),
@@ -609,6 +608,8 @@ pub struct RankedChampionStatsCommand {
 #[serde(rename_all = "camelCase")]
 pub struct RefreshRankedChampionStatsCommand {
     pub url: Option<String>,
+    pub source: Option<String>,
+    pub tier: Option<u32>,
     pub lane: Option<RankedChampionLane>,
     pub sort_by: Option<RankedChampionSort>,
 }
@@ -1781,10 +1782,33 @@ pub fn refresh_ranked_champion_stats(
     state: &AppState,
     command: RefreshRankedChampionStatsCommand,
 ) -> Result<RankedChampionStatsResponse, CommandError> {
+    let source = match command.source.as_deref() {
+        Some("tencent") => application::RankedChampionDataSource::Tencent,
+        _ => application::RankedChampionDataSource::GitHubJson,
+    };
+
+    let champion_hints = if source == application::RankedChampionDataSource::Tencent {
+        match state.league_client.champion_catalog() {
+            Ok(catalog) => catalog
+                .into_iter()
+                .map(|c| application::ChampionHint { id: c.champion_id, name: c.champion_name })
+                .collect(),
+            Err(_) => application::seed_champion_hints(),
+        }
+    } else {
+        vec![]
+    };
+
     application::refresh_ranked_champion_stats(
         &state.store,
         &state.ranked_champion_provider,
-        RankedChampionRefreshInput { url: command.url },
+        application::RankedChampionRefreshInput {
+            url: command.url,
+            source,
+            champion_hints,
+            tier: command.tier.unwrap_or(200),
+            lane: command.lane,
+        },
         RankedChampionStatsInput {
             lane: command.lane,
             sort_by: command.sort_by,

@@ -1,7 +1,7 @@
 //! Remote data providers: ranked champion stats and advisor data.
 //! Parses JSON from remote URLs, validates, and normalizes into domain types.
 
-use std::collections::HashSet;
+use std::{collections::HashSet, time::Duration};
 
 use application::{AdvisorDataProvider, AdvisorDataRefreshInput, RankedChampionDataError, RankedChampionDataProvider, RankedChampionRefreshInput};
 use domain::{AdvisorDataSnapshot, AdvisorItemBuild, AdvisorMatchup, AdvisorNamedRef, AdvisorPowerSpike, AdvisorRecord, AdvisorRunePage, AdvisorSkillOrder, RankedChampionDataSnapshot, RankedChampionLane, RankedChampionStat};
@@ -541,6 +541,230 @@ fn ranked_champion_http_client() -> Client {
     {
         Ok(client) => client,
         Err(_) => Client::new(),
+    }
+}
+
+// ── Tencent ranked champion stats provider ────────────────────────────────────
+
+const TENCENT_STATS_BASE: &str =
+    "https://x1-6833.native.qq.com/x1/6833/1061021&3af49f";
+const TENCENT_STATS_TIMEOUT: Duration = Duration::from_secs(12);
+
+#[derive(Debug, Clone)]
+pub struct TencentRankedChampionProvider {
+    http_client: Client,
+}
+
+impl TencentRankedChampionProvider {
+    pub fn new() -> Self {
+        let http_client = Client::builder()
+            .timeout(TENCENT_STATS_TIMEOUT)
+            .connect_timeout(TENCENT_STATS_TIMEOUT)
+            .build()
+            .unwrap_or_default();
+        Self { http_client }
+    }
+}
+
+impl Default for TencentRankedChampionProvider {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[derive(Deserialize)]
+struct TencentStatsResponse {
+    data: TencentStatsData,
+}
+
+#[derive(Deserialize)]
+struct TencentStatsData {
+    #[serde(rename = "_fieldValues")]
+    field_values: std::collections::HashMap<String, String>,
+}
+
+#[derive(Deserialize)]
+struct TencentDetailsWrapper {
+    championdetails: String,
+}
+
+fn tencent_lane_str(lane: domain::RankedChampionLane) -> &'static str {
+    match lane {
+        domain::RankedChampionLane::Top => "top",
+        domain::RankedChampionLane::Jungle => "jungle",
+        domain::RankedChampionLane::Middle => "mid",
+        domain::RankedChampionLane::Bottom => "bottom",
+        domain::RankedChampionLane::Support => "support",
+    }
+}
+
+fn tencent_tier_label(tier: u32) -> &'static str {
+    match tier {
+        0 => "CHALLENGER",
+        1..=20 => "MASTER+",
+        21..=40 => "DIAMOND+",
+        41..=80 => "PLATINUM+",
+        81..=120 => "GOLD+",
+        121..=160 => "SILVER+",
+        _ => "BRONZE+",
+    }
+}
+
+fn yesterday_date() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let day_secs = secs.saturating_sub(86400);
+    let days_since_epoch = day_secs / 86400;
+    let (y, m, d) = days_to_ymd(days_since_epoch as u32);
+    format!("{y:04}{m:02}{d:02}")
+}
+
+fn days_to_ymd(mut z: u32) -> (u32, u32, u32) {
+    z += 719_468;
+    let era = z / 146_097;
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146_096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+    (y, m, d)
+}
+
+fn fetch_tencent_champion_stat(
+    http_client: &Client,
+    champion_id: i64,
+    lane: &str,
+    tier: u32,
+    date: &str,
+) -> Option<(f64, f64, f64)> {
+    let url = format!(
+        "{TENCENT_STATS_BASE}?championid={champion_id}&lane={lane}&dtstatdate={date}&gamequeueconfigid=420&tier={tier}&ijob=all"
+    );
+    let body = http_client.get(&url).send().ok()?.text().ok()?;
+    let resp: TencentStatsResponse = serde_json::from_str(&body).ok()?;
+    let r7615 = resp.data.field_values.get("R7615")?;
+    if r7615.len() < 4 {
+        return None;
+    }
+    let wrapper: TencentDetailsWrapper = serde_json::from_str(r7615).ok()?;
+    let details = &wrapper.championdetails;
+    let fields: Vec<&str> = details.splitn(9, '_').collect();
+    if fields.len() < 6 {
+        return None;
+    }
+    let win_rate: f64 = fields[3].parse().ok()?;
+    let pick_rate: f64 = fields[4].parse().ok()?;
+    let ban_rate: f64 = fields[5].parse().ok()?;
+    if !(0.0..=1.0).contains(&win_rate)
+        || !(0.0..=1.0).contains(&pick_rate)
+        || !(0.0..=1.0).contains(&ban_rate)
+    {
+        return None;
+    }
+    Some((win_rate * 100.0, pick_rate * 100.0, ban_rate * 100.0))
+}
+
+impl application::RankedChampionDataProvider for TencentRankedChampionProvider {
+    fn fetch_ranked_champion_snapshot(
+        &self,
+        input: application::RankedChampionRefreshInput,
+    ) -> Result<domain::RankedChampionDataSnapshot, application::RankedChampionDataError> {
+        use rayon::prelude::*;
+
+        if input.champion_hints.is_empty() {
+            return Err(application::RankedChampionDataError::InvalidData(
+                "Tencent provider requires champion_hints".to_string(),
+            ));
+        }
+
+        let lane = input.lane.unwrap_or(domain::RankedChampionLane::Top);
+        let lane_str = tencent_lane_str(lane.clone());
+        let date = yesterday_date();
+        let tier = input.tier;
+        let client = &self.http_client;
+
+        let records: Vec<domain::RankedChampionStat> = input
+            .champion_hints
+            .par_iter()
+            .filter_map(|hint| {
+                let (win, pick, ban) =
+                    fetch_tencent_champion_stat(client, hint.id, lane_str, tier, &date)?;
+                let win = round_to_tenth(win);
+                let pick = round_to_tenth(pick);
+                let ban = round_to_tenth(ban);
+                let overall = round_to_tenth(ranked_overall_score(win, pick, ban));
+                Some(domain::RankedChampionStat {
+                    champion_id: hint.id,
+                    champion_name: hint.name.clone(),
+                    champion_alias: None,
+                    lane: lane.clone(),
+                    win_rate: win,
+                    pick_rate: pick,
+                    ban_rate: ban,
+                    overall_score: overall,
+                    games: 0,
+                    wins: 0,
+                    picks: 0,
+                    bans: 0,
+                })
+            })
+            .collect();
+
+        if records.is_empty() {
+            return Err(application::RankedChampionDataError::Unavailable(
+                "Tencent ranked stats returned no data for the selected lane".to_string(),
+            ));
+        }
+
+        Ok(domain::RankedChampionDataSnapshot {
+            source: "tencent-cn".to_string(),
+            patch: None,
+            region: Some("CN".to_string()),
+            queue: Some("RANKED_SOLO_5X5".to_string()),
+            tier: Some(tencent_tier_label(tier).to_string()),
+            generated_at: Some(date),
+            imported_at: unix_timestamp_seconds(),
+            records,
+        })
+    }
+}
+
+// ── Dispatching provider ──────────────────────────────────────────────────────
+
+#[derive(Debug, Clone)]
+pub struct DispatchingRankedChampionProvider {
+    github: RemoteRankedChampionJsonProvider,
+    tencent: TencentRankedChampionProvider,
+}
+
+impl DispatchingRankedChampionProvider {
+    pub fn new(default_github_url: impl Into<String>) -> Self {
+        Self {
+            github: RemoteRankedChampionJsonProvider::new(default_github_url),
+            tencent: TencentRankedChampionProvider::new(),
+        }
+    }
+}
+
+impl application::RankedChampionDataProvider for DispatchingRankedChampionProvider {
+    fn fetch_ranked_champion_snapshot(
+        &self,
+        input: application::RankedChampionRefreshInput,
+    ) -> Result<domain::RankedChampionDataSnapshot, application::RankedChampionDataError> {
+        match input.source {
+            application::RankedChampionDataSource::Tencent => {
+                self.tencent.fetch_ranked_champion_snapshot(input)
+            }
+            application::RankedChampionDataSource::GitHubJson => {
+                self.github.fetch_ranked_champion_snapshot(input)
+            }
+        }
     }
 }
 
