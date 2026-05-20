@@ -2,7 +2,6 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::HashMap;
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -235,6 +234,9 @@ pub(crate) struct LcuRankedQueue {
 pub(crate) struct LcuChampionSummary {
     pub(crate) id: i64,
     pub(crate) name: String,
+    /// Language-independent champion key used by CDragon (e.g. "Sett", "Ahri").
+    /// Always English regardless of client language setting.
+    pub(crate) alias: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -263,8 +265,6 @@ pub(crate) struct LcuChampionAbility {
     pub(crate) cooldown_coefficients: Vec<f64>,
     #[serde(default)]
     pub(crate) cost_coefficients: Vec<f64>,
-    #[serde(default)]
-    pub(crate) effect_amounts: HashMap<String, Vec<f64>>,
 }
 
 use crate::non_empty;
