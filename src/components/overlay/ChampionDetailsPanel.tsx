@@ -6,6 +6,9 @@ import {
   abilityStatDisplay,
   abilityStatText,
   abilityTooltipText,
+  parseAbilityDescription,
+  type DescriptionSection,
+  type SpanKind,
 } from "../../pages/selfHistoryOverlayAbilityView";
 import { CloseIcon } from "./Icons";
 
@@ -69,8 +72,59 @@ export function ChampionDetailsPanel({
   );
 }
 
+// ── Span styling ─────────────────────────────────────────────────────────────
+
+const SPAN_CLASS: Record<SpanKind, string> = {
+  text: "text-zinc-600",
+  magic: "text-blue-600",
+  physical: "text-orange-600",
+  true: "text-amber-600",
+  healing: "text-emerald-600",
+  status: "text-rose-700",
+  bold: "font-semibold text-zinc-900",
+  unresolved: "font-mono text-red-600 underline decoration-dotted",
+};
+
+const LABEL_CLASS: Record<NonNullable<DescriptionSection["label"]>, string> = {
+  Passive: "bg-zinc-100 text-zinc-500 border border-zinc-200",
+  Active: "bg-rose-50 text-rose-700 border border-rose-200",
+};
+
+function StructuredDescription({ sections }: { sections: DescriptionSection[] }) {
+  if (sections.length === 0) {
+    return <p className="mt-2 text-xs text-zinc-400">-</p>;
+  }
+
+  return (
+    <div className="mt-2 grid gap-1.5">
+      {sections.map((section, i) => (
+        <p key={i} className="text-xs leading-relaxed">
+          {section.label && (
+            <span className={`mr-1.5 inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold ${LABEL_CLASS[section.label]}`}>
+              {section.label}
+            </span>
+          )}
+          {section.lines.map((spans, j) => (
+            <span key={j}>
+              {spans.map((span, k) => (
+                <span key={k} className={SPAN_CLASS[span.kind]}>
+                  {span.text}
+                </span>
+              ))}
+              {j < section.lines.length - 1 && <br />}
+            </span>
+          ))}
+        </p>
+      ))}
+    </div>
+  );
+}
+
+// ── Ability card ─────────────────────────────────────────────────────────────
+
 const AbilityCard = memo(function AbilityCard({ ability, t }: { ability: LeagueChampionAbilityView; t: T }) {
-  const description = abilityTooltipText(ability.summaryDescription, ability.description);
+  const plainDescription = abilityTooltipText(ability.summaryDescription, ability.description);
+  const sections = parseAbilityDescription(ability.description);
   const cooldown = abilityStatText(ability.cooldownValues, ability.cooldown);
   const cost = abilityStatText(ability.costValues, ability.cost);
   const range = abilityStatText(ability.rangeValues, ability.range);
@@ -90,11 +144,13 @@ const AbilityCard = memo(function AbilityCard({ ability, t }: { ability: LeagueC
             <span className="flex h-6 min-w-11 shrink-0 items-center justify-center rounded-md border border-rose-200 bg-rose-50 px-2 text-xs font-semibold text-rose-700">
               {ability.slot}
             </span>
-            <h3 className="truncate text-sm font-semibold text-zinc-950" title={description}>
+            <h3 className="truncate text-sm font-semibold text-zinc-950" title={plainDescription}>
               {ability.name}
             </h3>
           </div>
-          <p className="mt-2 text-xs font-medium leading-relaxed text-zinc-600">{description}</p>
+
+          <StructuredDescription sections={sections} />
+
           <div className="mt-2 rounded-md bg-zinc-100 px-3 py-2 text-xs font-semibold leading-relaxed text-zinc-800">
             {ability.stats?.map((stat, i) => (
               <AbilityStatRow
