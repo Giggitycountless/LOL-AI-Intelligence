@@ -10,7 +10,6 @@ import {
   PARTICIPANT_PROFILE_CHANGED_EVENT,
 } from "../windows/participantProfileWindow";
 import type {
-  MatchResult,
   PostMatchDetail,
   RecentMatchSummary,
 } from "../backend/types";
@@ -132,12 +131,9 @@ export function Matches() {
           </header>
 
           <section className="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <h2 className="text-base font-semibold text-zinc-950">{t("matches.completed")}</h2>
-                <p className="mt-1 text-sm text-zinc-500">{matchCountLabel(matches.length, isLeagueClientLoading, t)}</p>
-              </div>
-              <StatusBadge result={matches[0]?.result ?? "unknown"} t={t} />
+            <div>
+              <h2 className="text-base font-semibold text-zinc-950">{t("matches.completed")}</h2>
+              <p className="mt-1 text-sm text-zinc-500">{matchCountLabel(matches.length, isLeagueClientLoading, t)}</p>
             </div>
 
             <div className="mt-5 grid gap-3">
@@ -254,15 +250,6 @@ function Detail({ label, value }: { label: string; value: string }) {
   );
 }
 
-function StatusBadge({ result, t }: { result: MatchResult; t: T }) {
-  const label = result === "unknown" ? t("common.pending") : t("matches.loaded");
-
-  return (
-    <span className="inline-flex h-10 items-center rounded-md border border-zinc-200 bg-zinc-50 px-3 text-sm font-medium text-zinc-700">
-      {label}
-    </span>
-  );
-}
 
 function ChevronIcon({ expanded }: { expanded: boolean }) {
   return (

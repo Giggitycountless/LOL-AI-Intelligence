@@ -43,7 +43,7 @@ export function Dashboard() {
           t={t}
         />
 
-        <section className="grid gap-4 lg:grid-cols-[1.25fr_0.75fr]">
+        <section className="grid gap-4 lg:grid-cols-2">
           <div className="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm">
             <h2 className="text-base font-semibold text-zinc-950">{t("dashboard.currentState")}</h2>
             <div className="mt-5 grid gap-3 sm:grid-cols-2">

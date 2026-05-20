@@ -117,7 +117,8 @@ export function AppShell() {
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <div className="flex h-12 shrink-0 items-center justify-end border-b border-zinc-200 bg-white px-8">
+        <div className="flex h-12 shrink-0 items-center justify-between border-b border-zinc-200 bg-white px-8">
+          <p className="text-sm font-medium text-zinc-500">{t(pages.find((p) => p.id === activePage)?.labelKey ?? "nav.dashboard")}</p>
           <button
             type="button"
             onClick={() => void setLanguagePreference(oppositeLanguage(effectiveLanguage))}
@@ -149,13 +150,13 @@ export function AppShell() {
         )}
         {!isLoading && !snapshot && (
           <div className="flex items-center justify-between gap-4 border-b border-red-200 bg-red-50 px-8 py-3 text-sm">
-            <span className="font-medium text-red-800">Failed to load application state</span>
+            <span className="font-medium text-red-800">{t("app.loadingState")}</span>
             <button
               type="button"
               onClick={() => void refresh()}
               className="inline-flex h-8 items-center rounded-md bg-red-100 px-3 text-sm font-semibold text-red-700 transition hover:bg-red-200"
             >
-              Retry
+              {t("common.refresh")}
             </button>
           </div>
         )}

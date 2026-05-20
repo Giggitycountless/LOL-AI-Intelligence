@@ -295,17 +295,14 @@ export function AppStateProvider({ children, mode = "main" }: { children: ReactN
         const result = await clearActivityEntries(confirm);
         setActivityEntries([]);
         await refresh();
-        setFeedback({
-          kind: "success",
-          message: `Cleared ${result.deletedCount} activity ${result.deletedCount === 1 ? "entry" : "entries"}`,
-        });
+        setFeedback({ kind: "success", message: t("feedback.activityCleared") });
         return true;
       } catch (caught: unknown) {
         setFeedback({ kind: "error", message: errorMessage(caught) });
         return false;
       }
     },
-    [refresh],
+    [refresh, t],
   );
 
   const exportLocalDataAction = useCallback(async () => {
@@ -324,12 +321,7 @@ export function AppStateProvider({ children, mode = "main" }: { children: ReactN
       try {
         const result = await importLocalData(json);
         await refresh();
-        setFeedback({
-          kind: "success",
-          message: `Imported settings and ${result.importedActivityCount} activity ${
-            result.importedActivityCount === 1 ? "entry" : "entries"
-          }`,
-        });
+        setFeedback({ kind: "success", message: t("feedback.localDataImported") });
         return true;
       } catch (caught: unknown) {
         setFeedback({ kind: "error", message: errorMessage(caught) });
