@@ -28,7 +28,7 @@ serde_json = "1.0.149"
 sysinfo = { version = "0.38.4", default-features = false, features = ["system"] }
 tauri = "2.10.3"
 tauri-build = "2.5.6"
-tauri-plugin-global-shortcut = "2.3.1"
+rdev = "0.5"
 rayon = "1.10"
 futures-util = "0.3.31"
 native-tls = "0.2.14"

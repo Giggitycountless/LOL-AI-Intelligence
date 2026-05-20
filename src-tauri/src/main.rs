@@ -1,8 +1,6 @@
 use tauri::{Emitter, Manager, State};
-use tauri_plugin_global_shortcut::ShortcutState;
 
 const SELF_HISTORY_OVERLAY_WINDOW_LABEL: &str = "self-history-overlay";
-const SELF_HISTORY_OVERLAY_SHORTCUT: &str = "Shift+Tab";
 
 #[tauri::command]
 fn healthcheck(state: State<'_, platform::AppState>) -> domain::HealthReport {
@@ -231,56 +229,77 @@ fn clear_player_note(
     platform::clear_player_note(state.inner(), input)
 }
 
-fn main() {
-    let shortcut_plugin = match tauri_plugin_global_shortcut::Builder::new()
-        .with_shortcut(SELF_HISTORY_OVERLAY_SHORTCUT)
-    {
-        Ok(builder) => builder
-            .with_handler(|app, _shortcut, event| {
-                if event.state != ShortcutState::Pressed {
-                    return;
-                }
+/// Low-level keyboard hook using rdev. Tracks Shift state manually and toggles
+/// the self-history overlay on Shift+Tab, matching Frank's global_key.rs approach.
+/// Runs on a dedicated blocking thread — rdev::listen() never returns on success.
+fn listen_for_overlay_hotkey(app: tauri::AppHandle) {
+    use rdev::{listen, Event, EventType, Key};
 
-                let can_open = app
-                    .try_state::<platform::AppState>()
-                    .map(|state| platform::can_open_self_history_overlay(state.inner()))
-                    .unwrap_or(false);
-                let Some(window) = app.get_webview_window(SELF_HISTORY_OVERLAY_WINDOW_LABEL) else {
-                    let _ = app.emit("open-self-history-overlay", ());
-                    return;
-                };
+    let mut shift_down = false;
 
-                if !can_open {
-                    let _ = window.destroy();
-                    return;
-                }
-
-                match window.is_visible() {
-                    Ok(true) => {
-                        let _ = window.hide();
-                    }
-                    Ok(false) => {
-                        let _ = window.show();
-                        let _ = window.set_focus();
-                    }
-                    Err(_) => {}
-                }
-            })
-            .build(),
-        Err(error) => {
-            eprintln!("failed to register global shortcut: {error}");
-            return;
+    if let Err(e) = listen(move |event: Event| {
+        match event.event_type {
+            EventType::KeyPress(Key::ShiftLeft | Key::ShiftRight) => {
+                shift_down = true;
+            }
+            EventType::KeyRelease(Key::ShiftLeft | Key::ShiftRight) => {
+                shift_down = false;
+            }
+            EventType::KeyPress(Key::Tab) if shift_down => {
+                toggle_overlay(&app);
+            }
+            _ => {}
         }
-    };
+    }) {
+        eprintln!("[overlay-hotkey] rdev listen error: {e:?}");
+    }
+}
 
+fn toggle_overlay(app: &tauri::AppHandle) {
+    let can_open = app
+        .try_state::<platform::AppState>()
+        .map(|s| platform::can_open_self_history_overlay(s.inner()))
+        .unwrap_or(false);
+
+    match app.get_webview_window(SELF_HISTORY_OVERLAY_WINDOW_LABEL) {
+        None => {
+            // Window not yet created — ask the frontend to open it.
+            // The frontend checks can_open itself before constructing the window.
+            let _ = app.emit("open-self-history-overlay", ());
+        }
+        Some(window) => {
+            if !can_open {
+                let _ = window.destroy();
+                return;
+            }
+            match window.is_visible() {
+                Ok(true) => { let _ = window.hide(); }
+                Ok(false) | Err(_) => {
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
+            }
+        }
+    }
+}
+
+fn main() {
     if let Err(error) = tauri::Builder::default()
-        .plugin(shortcut_plugin)
         .setup(|app| {
             platform::setup_app(app)?;
 
             let app_handle = app.handle().clone();
             let state = app.state::<platform::AppState>().inner().clone();
             platform::start_league_event_service(app_handle, state);
+
+            // Spawn a dedicated thread for the rdev low-level keyboard hook.
+            // rdev::listen() blocks forever; it must run outside the async runtime.
+            // WH_KEYBOARD_LL fires before League of Legends can consume the key,
+            // which is why this works in-game while RegisterHotKey-based shortcuts don't.
+            let hotkey_handle = app.handle().clone();
+            std::thread::spawn(move || {
+                listen_for_overlay_hotkey(hotkey_handle);
+            });
 
             Ok(())
         })
