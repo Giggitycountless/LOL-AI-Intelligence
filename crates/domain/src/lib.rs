@@ -432,6 +432,17 @@ pub struct CurrentSummonerProfile {
     pub display_name: String,
     pub summoner_level: i64,
     pub profile_icon_id: Option<i64>,
+    pub honor_level: Option<i64>,
+    pub top_mastery: Vec<ChampionMasteryEntry>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChampionMasteryEntry {
+    pub champion_id: i64,
+    pub champion_name: String,
+    pub mastery_level: i64,
+    pub mastery_points: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]

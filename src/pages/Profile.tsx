@@ -1,10 +1,12 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 import { useAppCore, useLeagueAssets } from "../state/AppStateProvider";
 import { Metric, RefreshIcon } from "../components/common";
 import { formatTimestamp, formatLeaguePhase, type T } from "../utils/formatting";
-import type { KdaTag, RankedQueue, RankedQueueSummary, RecentChampionSummary } from "../backend/types";
+import type { ChampionMasteryEntry, KdaTag, RankedQueue, RankedQueueSummary, RecentChampionSummary } from "../backend/types";
 import type { TranslationKey } from "../i18n";
+
+const MASTERY_INITIAL_SHOW = 5;
 
 export function Profile() {
   const {
@@ -14,6 +16,7 @@ export function Profile() {
     t,
   } = useAppCore();
   const { leagueImages, loadLeagueChampionIcon, loadLeagueProfileIcon } = useLeagueAssets();
+  const [masteryExpanded, setMasteryExpanded] = useState(false);
   const league = leagueSelfSnapshot;
   const summoner = league?.summoner ?? null;
   const profileIconId = summoner?.profileIconId ?? null;
@@ -21,6 +24,8 @@ export function Profile() {
   const soloDuo = league?.rankedQueues.find((queue) => queue.queue === "soloDuo");
   const flex = league?.rankedQueues.find((queue) => queue.queue === "flex");
   const topChampions = league?.recentPerformance.topChampions ?? [];
+  const topMastery = summoner?.topMastery ?? [];
+  const visibleMastery = masteryExpanded ? topMastery : topMastery.slice(0, MASTERY_INITIAL_SHOW);
 
   useEffect(() => {
     void loadLeagueProfileIcon(profileIconId);
@@ -31,6 +36,12 @@ export function Profile() {
       void loadLeagueChampionIcon(champion.championId);
     }
   }, [loadLeagueChampionIcon, topChampions]);
+
+  useEffect(() => {
+    for (const entry of topMastery) {
+      void loadLeagueChampionIcon(entry.championId);
+    }
+  }, [loadLeagueChampionIcon, topMastery]);
 
   return (
     <main className="min-h-0 flex-1 overflow-auto px-8 py-7">
@@ -71,7 +82,12 @@ export function Profile() {
                   />
                   <div className="min-w-0">
                     <p className="truncate text-2xl font-semibold text-zinc-950">{summoner.displayName}</p>
-                    <p className="mt-1 text-sm font-medium text-zinc-500">{t("profile.level")} {summoner.summonerLevel}</p>
+                    <div className="mt-1 flex flex-wrap items-center gap-2">
+                      <p className="text-sm font-medium text-zinc-500">{t("profile.level")} {summoner.summonerLevel}</p>
+                      {summoner.honorLevel !== null && summoner.honorLevel !== undefined && (
+                        <HonorBadge level={summoner.honorLevel} t={t} />
+                      )}
+                    </div>
                   </div>
                 </div>
 
@@ -111,10 +127,81 @@ export function Profile() {
               <RankedCard label={t("profile.soloDuo")} queue="soloDuo" summary={soloDuo} t={t} />
               <RankedCard label={t("profile.flex")} queue="flex" summary={flex} t={t} />
             </section>
+
+            <section className="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm">
+              <div className="flex items-center justify-between gap-3">
+                <h2 className="text-base font-semibold text-zinc-950">{t("profile.mastery")}</h2>
+                {topMastery.length > MASTERY_INITIAL_SHOW && (
+                  <button
+                    type="button"
+                    onClick={() => setMasteryExpanded((v) => !v)}
+                    className="text-sm font-medium text-rose-700 hover:underline"
+                  >
+                    {masteryExpanded ? t("profile.showLess") : t("profile.showAll")}
+                  </button>
+                )}
+              </div>
+
+              {topMastery.length === 0 ? (
+                <p className="mt-4 text-sm text-zinc-500">{t("profile.noMastery")}</p>
+              ) : (
+                <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                  {visibleMastery.map((entry) => (
+                    <MasteryCard
+                      entry={entry}
+                      imageUrl={leagueImages.championIcons[entry.championId]}
+                      key={entry.championId}
+                      t={t}
+                    />
+                  ))}
+                </div>
+              )}
+            </section>
           </>
         )}
       </div>
     </main>
+  );
+}
+
+function HonorBadge({ level, t }: { level: number; t: T }) {
+  const colors =
+    level >= 5
+      ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+      : level >= 3
+        ? "border-sky-200 bg-sky-50 text-sky-800"
+        : "border-zinc-200 bg-zinc-50 text-zinc-600";
+
+  return (
+    <span className={["inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs font-semibold", colors].join(" ")}>
+      {t("profile.honor")} {level}
+    </span>
+  );
+}
+
+function MasteryCard({ entry, imageUrl, t }: { entry: ChampionMasteryEntry; imageUrl: string | undefined; t: T }) {
+  return (
+    <div className="flex items-center gap-3 rounded-md border border-zinc-200 bg-zinc-50 p-3">
+      <LeagueImage alt={`${entry.championName} icon`} fallback={initials(entry.championName)} size="small" src={imageUrl} />
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-semibold text-zinc-950">{entry.championName}</p>
+        <div className="mt-1 flex items-center gap-2">
+          <span className={[
+            "inline-flex items-center rounded px-1.5 py-0.5 text-xs font-semibold",
+            entry.masteryLevel === 7
+              ? "bg-rose-100 text-rose-700"
+              : entry.masteryLevel >= 5
+                ? "bg-amber-100 text-amber-700"
+                : "bg-zinc-200 text-zinc-600",
+          ].join(" ")}>
+            {t("profile.masteryLevel")} {entry.masteryLevel}
+          </span>
+          <span className="text-xs text-zinc-500">
+            {entry.masteryPoints.toLocaleString()} {t("profile.masteryPoints")}
+          </span>
+        </div>
+      </div>
+    </div>
   );
 }
 

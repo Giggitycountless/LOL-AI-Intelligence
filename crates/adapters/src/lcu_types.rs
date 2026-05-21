@@ -290,11 +290,17 @@ impl LcuChampSelectMember {
 use domain::CurrentSummonerProfile;
 
 impl LcuSummoner {
-    pub(crate) fn profile(&self) -> CurrentSummonerProfile {
+    pub(crate) fn profile(
+        &self,
+        honor_level: Option<i64>,
+        top_mastery: Vec<domain::ChampionMasteryEntry>,
+    ) -> CurrentSummonerProfile {
         CurrentSummonerProfile {
             display_name: self.display_name(),
             summoner_level: self.summoner_level.unwrap_or_default(),
             profile_icon_id: self.profile_icon_id,
+            honor_level,
+            top_mastery,
         }
     }
 
@@ -341,6 +347,22 @@ impl LcuParticipantStats {
             .filter(|value| *value > 0)
             .collect()
     }
+}
+
+// ── LCU Honor / Mastery types ─────────────────────────────────────────────
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct LcuHonorProfile {
+    pub(crate) honor_level: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct LcuChampionMastery {
+    pub(crate) champion_id: Option<i64>,
+    pub(crate) champion_level: Option<i64>,
+    pub(crate) champion_points: Option<i64>,
 }
 
 // ── LCU Perks types ───────────────────────────────────────────────────────
@@ -478,7 +500,7 @@ mod tests {
     #[test]
     fn summoner_profile_uses_display_name() {
         let s = summoner(Some("Test"), None, None);
-        let profile = s.profile();
+        let profile = s.profile(None, Vec::new());
         assert_eq!(profile.display_name, "Test");
         assert_eq!(profile.summoner_level, 100);
         assert_eq!(profile.profile_icon_id, Some(42));
@@ -488,7 +510,7 @@ mod tests {
     fn summoner_profile_default_level_zero() {
         let mut s = summoner(None, None, None);
         s.summoner_level = None;
-        let profile = s.profile();
+        let profile = s.profile(None, Vec::new());
         assert_eq!(profile.summoner_level, 0);
     }
 

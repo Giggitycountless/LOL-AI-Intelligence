@@ -1247,12 +1247,22 @@ fn build_self_data(session: LcuSession, summoner: LcuSummoner, match_limit: i64)
     let ranked_result = session.get_json::<LcuRankedStats>("/lol-ranked/v1/current-ranked-stats");
     let matches_path = current_matches_path(match_limit);
     let matches_result = session.get_json::<LcuMatchHistoryResponse>(matches_path.as_str());
+    let honor_result = session.get_json::<LcuHonorProfile>("/lol-honor-v2/v1/profile");
+    let mastery_result = summoner.puuid.as_deref()
+        .filter(|p| !p.is_empty())
+        .map(|puuid| {
+            session.get_json::<Vec<LcuChampionMastery>>(
+                format!("/lol-collections/v1/inventories/{puuid}/champion-mastery").as_str(),
+            )
+        });
 
     compose_self_data(
         summoner,
         champion_names_result,
         ranked_result,
         matches_result,
+        honor_result,
+        mastery_result,
     )
 }
 
@@ -1261,6 +1271,8 @@ fn compose_self_data(
     champion_names_result: Result<Vec<LcuChampionSummary>, LcuRequestError>,
     ranked_result: Result<LcuRankedStats, LcuRequestError>,
     matches_result: Result<LcuMatchHistoryResponse, LcuRequestError>,
+    honor_result: Result<LcuHonorProfile, LcuRequestError>,
+    mastery_result: Option<Result<Vec<LcuChampionMastery>, LcuRequestError>>,
 ) -> LeagueSelfData {
     let mut warnings = Vec::new();
     let champion_names = match champion_names_result {
@@ -1294,6 +1306,12 @@ fn compose_self_data(
         }
     };
 
+    let honor_level = honor_result.ok().and_then(|h| h.honor_level);
+    let top_mastery = mastery_result
+        .and_then(|r| r.ok())
+        .map(|entries| map_mastery_entries(entries, &champion_names))
+        .unwrap_or_default();
+
     let status = if warnings.is_empty() {
         connected_status()
     } else {
@@ -1302,11 +1320,34 @@ fn compose_self_data(
 
     LeagueSelfData {
         status,
-        summoner: Some(summoner.profile()),
+        summoner: Some(summoner.profile(honor_level, top_mastery)),
         ranked_queues,
         recent_matches,
         data_warnings: warnings,
     }
+}
+
+fn map_mastery_entries(
+    entries: Vec<LcuChampionMastery>,
+    champion_names: &HashMap<i64, String>,
+) -> Vec<domain::ChampionMasteryEntry> {
+    // LCU returns sorted by points desc already; keep top 20 for frontend expand
+    entries
+        .into_iter()
+        .filter_map(|e| {
+            let champion_id = e.champion_id.filter(|&id| id > 0)?;
+            Some(domain::ChampionMasteryEntry {
+                champion_id,
+                champion_name: champion_names
+                    .get(&champion_id)
+                    .cloned()
+                    .unwrap_or_else(|| format!("Champion {champion_id}")),
+                mastery_level: e.champion_level.unwrap_or_default(),
+                mastery_points: e.champion_points.unwrap_or_default(),
+            })
+        })
+        .take(20)
+        .collect()
 }
 
 fn partial_data_status() -> LeagueClientStatus {
@@ -3271,6 +3312,8 @@ mod tests {
             }]),
             Err(LcuRequestError::Unavailable),
             Ok(empty_match_history()),
+            Err(LcuRequestError::Unavailable),
+            None,
         );
 
         assert_eq!(data.status.phase, LeagueClientPhase::PartialData);
@@ -3286,6 +3329,8 @@ mod tests {
             Err(LcuRequestError::Unexpected),
             Ok(LcuRankedStats { queues: Vec::new() }),
             Err(LcuRequestError::Unexpected),
+            Err(LcuRequestError::Unavailable),
+            None,
         );
 
         assert_eq!(data.status.phase, LeagueClientPhase::PartialData);

@@ -140,10 +140,19 @@ export type AutoAcceptStatus = {
   message: string | null;
 };
 
+export type ChampionMasteryEntry = {
+  championId: number;
+  championName: string;
+  masteryLevel: number;
+  masteryPoints: number;
+};
+
 export type CurrentSummonerProfile = {
   displayName: string;
   summonerLevel: number;
   profileIconId: number | null;
+  honorLevel: number | null;
+  topMastery: ChampionMasteryEntry[];
 };
 
 export type RankedQueueSummary = {
