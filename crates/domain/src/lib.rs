@@ -22,7 +22,7 @@ pub enum DatabaseStatus {
     Unavailable,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppSnapshot {
     pub health: HealthReport,
@@ -31,7 +31,7 @@ pub struct AppSnapshot {
     pub recent_activity: Vec<ActivityEntry>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppSettings {
     pub startup_page: StartupPage,
@@ -41,12 +41,14 @@ pub struct AppSettings {
     pub auto_accept_enabled: bool,
     pub auto_pick_enabled: bool,
     pub auto_pick_champion_id: Option<i64>,
+    pub auto_pick_delay_seconds: f64,
     pub auto_ban_enabled: bool,
     pub auto_ban_champion_id: Option<i64>,
+    pub auto_ban_delay_seconds: f64,
     pub updated_at: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SettingsValues {
     pub startup_page: StartupPage,
@@ -61,9 +63,13 @@ pub struct SettingsValues {
     #[serde(default)]
     pub auto_pick_champion_id: Option<i64>,
     #[serde(default)]
+    pub auto_pick_delay_seconds: f64,
+    #[serde(default)]
     pub auto_ban_enabled: bool,
     #[serde(default)]
     pub auto_ban_champion_id: Option<i64>,
+    #[serde(default)]
+    pub auto_ban_delay_seconds: f64,
 }
 
 fn default_true() -> bool {
@@ -80,8 +86,10 @@ impl AppSettings {
             auto_accept_enabled: self.auto_accept_enabled,
             auto_pick_enabled: self.auto_pick_enabled,
             auto_pick_champion_id: self.auto_pick_champion_id,
+            auto_pick_delay_seconds: self.auto_pick_delay_seconds,
             auto_ban_enabled: self.auto_ban_enabled,
             auto_ban_champion_id: self.auto_ban_champion_id,
+            auto_ban_delay_seconds: self.auto_ban_delay_seconds,
         }
     }
 }
@@ -195,7 +203,7 @@ pub struct LocalActivityEntry {
     pub created_at: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LocalDataExport {
     pub format_version: i64,
@@ -203,7 +211,7 @@ pub struct LocalDataExport {
     pub activity_entries: Vec<LocalActivityEntry>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ImportLocalDataResult {
     pub settings: AppSettings,
@@ -973,4 +981,47 @@ pub enum ChampSelectTeam {
 pub struct ChampSelectSnapshot {
     pub players: Vec<ChampSelectPlayer>,
     pub cached_at: String,
+}
+
+// ── Rune system ──────────────────────────────────────────────────────────────
+
+/// A single League of Legends rune page ready to be written to the LCU.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RunePage {
+    pub primary_style_id: i64,
+    pub sub_style_id: i64,
+    pub selected_perk_ids: Vec<i64>,
+}
+
+/// One rune page recommendation from the Tencent QQ champion-detail API,
+/// sorted by pick frequency in descending order.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RuneRecommendation {
+    /// Lane/position: "top", "jungle", "middle", "bottom", "support"
+    pub position: String,
+    pub pick_count: i64,
+    pub page: RunePage,
+}
+
+/// A user-saved rune page preference for a specific champion (stored in SQLite).
+/// Takes precedence over API recommendations on lock-in.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChampionRuneConfig {
+    pub champion_id: i64,
+    pub page: RunePage,
+    pub saved_at: String,
+}
+
+/// Result of loading rune data for the rune page tab.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RunePageSnapshot {
+    pub champion_id: i64,
+    pub champion_name: String,
+    pub recommendations: Vec<RuneRecommendation>,
+    pub saved_config: Option<ChampionRuneConfig>,
+    pub auto_applied: bool,
 }
