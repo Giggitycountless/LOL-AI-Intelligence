@@ -229,6 +229,46 @@ fn clear_player_note(
     platform::clear_player_note(state.inner(), input)
 }
 
+#[tauri::command]
+fn get_rune_recommendations(
+    state: State<'_, platform::AppState>,
+    input: platform::GetRuneRecommendationsCommand,
+) -> Vec<domain::RuneRecommendation> {
+    platform::get_rune_recommendations(state.inner(), input)
+}
+
+#[tauri::command]
+fn apply_rune_page(
+    state: State<'_, platform::AppState>,
+    input: platform::ApplyRunePageCommand,
+) -> Result<(), platform::CommandError> {
+    platform::apply_rune_page(state.inner(), input)
+}
+
+#[tauri::command]
+fn save_champion_rune_config(
+    state: State<'_, platform::AppState>,
+    input: platform::SaveRuneConfigCommand,
+) -> Result<domain::ChampionRuneConfig, platform::CommandError> {
+    platform::save_champion_rune_config(state.inner(), input)
+}
+
+#[tauri::command]
+fn get_champion_rune_config(
+    state: State<'_, platform::AppState>,
+    input: platform::GetRuneConfigCommand,
+) -> Result<Option<domain::ChampionRuneConfig>, platform::CommandError> {
+    platform::get_champion_rune_config(state.inner(), input)
+}
+
+#[tauri::command]
+fn delete_champion_rune_config(
+    state: State<'_, platform::AppState>,
+    input: platform::GetRuneConfigCommand,
+) -> Result<bool, platform::CommandError> {
+    platform::delete_champion_rune_config(state.inner(), input)
+}
+
 /// Called from the frontend after the window loads (mirrors Frank's init_keyboard command).
 /// Spawns a blocking thread for rdev so the hook is registered after Tauri's message
 /// loop is fully running — same timing as Frank's approach.
@@ -335,7 +375,12 @@ fn main() {
             get_post_match_participant_profile,
             save_player_note,
             clear_player_note,
-            init_overlay_hotkey
+            init_overlay_hotkey,
+            get_rune_recommendations,
+            apply_rune_page,
+            save_champion_rune_config,
+            get_champion_rune_config,
+            delete_champion_rune_config
         ])
         .run(tauri::generate_context!())
     {

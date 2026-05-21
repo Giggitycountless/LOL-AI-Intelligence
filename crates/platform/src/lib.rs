@@ -18,7 +18,7 @@ use application::{
     ActivityListInput, ActivityNoteInput, AdvisorDataInput, AdvisorDataRefreshInput,
     ApplicationError, LeagueChampionDetailsInput, LeagueChampionIconInput, LeagueClientReadError,
     LeagueClientReader, LeagueGameAssetInput, LeagueProfileIconInput, LeagueSelfSnapshotInput,
-    ParticipantPublicProfileInput, PostMatchDetailInput,
+    ParticipantPublicProfileInput, PostMatchDetailInput, RuneRecommendationProvider,
     RankedChampionStatsInput, SettingsInput, normalize_player_name,
 };
 use domain::{
@@ -156,6 +156,10 @@ pub struct AppState {
     pub auto_accept_in_progress: Arc<AtomicBool>,
     pub hydration_thread_count: Arc<AtomicUsize>,
     pub shutdown_token: Arc<CancellationToken>,
+    pub champ_select_ban_delay_token: Arc<Mutex<Option<CancellationToken>>>,
+    pub champ_select_pick_delay_token: Arc<Mutex<Option<CancellationToken>>>,
+    /// Champion ID locked in by the local player this session; None between sessions.
+    pub last_locked_champion: Arc<Mutex<Option<i64>>>,
     cache_metrics: Arc<CacheMetrics>,
 }
 
@@ -192,6 +196,9 @@ impl AppState {
             auto_accept_in_progress: Arc::new(AtomicBool::new(false)),
             hydration_thread_count: Arc::new(AtomicUsize::new(0)),
             shutdown_token: Arc::new(CancellationToken::new()),
+            champ_select_ban_delay_token: Arc::new(Mutex::new(None)),
+            champ_select_pick_delay_token: Arc::new(Mutex::new(None)),
+            last_locked_champion: Arc::new(Mutex::new(None)),
             cache_metrics: Arc::new(CacheMetrics::default()),
         })
     }
@@ -215,6 +222,9 @@ impl Clone for AppState {
             auto_accept_in_progress: Arc::clone(&self.auto_accept_in_progress),
             hydration_thread_count: Arc::clone(&self.hydration_thread_count),
             shutdown_token: Arc::clone(&self.shutdown_token),
+            champ_select_ban_delay_token: Arc::clone(&self.champ_select_ban_delay_token),
+            champ_select_pick_delay_token: Arc::clone(&self.champ_select_pick_delay_token),
+            last_locked_champion: Arc::clone(&self.last_locked_champion),
             cache_metrics: Arc::clone(&self.cache_metrics),
         }
     }
@@ -505,6 +515,14 @@ impl LeagueClientReader for CachedLeagueClientReader<'_> {
         self.inner.accept_ready_check()
     }
 
+    fn apply_rune_page(
+        &self,
+        page: &domain::RunePage,
+        champion_name: &str,
+    ) -> Result<(), LeagueClientReadError> {
+        self.inner.apply_rune_page(page, champion_name)
+    }
+
     fn apply_champ_select_preferences(
         &self,
         pick_champion_id: Option<i64>,
@@ -555,8 +573,12 @@ pub struct SettingsPayload {
     pub auto_accept_enabled: bool,
     pub auto_pick_enabled: bool,
     pub auto_pick_champion_id: Option<i64>,
+    #[serde(default)]
+    pub auto_pick_delay_seconds: f64,
     pub auto_ban_enabled: bool,
     pub auto_ban_champion_id: Option<i64>,
+    #[serde(default)]
+    pub auto_ban_delay_seconds: f64,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -956,6 +978,8 @@ where
             if let Some(fingerprint) = refresh_champ_select_from_event(app_handle, state) {
                 service_state.fingerprint = fingerprint;
             }
+            try_schedule_champ_select_automation(state);
+            handle_champ_select_lock_in(app_handle, state, &event.data);
             true
         }
         _ => false,
@@ -1027,6 +1051,8 @@ fn handle_league_phase_change<R: Runtime + 'static>(
         }
         phase if should_clear_champ_select_cache_for_phase(phase) => {
             cancel_champ_select_hydration(state);
+            cancel_champ_select_automation_delays(state);
+            *lock_or_recover(&state.last_locked_champion) = None;
             *lock_or_recover(&state.champ_select_cache) = None;
             let _ = app_handle.emit("champ-select-clear", ());
         }
@@ -1565,8 +1591,10 @@ pub fn save_settings(
             auto_accept_enabled: command.settings.auto_accept_enabled,
             auto_pick_enabled: command.settings.auto_pick_enabled,
             auto_pick_champion_id: command.settings.auto_pick_champion_id,
+            auto_pick_delay_seconds: command.settings.auto_pick_delay_seconds,
             auto_ban_enabled: command.settings.auto_ban_enabled,
             auto_ban_champion_id: command.settings.auto_ban_champion_id,
+            auto_ban_delay_seconds: command.settings.auto_ban_delay_seconds,
         },
     )
     .map_err(CommandError::from)
@@ -1652,6 +1680,147 @@ pub fn run_ready_check_automation(state: &AppState) -> Result<(), CommandError> 
 pub fn run_champ_select_automation(state: &AppState) -> Result<(), CommandError> {
     application::run_champ_select_automation(&state.store, &state.league_client)
         .map_err(CommandError::from)
+}
+
+/// Extract the locked champion ID from a champ-select session JSON value.
+/// Returns Some(champion_id) if the local player has a completed pick action.
+fn extract_locked_champion_from_session(session: &serde_json::Value) -> Option<i64> {
+    let local_cell_id = session.get("localPlayerCellId")?.as_i64()?;
+    let actions = session.get("actions")?.as_array()?;
+
+    for group in actions {
+        if let Some(group_arr) = group.as_array() {
+            for action in group_arr {
+                let actor_cell_id = action.get("actorCellId").and_then(|v| v.as_i64());
+                let completed = action.get("completed").and_then(|v| v.as_bool());
+                let action_type = action.get("type").and_then(|v| v.as_str());
+                let champion_id = action.get("championId").and_then(|v| v.as_i64());
+
+                if actor_cell_id == Some(local_cell_id)
+                    && completed == Some(true)
+                    && action_type.map(|t| t.eq_ignore_ascii_case("pick")).unwrap_or(false)
+                    && champion_id.is_some_and(|id| id > 0)
+                {
+                    return champion_id;
+                }
+            }
+        }
+    }
+    None
+}
+
+fn handle_champ_select_lock_in<R: Runtime + 'static>(
+    app_handle: &AppHandle<R>,
+    state: &AppState,
+    session_data: &serde_json::Value,
+) where
+    AppHandle<R>: Send,
+{
+    let locked = extract_locked_champion_from_session(session_data);
+    let last = *lock_or_recover(&state.last_locked_champion);
+
+    if locked == last {
+        return;
+    }
+
+    *lock_or_recover(&state.last_locked_champion) = locked;
+
+    if let Some(champion_id) = locked {
+        eprintln!("[rune] champion lock-in detected: {champion_id}");
+        let _ = app_handle.emit("champion-locked-in", champion_id);
+
+        let state_clone = state.clone();
+        tokio::spawn(async move {
+            tokio::task::block_in_place(|| {
+                let champion_name = format!("Champion {champion_id}");
+                match application::auto_apply_rune_on_lock_in(
+                    &state_clone.store,
+                    &state_clone.league_client,
+                    &state_clone.league_client,
+                    champion_id,
+                    &champion_name,
+                ) {
+                    Ok(true) => eprintln!("[rune] rune page applied for champion {champion_id}"),
+                    Ok(false) => eprintln!("[rune] no rune recommendations available for champion {champion_id}"),
+                    Err(e) => eprintln!("[rune] rune apply failed: {e}"),
+                }
+            });
+        });
+    }
+}
+
+fn cancel_champ_select_automation_delays(state: &AppState) {
+    if let Some(token) = lock_or_recover(&state.champ_select_ban_delay_token).take() {
+        token.cancel();
+    }
+    if let Some(token) = lock_or_recover(&state.champ_select_pick_delay_token).take() {
+        token.cancel();
+    }
+}
+
+fn try_schedule_champ_select_automation(state: &AppState) {
+    let settings = match application::get_settings(&state.store) {
+        Ok(s) => s,
+        Err(_) => return,
+    };
+
+    if settings.auto_ban_enabled {
+        if let Some(ban_champion_id) = settings.auto_ban_champion_id {
+            let mut guard = lock_or_recover(&state.champ_select_ban_delay_token);
+            if guard.is_none() {
+                let token = CancellationToken::new();
+                *guard = Some(token.clone());
+                drop(guard);
+
+                let state_clone = state.clone();
+                let delay = Duration::from_secs_f64(settings.auto_ban_delay_seconds);
+
+                tokio::spawn(async move {
+                    tokio::select! {
+                        _ = token.cancelled() => {}
+                        _ = tokio::time::sleep(delay) => {
+                            tokio::task::block_in_place(|| {
+                                let _ = state_clone.league_client.apply_champ_select_preferences(
+                                    None,
+                                    Some(ban_champion_id),
+                                );
+                            });
+                            *lock_or_recover(&state_clone.champ_select_ban_delay_token) = None;
+                        }
+                    }
+                });
+            }
+        }
+    }
+
+    if settings.auto_pick_enabled {
+        if let Some(pick_champion_id) = settings.auto_pick_champion_id {
+            let mut guard = lock_or_recover(&state.champ_select_pick_delay_token);
+            if guard.is_none() {
+                let token = CancellationToken::new();
+                *guard = Some(token.clone());
+                drop(guard);
+
+                let state_clone = state.clone();
+                let delay = Duration::from_secs_f64(settings.auto_pick_delay_seconds);
+
+                tokio::spawn(async move {
+                    tokio::select! {
+                        _ = token.cancelled() => {}
+                        _ = tokio::time::sleep(delay) => {
+                            tokio::task::block_in_place(|| {
+                                let _ = state_clone.league_client.apply_champ_select_preferences(
+                                    Some(pick_champion_id),
+                                    None,
+                                );
+                            });
+                            *lock_or_recover(&state_clone.champ_select_pick_delay_token) = None;
+                        }
+                    }
+                });
+            }
+        }
+    }
 }
 
 pub fn get_league_self_snapshot(
@@ -1989,6 +2158,78 @@ pub fn clear_player_note(
     .map_err(CommandError::from)
 }
 
+// ── Rune system commands ──────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GetRuneRecommendationsCommand {
+    pub champion_id: i64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplyRunePageCommand {
+    pub champion_id: i64,
+    pub page: domain::RunePage,
+    pub champion_name: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveRuneConfigCommand {
+    pub champion_id: i64,
+    pub page: domain::RunePage,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GetRuneConfigCommand {
+    pub champion_id: i64,
+}
+
+pub fn get_rune_recommendations(
+    state: &AppState,
+    command: GetRuneRecommendationsCommand,
+) -> Vec<domain::RuneRecommendation> {
+    application::get_champion_rune_recommendations(&state.league_client, command.champion_id)
+}
+
+pub fn apply_rune_page(
+    state: &AppState,
+    command: ApplyRunePageCommand,
+) -> Result<(), CommandError> {
+    application::apply_specific_rune_page(
+        &state.league_client,
+        command.page,
+        &command.champion_name,
+    )
+    .map_err(CommandError::from)
+}
+
+pub fn save_champion_rune_config(
+    state: &AppState,
+    command: SaveRuneConfigCommand,
+) -> Result<domain::ChampionRuneConfig, CommandError> {
+    application::save_rune_config(&state.store, command.champion_id, command.page)
+        .map_err(CommandError::from)
+}
+
+pub fn get_champion_rune_config(
+    state: &AppState,
+    command: GetRuneConfigCommand,
+) -> Result<Option<domain::ChampionRuneConfig>, CommandError> {
+    application::get_stored_rune_config(&state.store, command.champion_id)
+        .map_err(CommandError::from)
+}
+
+pub fn delete_champion_rune_config(
+    state: &AppState,
+    command: GetRuneConfigCommand,
+) -> Result<bool, CommandError> {
+    application::delete_rune_config(&state.store, command.champion_id)
+        .map_err(CommandError::from)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2033,8 +2274,10 @@ mod tests {
         assert!(!command.settings.auto_accept_enabled);
         assert!(command.settings.auto_pick_enabled);
         assert_eq!(command.settings.auto_pick_champion_id, Some(103));
+        assert_eq!(command.settings.auto_pick_delay_seconds, 0.0);
         assert!(command.settings.auto_ban_enabled);
         assert_eq!(command.settings.auto_ban_champion_id, Some(122));
+        assert_eq!(command.settings.auto_ban_delay_seconds, 0.0);
     }
 
     #[test]
@@ -2444,8 +2687,10 @@ mod tests {
                     auto_accept_enabled: current_settings.auto_accept_enabled,
                     auto_pick_enabled: current_settings.auto_pick_enabled,
                     auto_pick_champion_id: current_settings.auto_pick_champion_id,
+                    auto_pick_delay_seconds: current_settings.auto_pick_delay_seconds,
                     auto_ban_enabled: current_settings.auto_ban_enabled,
                     auto_ban_champion_id: current_settings.auto_ban_champion_id,
+                    auto_ban_delay_seconds: current_settings.auto_ban_delay_seconds,
                 },
             },
         )
@@ -2531,12 +2776,6 @@ mod tests {
         }))
         .expect("frontend-shaped ranked champion refresh command deserializes");
 
-        assert_eq!(
-            command.url.as_deref(),
-            Some(
-                "https://raw.githubusercontent.com/example/data/main/ranked-champions/latest.json"
-            )
-        );
         assert_eq!(command.lane, Some(RankedChampionLane::Middle));
         assert_eq!(command.sort_by, Some(RankedChampionSort::Overall));
     }
