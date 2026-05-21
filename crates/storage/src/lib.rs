@@ -5,8 +5,9 @@ use std::{
 
 use domain::{
     ActivityEntry, ActivityKind, AdvisorDataSnapshot, AppLanguagePreference, AppSettings,
-    ImportLocalDataResult, LocalActivityEntry, NewActivityEntry, RankedChampionDataSnapshot,
-    RankedChampionLane, RankedChampionStat, SettingsValues, StartupPage,
+    ChampionRuneConfig, ImportLocalDataResult, LocalActivityEntry, NewActivityEntry,
+    RankedChampionDataSnapshot, RankedChampionLane, RankedChampionStat, RunePage,
+    SettingsValues, StartupPage,
 };
 #[cfg(test)]
 use domain::{
@@ -117,6 +118,37 @@ impl SqliteStore {
             settings,
             imported_activity_count,
         })
+    }
+
+    pub fn get_champion_rune_config(
+        &self,
+        champion_id: i64,
+    ) -> StorageResult<Option<ChampionRuneConfig>> {
+        let connection = Connection::open(&self.database_path)?;
+        configure_connection(&connection)?;
+        read_champion_rune_config(&connection, champion_id)
+    }
+
+    pub fn save_champion_rune_config(
+        &self,
+        champion_id: i64,
+        page: &RunePage,
+    ) -> StorageResult<ChampionRuneConfig> {
+        let connection = Connection::open(&self.database_path)?;
+        configure_connection(&connection)?;
+        write_champion_rune_config(&connection, champion_id, page)?;
+        read_champion_rune_config(&connection, champion_id)?
+            .ok_or(StorageError::MissingChampionRuneConfig)
+    }
+
+    pub fn delete_champion_rune_config(&self, champion_id: i64) -> StorageResult<bool> {
+        let connection = Connection::open(&self.database_path)?;
+        configure_connection(&connection)?;
+        let deleted = connection.execute(
+            "DELETE FROM champion_rune_configs WHERE champion_id = ?1",
+            [champion_id],
+        )?;
+        Ok(deleted > 0)
     }
 
     pub fn clear_activity_entries(&self) -> StorageResult<i64> {
@@ -236,6 +268,10 @@ pub enum StorageError {
     MissingAdvisorSnapshot,
     #[error("invalid advisor snapshot: {0}")]
     InvalidAdvisorSnapshot(String),
+    #[error("champion rune config is missing after save")]
+    MissingChampionRuneConfig,
+    #[error("invalid champion rune config perk IDs: {0}")]
+    InvalidRuneConfig(String),
 }
 
 fn configure_connection(connection: &Connection) -> StorageResult<()> {
@@ -290,6 +326,16 @@ fn run_migrations(connection: &mut Connection) -> StorageResult<()> {
             description: "advisor_data_cache",
             sql: MIGRATION_0007,
         },
+        Migration {
+            version: 8,
+            description: "pick_ban_delay",
+            sql: MIGRATION_0008,
+        },
+        Migration {
+            version: 9,
+            description: "champion_rune_configs",
+            sql: MIGRATION_0009,
+        },
     ] {
         let migration_is_applied = transaction
             .query_row(
@@ -334,8 +380,8 @@ fn read_settings(connection: &Connection) -> StorageResult<AppSettings> {
     connection
         .query_row(
             "SELECT startup_page, language, compact_mode, activity_limit, auto_accept_enabled,
-                auto_pick_enabled, auto_pick_champion_id, auto_ban_enabled,
-                auto_ban_champion_id, updated_at
+                auto_pick_enabled, auto_pick_champion_id, auto_pick_delay_seconds,
+                auto_ban_enabled, auto_ban_champion_id, auto_ban_delay_seconds, updated_at
             FROM app_settings
             WHERE id = 1",
             [],
@@ -351,9 +397,11 @@ fn read_settings(connection: &Connection) -> StorageResult<AppSettings> {
                     row.get::<_, i64>(4)?,
                     row.get::<_, i64>(5)?,
                     row.get::<_, Option<i64>>(6)?,
-                    row.get::<_, i64>(7)?,
-                    row.get::<_, Option<i64>>(8)?,
-                    row.get::<_, String>(9)?,
+                    row.get::<_, f64>(7)?,
+                    row.get::<_, i64>(8)?,
+                    row.get::<_, Option<i64>>(9)?,
+                    row.get::<_, f64>(10)?,
+                    row.get::<_, String>(11)?,
                 ))
             },
         )
@@ -367,8 +415,10 @@ fn read_settings(connection: &Connection) -> StorageResult<AppSettings> {
                 auto_accept_enabled,
                 auto_pick_enabled,
                 auto_pick_champion_id,
+                auto_pick_delay_seconds,
                 auto_ban_enabled,
                 auto_ban_champion_id,
+                auto_ban_delay_seconds,
                 updated_at,
             )| {
                 let startup_page = StartupPage::parse(startup_page.as_str())
@@ -384,8 +434,10 @@ fn read_settings(connection: &Connection) -> StorageResult<AppSettings> {
                     auto_accept_enabled: int_to_bool(auto_accept_enabled),
                     auto_pick_enabled: int_to_bool(auto_pick_enabled),
                     auto_pick_champion_id,
+                    auto_pick_delay_seconds,
                     auto_ban_enabled: int_to_bool(auto_ban_enabled),
                     auto_ban_champion_id,
+                    auto_ban_delay_seconds,
                     updated_at,
                 })
             },
@@ -402,8 +454,10 @@ fn write_settings(connection: &Connection, settings: &SettingsValues) -> Storage
             auto_accept_enabled = ?5,
             auto_pick_enabled = ?6,
             auto_pick_champion_id = ?7,
-            auto_ban_enabled = ?8,
-            auto_ban_champion_id = ?9,
+            auto_pick_delay_seconds = ?8,
+            auto_ban_enabled = ?9,
+            auto_ban_champion_id = ?10,
+            auto_ban_delay_seconds = ?11,
             updated_at = CURRENT_TIMESTAMP
         WHERE id = 1",
         (
@@ -414,8 +468,10 @@ fn write_settings(connection: &Connection, settings: &SettingsValues) -> Storage
             bool_to_int(settings.auto_accept_enabled),
             bool_to_int(settings.auto_pick_enabled),
             settings.auto_pick_champion_id,
+            settings.auto_pick_delay_seconds,
             bool_to_int(settings.auto_ban_enabled),
             settings.auto_ban_champion_id,
+            settings.auto_ban_delay_seconds,
         ),
     )?;
 
@@ -818,6 +874,68 @@ fn insert_advisor_snapshot(
     Ok(())
 }
 
+fn read_champion_rune_config(
+    connection: &Connection,
+    champion_id: i64,
+) -> StorageResult<Option<ChampionRuneConfig>> {
+    connection
+        .query_row(
+            "SELECT champion_id, primary_style_id, sub_style_id, selected_perk_ids_json, saved_at
+            FROM champion_rune_configs
+            WHERE champion_id = ?1",
+            [champion_id],
+            |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, i64>(1)?,
+                    row.get::<_, i64>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, String>(4)?,
+                ))
+            },
+        )
+        .optional()?
+        .map(
+            |(champion_id, primary_style_id, sub_style_id, perk_ids_json, saved_at)| {
+                let selected_perk_ids: Vec<i64> =
+                    serde_json::from_str(perk_ids_json.as_str())
+                        .map_err(|e| StorageError::InvalidRuneConfig(e.to_string()))?;
+                Ok(ChampionRuneConfig {
+                    champion_id,
+                    page: RunePage {
+                        primary_style_id,
+                        sub_style_id,
+                        selected_perk_ids,
+                    },
+                    saved_at,
+                })
+            },
+        )
+        .transpose()
+}
+
+fn write_champion_rune_config(
+    connection: &Connection,
+    champion_id: i64,
+    page: &RunePage,
+) -> StorageResult<()> {
+    let perk_ids_json = serde_json::to_string(&page.selected_perk_ids)
+        .map_err(|e| StorageError::InvalidRuneConfig(e.to_string()))?;
+
+    connection.execute(
+        "INSERT INTO champion_rune_configs
+            (champion_id, primary_style_id, sub_style_id, selected_perk_ids_json)
+        VALUES (?1, ?2, ?3, ?4)
+        ON CONFLICT(champion_id) DO UPDATE SET
+            primary_style_id = excluded.primary_style_id,
+            sub_style_id = excluded.sub_style_id,
+            selected_perk_ids_json = excluded.selected_perk_ids_json,
+            saved_at = CURRENT_TIMESTAMP",
+        (champion_id, page.primary_style_id, page.sub_style_id, perk_ids_json.as_str()),
+    )?;
+    Ok(())
+}
+
 fn bool_to_int(value: bool) -> i64 {
     if value { 1 } else { 0 }
 }
@@ -912,6 +1030,28 @@ impl application::AppStore for SqliteStore {
     ) -> Result<AdvisorDataSnapshot, String> {
         SqliteStore::replace_advisor_snapshot(self, &snapshot).map_err(|error| error.to_string())
     }
+
+    fn get_champion_rune_config(
+        &self,
+        champion_id: i64,
+    ) -> Result<Option<ChampionRuneConfig>, String> {
+        SqliteStore::get_champion_rune_config(self, champion_id)
+            .map_err(|error| error.to_string())
+    }
+
+    fn save_champion_rune_config(
+        &self,
+        champion_id: i64,
+        page: RunePage,
+    ) -> Result<ChampionRuneConfig, String> {
+        SqliteStore::save_champion_rune_config(self, champion_id, &page)
+            .map_err(|error| error.to_string())
+    }
+
+    fn delete_champion_rune_config(&self, champion_id: i64) -> Result<bool, String> {
+        SqliteStore::delete_champion_rune_config(self, champion_id)
+            .map_err(|error| error.to_string())
+    }
 }
 
 #[cfg(test)]
@@ -929,13 +1069,13 @@ mod tests {
         let store = SqliteStore::initialize(&data_dir).expect("storage initializes");
 
         assert!(store.database_path().exists());
-        assert_eq!(store.health().expect("storage health").schema_version, 7);
+        assert_eq!(store.health().expect("storage health").schema_version, 9);
         assert_eq!(store.get_settings().expect("settings").activity_limit, 100);
         assert_eq!(
             store.get_settings().expect("settings").language,
             AppLanguagePreference::System
         );
-        assert_eq!(migration_count(store.database_path()), 7);
+        assert_eq!(migration_count(store.database_path()), 9);
 
         let _ = fs::remove_dir_all(data_dir);
     }
@@ -948,8 +1088,8 @@ mod tests {
         let second = SqliteStore::initialize(&data_dir).expect("second initialization");
 
         assert_eq!(first.database_path(), second.database_path());
-        assert_eq!(second.health().expect("storage health").schema_version, 7);
-        assert_eq!(migration_count(second.database_path()), 7);
+        assert_eq!(second.health().expect("storage health").schema_version, 9);
+        assert_eq!(migration_count(second.database_path()), 9);
 
         let _ = fs::remove_dir_all(data_dir);
     }
@@ -983,7 +1123,7 @@ mod tests {
 
         let store = SqliteStore::initialize(&data_dir).expect("upgrade database");
 
-        assert_eq!(store.health().expect("storage health").schema_version, 7);
+        assert_eq!(store.health().expect("storage health").schema_version, 9);
         assert_eq!(
             store.get_settings().expect("settings").startup_page,
             StartupPage::Dashboard
@@ -992,7 +1132,7 @@ mod tests {
             store.get_settings().expect("settings").language,
             AppLanguagePreference::System
         );
-        assert_eq!(migration_count(store.database_path()), 7);
+        assert_eq!(migration_count(store.database_path()), 9);
 
         let _ = fs::remove_dir_all(data_dir);
     }
@@ -1011,8 +1151,10 @@ mod tests {
                 auto_accept_enabled: false,
                 auto_pick_enabled: true,
                 auto_pick_champion_id: Some(103),
+                auto_pick_delay_seconds: 1.5,
                 auto_ban_enabled: true,
                 auto_ban_champion_id: Some(122),
+                auto_ban_delay_seconds: 0.5,
             })
             .expect("settings saved");
 
@@ -1022,8 +1164,10 @@ mod tests {
         assert!(!settings.auto_accept_enabled);
         assert!(settings.auto_pick_enabled);
         assert_eq!(settings.auto_pick_champion_id, Some(103));
+        assert_eq!(settings.auto_pick_delay_seconds, 1.5);
         assert!(settings.auto_ban_enabled);
         assert_eq!(settings.auto_ban_champion_id, Some(122));
+        assert_eq!(settings.auto_ban_delay_seconds, 0.5);
         assert_eq!(store.get_settings().expect("settings").activity_limit, 25);
 
         let _ = fs::remove_dir_all(data_dir);
@@ -1106,8 +1250,10 @@ mod tests {
                     auto_accept_enabled: true,
                     auto_pick_enabled: false,
                     auto_pick_champion_id: None,
+                    auto_pick_delay_seconds: 0.0,
                     auto_ban_enabled: false,
                     auto_ban_champion_id: None,
+                    auto_ban_delay_seconds: 0.0,
                 },
                 &[LocalActivityEntry {
                     kind: ActivityKind::Note,

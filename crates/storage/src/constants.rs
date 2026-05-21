@@ -8,3 +8,5 @@ pub(crate) const MIGRATION_0005: &str =
     include_str!("../migrations/0005_lobby_automation_settings.sql");
 pub(crate) const MIGRATION_0006: &str = include_str!("../migrations/0006_language_preference.sql");
 pub(crate) const MIGRATION_0007: &str = include_str!("../migrations/0007_advisor_data_cache.sql");
+pub(crate) const MIGRATION_0008: &str = include_str!("../migrations/0008_pick_ban_delay.sql");
+pub(crate) const MIGRATION_0009: &str = include_str!("../migrations/0009_champion_rune_configs.sql");
