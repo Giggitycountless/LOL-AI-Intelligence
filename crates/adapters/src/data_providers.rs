@@ -735,12 +735,186 @@ impl application::RankedChampionDataProvider for TencentRankedChampionProvider {
     }
 }
 
+// ── lol.ps KR ranked champion stats provider ─────────────────────────────────
+
+const LOLPS_TIERLIST_URL: &str = "https://lol.ps/api/statistics/tierlist.json";
+const DDRAGON_VERSIONS_URL: &str = "https://ddragon.leagueoflegends.com/api/versions.json";
+const LOLPS_TIMEOUT: Duration = Duration::from_secs(12);
+
+#[derive(Debug, Clone)]
+pub struct LolPsKrProvider {
+    http_client: Client,
+}
+
+impl LolPsKrProvider {
+    pub fn new() -> Self {
+        let http_client = Client::builder()
+            .timeout(LOLPS_TIMEOUT)
+            .connect_timeout(LOLPS_TIMEOUT)
+            .build()
+            .unwrap_or_default();
+        Self { http_client }
+    }
+
+    fn fetch_patch_version(&self) -> Option<String> {
+        let body = self.http_client
+            .get(DDRAGON_VERSIONS_URL)
+            .send().ok()?
+            .text().ok()?;
+        let versions: Vec<String> = serde_json::from_str(&body).ok()?;
+        let latest = versions.into_iter().next()?;
+        let mut parts = latest.splitn(3, '.');
+        let major = parts.next()?;
+        let minor = parts.next()?;
+        Some(format!("{major}.{minor}"))
+    }
+}
+
+impl Default for LolPsKrProvider {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[derive(Deserialize)]
+struct LolPsTierlistResponse {
+    data: Vec<LolPsChampionEntry>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LolPsChampionEntry {
+    champion_id: i64,
+    win_rate: f64,
+    pick_rate: f64,
+    ban_rate: f64,
+}
+
+fn lolps_lane_str(lane: domain::RankedChampionLane) -> &'static str {
+    match lane {
+        domain::RankedChampionLane::Top => "0",
+        domain::RankedChampionLane::Jungle => "1",
+        domain::RankedChampionLane::Middle => "2",
+        domain::RankedChampionLane::Bottom => "3",
+        domain::RankedChampionLane::Support => "4",
+    }
+}
+
+fn lolps_tier_label(tier: u32) -> &'static str {
+    match tier {
+        1 => "Bronze-Platinum",
+        3 => "Master+",
+        13 => "Diamond+",
+        _ => "Emerald+",
+    }
+}
+
+impl application::RankedChampionDataProvider for LolPsKrProvider {
+    fn fetch_ranked_champion_snapshot(
+        &self,
+        input: application::RankedChampionRefreshInput,
+    ) -> Result<domain::RankedChampionDataSnapshot, application::RankedChampionDataError> {
+        let version = input
+            .patch_version
+            .or_else(|| self.fetch_patch_version())
+            .ok_or_else(|| {
+                application::RankedChampionDataError::Unavailable(
+                    "Could not determine current patch version for lol.ps".to_string(),
+                )
+            })?;
+
+        let lane = input.lane.clone().unwrap_or(domain::RankedChampionLane::Top);
+        let lane_str = lolps_lane_str(lane.clone());
+        let tier = input.tier;
+
+        let url = format!(
+            "{LOLPS_TIERLIST_URL}?region=0&version={version}&tier={tier}&lane={lane_str}"
+        );
+
+        let body = self
+            .http_client
+            .get(&url)
+            .send()
+            .map_err(|e| {
+                application::RankedChampionDataError::Unavailable(format!(
+                    "lol.ps request failed: {e}"
+                ))
+            })?
+            .text()
+            .map_err(|e| {
+                application::RankedChampionDataError::Unavailable(format!(
+                    "lol.ps response could not be read: {e}"
+                ))
+            })?;
+
+        let response: LolPsTierlistResponse =
+            serde_json::from_str(&body).map_err(|e| {
+                application::RankedChampionDataError::InvalidData(format!(
+                    "lol.ps response JSON is invalid: {e}"
+                ))
+            })?;
+
+        if response.data.is_empty() {
+            return Err(application::RankedChampionDataError::Unavailable(
+                "lol.ps returned no data for the selected lane/tier/version".to_string(),
+            ));
+        }
+
+        let hints_by_id: std::collections::HashMap<i64, &str> = input
+            .champion_hints
+            .iter()
+            .map(|h| (h.id, h.name.as_str()))
+            .collect();
+
+        let records = response
+            .data
+            .into_iter()
+            .filter_map(|entry| {
+                let win = round_to_tenth(entry.win_rate);
+                let pick = round_to_tenth(entry.pick_rate);
+                let ban = round_to_tenth(entry.ban_rate);
+                let overall = ranked_overall_score(win, pick, ban);
+                let name = hints_by_id
+                    .get(&entry.champion_id)
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| format!("Champion {}", entry.champion_id));
+                Some(domain::RankedChampionStat {
+                    champion_id: entry.champion_id,
+                    champion_name: name,
+                    champion_alias: None,
+                    lane: lane.clone(),
+                    win_rate: win,
+                    pick_rate: pick,
+                    ban_rate: ban,
+                    overall_score: overall,
+                    games: 0,
+                    wins: 0,
+                    picks: 0,
+                    bans: 0,
+                })
+            })
+            .collect();
+
+        Ok(domain::RankedChampionDataSnapshot {
+            source: "lol.ps-kr".to_string(),
+            patch: Some(version),
+            region: Some("KR".to_string()),
+            queue: Some("RANKED_SOLO_5X5".to_string()),
+            tier: Some(lolps_tier_label(tier).to_string()),
+            generated_at: None,
+            imported_at: unix_timestamp_seconds(),
+            records,
+        })
+    }
+}
+
 // ── Dispatching provider ──────────────────────────────────────────────────────
 
 #[derive(Debug, Clone)]
 pub struct DispatchingRankedChampionProvider {
     github: RemoteRankedChampionJsonProvider,
     tencent: TencentRankedChampionProvider,
+    korea_kr: LolPsKrProvider,
 }
 
 impl DispatchingRankedChampionProvider {
@@ -748,6 +922,7 @@ impl DispatchingRankedChampionProvider {
         Self {
             github: RemoteRankedChampionJsonProvider::new(default_github_url),
             tencent: TencentRankedChampionProvider::new(),
+            korea_kr: LolPsKrProvider::new(),
         }
     }
 }
@@ -760,6 +935,9 @@ impl application::RankedChampionDataProvider for DispatchingRankedChampionProvid
         match input.source {
             application::RankedChampionDataSource::Tencent => {
                 self.tencent.fetch_ranked_champion_snapshot(input)
+            }
+            application::RankedChampionDataSource::KoreaKr => {
+                self.korea_kr.fetch_ranked_champion_snapshot(input)
             }
             application::RankedChampionDataSource::GitHubJson => {
                 self.github.fetch_ranked_champion_snapshot(input)

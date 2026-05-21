@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { ChampionImage } from "../components/common";
 import { useAppCore, useLeagueAssets } from "../state/AppStateProvider";
-import type { RankedChampionDataSource, RankedChampionDataStatus, RankedChampionLane, RankedChampionSort, RankedChampionStat } from "../backend/types";
+import type { RankedChampionDataStatus, RankedChampionLane, RankedChampionSort, RankedChampionStat } from "../backend/types";
 import { initials, type T } from "../utils/formatting";
 
 const lanes: Array<{ id: RankedChampionLane; label: string; shortLabel: string }> = [
@@ -13,17 +13,21 @@ const lanes: Array<{ id: RankedChampionLane; label: string; shortLabel: string }
   { id: "support", label: "Support", shortLabel: "SUP" },
 ];
 
-const sources: Array<{ id: RankedChampionDataSource; label: string; description: string }> = [
-  { id: "tencent", label: "Tencent CN", description: "国服实时数据" },
-  { id: "github", label: "GitHub JSON", description: "静态样本数据" },
-];
-
 const tencentTiers: Array<{ value: number; label: string }> = [
   { value: 200, label: "全段位" },
   { value: 120, label: "黄金+" },
   { value: 40, label: "钻石+" },
   { value: 0, label: "王者" },
 ];
+
+const krTiers: Array<{ value: number; label: string }> = [
+  { value: 2, label: "翡翠~王者" },
+  { value: 13, label: "钻石~王者" },
+  { value: 3, label: "大师~王者" },
+  { value: 1, label: "青铜~铂金" },
+];
+
+type Region = "cn" | "kr";
 
 const sorts: Array<{ id: RankedChampionSort; label: string; metric: keyof RankedChampionStat }> = [
   { id: "overall", label: "Overall", metric: "overallScore" },
@@ -44,9 +48,13 @@ export function RankedChampions() {
   const { leagueImages, loadLeagueChampionIcon } = useLeagueAssets();
   const [lane, setLane] = useState<RankedChampionLane>("top");
   const [sortBy, setSortBy] = useState<RankedChampionSort>("overall");
-  const [source, setSource] = useState<RankedChampionDataSource>("tencent");
+  const [region, setRegion] = useState<Region>("cn");
   const [tencentTier, setTencentTier] = useState<number>(200);
+  const [krTier, setKrTier] = useState<number>(2);
   const [visibleCount, setVisibleCount] = useState(RANKED_RENDER_BATCH);
+  const activeTiers = region === "kr" ? krTiers : tencentTiers;
+  const activeTier = region === "kr" ? krTier : tencentTier;
+  const setActiveTier = region === "kr" ? setKrTier : setTencentTier;
   const activeSort = useMemo(() => sorts.find((sort) => sort.id === sortBy) ?? sorts[0], [sortBy]);
   const records = rankedChampionStats?.records ?? [];
   const visibleRecords = useMemo(() => records.slice(0, visibleCount), [records, visibleCount]);
@@ -92,46 +100,49 @@ export function RankedChampions() {
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <div className="flex rounded-md border border-zinc-200 bg-white">
-              {sources.map((s) => (
+              {(["cn", "kr"] as Region[]).map((r) => (
                 <button
                   className={[
                     "h-9 px-3 text-sm font-semibold transition first:rounded-l-md last:rounded-r-md",
-                    source === s.id
-                      ? "bg-zinc-950 text-white"
-                      : "text-zinc-600 hover:bg-zinc-50",
+                    region === r ? "bg-zinc-950 text-white" : "text-zinc-600 hover:bg-zinc-50",
                   ].join(" ")}
-                  key={s.id}
-                  onClick={() => setSource(s.id)}
-                  title={s.description}
+                  key={r}
+                  onClick={() => {
+                    setRegion(r);
+                    void refreshRankedChampionStats({
+                      lane,
+                      sortBy,
+                      tier: r === "kr" ? krTier : tencentTier,
+                      region: r,
+                    });
+                  }}
                   type="button"
                 >
-                  {s.label}
+                  {r === "cn" ? "国服" : "韩服"}
                 </button>
               ))}
             </div>
-            {source === "tencent" && (
-              <div className="flex rounded-md border border-zinc-200 bg-white">
-                {tencentTiers.map((tier) => (
-                  <button
-                    className={[
-                      "h-9 px-3 text-sm font-semibold transition first:rounded-l-md last:rounded-r-md",
-                      tencentTier === tier.value
-                        ? "bg-rose-700 text-white"
-                        : "text-zinc-600 hover:bg-zinc-50",
-                    ].join(" ")}
-                    key={tier.value}
-                    onClick={() => setTencentTier(tier.value)}
-                    type="button"
-                  >
-                    {tier.label}
-                  </button>
-                ))}
-              </div>
-            )}
+            <div className="flex rounded-md border border-zinc-200 bg-white">
+              {activeTiers.map((tier) => (
+                <button
+                  className={[
+                    "h-9 px-3 text-sm font-semibold transition first:rounded-l-md last:rounded-r-md",
+                    activeTier === tier.value
+                      ? "bg-rose-700 text-white"
+                      : "text-zinc-600 hover:bg-zinc-50",
+                  ].join(" ")}
+                  key={tier.value}
+                  onClick={() => setActiveTier(tier.value)}
+                  type="button"
+                >
+                  {tier.label}
+                </button>
+              ))}
+            </div>
             <button
               className="inline-flex h-10 items-center gap-2 rounded-md border border-zinc-300 bg-white px-3 text-sm font-semibold text-zinc-700 transition hover:border-zinc-400 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60"
               disabled={isRankedChampionStatsLoading}
-              onClick={() => void refreshRankedChampionStats({ lane, sortBy, source, tier: source === "tencent" ? tencentTier : undefined })}
+              onClick={() => void refreshRankedChampionStats({ lane, sortBy, tier: activeTier, region })}
               type="button"
             >
               <RefreshIcon />

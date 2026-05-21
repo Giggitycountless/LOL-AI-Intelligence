@@ -253,7 +253,7 @@ const zh: TranslationMap = {
   "app.dismiss": "关闭",
   "app.loadingState": "正在加载应用状态",
   "app.languageToggle": "EN",
-  "nav.advisor": "Advisor",
+  "nav.advisor": "推荐",
   "nav.dashboard": "总览",
   "nav.profile": "个人",
   "nav.matches": "对局",

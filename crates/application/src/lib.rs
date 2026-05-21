@@ -242,6 +242,7 @@ pub enum RankedChampionDataSource {
     #[default]
     GitHubJson,
     Tencent,
+    KoreaKr,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -257,6 +258,7 @@ pub struct RankedChampionRefreshInput {
     pub champion_hints: Vec<ChampionHint>,
     pub tier: u32,
     pub lane: Option<RankedChampionLane>,
+    pub patch_version: Option<String>,
 }
 
 impl Default for RankedChampionRefreshInput {
@@ -267,6 +269,7 @@ impl Default for RankedChampionRefreshInput {
             champion_hints: vec![],
             tier: 200,
             lane: None,
+            patch_version: None,
         }
     }
 }

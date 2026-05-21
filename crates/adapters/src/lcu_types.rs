@@ -91,6 +91,7 @@ pub(crate) struct LcuChampSelectActionUpdate {
 pub(crate) struct LcuChampSelectMember {
     pub(crate) summoner_id: Option<i64>,
     pub(crate) champion_id: Option<i64>,
+    pub(crate) puuid: Option<String>,
     pub(crate) summoner_name: Option<String>,
     pub(crate) display_name: Option<String>,
     pub(crate) game_name: Option<String>,
@@ -353,6 +354,7 @@ mod tests {
         LcuChampSelectMember {
             summoner_id: None,
             champion_id: None,
+            puuid: None,
             summoner_name: Some("Old Summoner Name".into()),
             display_name: Some("Riot Display".into()),
             game_name: Some(game_name.into()),
@@ -395,6 +397,7 @@ mod tests {
         let member = LcuChampSelectMember {
             summoner_id: None,
             champion_id: None,
+            puuid: None,
             summoner_name: None,
             display_name: None,
             game_name: None,

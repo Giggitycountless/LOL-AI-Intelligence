@@ -886,7 +886,22 @@ impl LeagueClientReader for LocalLeagueClient {
                 .collect(),
             champion_selections_by_name,
             source: ChampSelectSessionSource::ChampSelect,
-            players: Vec::new(),
+            players: champ_select
+                .my_team
+                .iter()
+                .map(|m| (m, ChampSelectTeam::Ally))
+                .chain(champ_select.their_team.iter().map(|m| (m, ChampSelectTeam::Enemy)))
+                .filter_map(|(member, team)| {
+                    let puuid = member.puuid.as_ref().filter(|p| !p.trim().is_empty())?.clone();
+                    Some(ChampSelectSessionPlayer {
+                        summoner_id: member.summoner_id.filter(|&id| id > 0),
+                        puuid: Some(puuid),
+                        display_name: member.display_name().unwrap_or_default(),
+                        champion_id: member.champion_id.filter(|&id| id > 0),
+                        team,
+                    })
+                })
+                .collect(),
         })
     }
 

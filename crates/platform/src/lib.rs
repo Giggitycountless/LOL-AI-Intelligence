@@ -607,11 +607,10 @@ pub struct RankedChampionStatsCommand {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RefreshRankedChampionStatsCommand {
-    pub url: Option<String>,
-    pub source: Option<String>,
     pub tier: Option<u32>,
     pub lane: Option<RankedChampionLane>,
     pub sort_by: Option<RankedChampionSort>,
+    pub region: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -1782,32 +1781,34 @@ pub fn refresh_ranked_champion_stats(
     state: &AppState,
     command: RefreshRankedChampionStatsCommand,
 ) -> Result<RankedChampionStatsResponse, CommandError> {
-    let source = match command.source.as_deref() {
-        Some("tencent") => application::RankedChampionDataSource::Tencent,
-        _ => application::RankedChampionDataSource::GitHubJson,
+    let is_kr = command.region.as_deref() == Some("kr");
+
+    let source = if is_kr {
+        application::RankedChampionDataSource::KoreaKr
+    } else {
+        application::RankedChampionDataSource::Tencent
     };
 
-    let champion_hints = if source == application::RankedChampionDataSource::Tencent {
-        match state.league_client.champion_catalog() {
-            Ok(catalog) => catalog
-                .into_iter()
-                .map(|c| application::ChampionHint { id: c.champion_id, name: c.champion_name })
-                .collect(),
-            Err(_) => application::seed_champion_hints(),
-        }
-    } else {
-        vec![]
+    let champion_hints = match state.league_client.champion_catalog() {
+        Ok(catalog) => catalog
+            .into_iter()
+            .map(|c| application::ChampionHint { id: c.champion_id, name: c.champion_name })
+            .collect(),
+        Err(_) => application::seed_champion_hints(),
     };
+
+    let default_tier = if is_kr { 2 } else { 200 };
 
     application::refresh_ranked_champion_stats(
         &state.store,
         &state.ranked_champion_provider,
         application::RankedChampionRefreshInput {
-            url: command.url,
+            url: None,
             source,
             champion_hints,
-            tier: command.tier.unwrap_or(200),
+            tier: command.tier.unwrap_or(default_tier),
             lane: command.lane,
+            patch_version: None,
         },
         RankedChampionStatsInput {
             lane: command.lane,
