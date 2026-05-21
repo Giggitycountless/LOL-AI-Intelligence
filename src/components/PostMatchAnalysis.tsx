@@ -76,10 +76,10 @@ const TEAM_TONE = {
     title: "text-rose-700",
   },
   unknown: {
-    border: "border-zinc-200",
-    header: "bg-zinc-50 border-zinc-200",
+    border: "border-zinc-200 dark:border-zinc-700",
+    header: "bg-zinc-50 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700",
     accent: "",
-    title: "text-zinc-950",
+    title: "text-zinc-950 dark:text-zinc-50",
   },
 } as const;
 
@@ -101,12 +101,12 @@ function TeamBlock({
   const tone = TEAM_TONE[team.result] ?? TEAM_TONE.unknown;
 
   return (
-    <div className={`overflow-visible rounded-md border bg-white ${tone.border} ${tone.accent}`}>
+    <div className={`overflow-visible rounded-md border bg-white dark:bg-zinc-900 ${tone.border} ${tone.accent}`}>
       {/* Header */}
       <div className={`flex items-center justify-between gap-3 border-b px-3 py-2 ${tone.header}`}>
         <div>
           <p className={`text-sm font-semibold ${tone.title}`}>{formatResult(team.result, t)}</p>
-          <p className="mt-1 text-xs text-zinc-500">
+          <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
             {team.totals.kills}/{team.totals.deaths}/{team.totals.assists} · {formatCompact(team.totals.goldEarned)} {t("analysis.gold")}
           </p>
         </div>
@@ -115,7 +115,7 @@ function TeamBlock({
 
       {/* Column headers */}
       <div className={`overflow-x-auto`}>
-        <div className={`grid ${COLS} ${MIN_W} gap-2 border-b border-zinc-200 bg-zinc-100 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-zinc-500`}>
+        <div className={`grid ${COLS} ${MIN_W} gap-2 border-b border-zinc-200 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-900 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400`}>
           <span>{t("analysis.player")}</span>
           <span>{t("analysis.score")}</span>
           <span>KDA</span>
@@ -160,7 +160,7 @@ function ParticipantRow({
 }) {
   return (
     <button
-      className={`grid ${COLS} ${MIN_W} items-center gap-2 border-b border-zinc-100 px-3 py-2 text-left transition last:border-b-0 hover:bg-rose-50`}
+      className={`grid ${COLS} ${MIN_W} items-center gap-2 border-b border-zinc-100 dark:border-zinc-700 px-3 py-2 text-left transition last:border-b-0 hover:bg-rose-50 dark:hover:bg-zinc-800`}
       onClick={onSelect}
       type="button"
     >
@@ -168,8 +168,8 @@ function ParticipantRow({
       <div className="flex min-w-0 items-center gap-2">
         <ChampionImage championName={participant.championName} imageUrl={imageUrl} size="xs" />
         <div className="min-w-0">
-          <p className="truncate text-sm font-semibold text-zinc-950">{participant.displayName}</p>
-          <p className="mt-0.5 truncate text-xs text-zinc-500">{participant.championName}</p>
+          <p className="truncate text-sm font-semibold text-zinc-950 dark:text-zinc-50">{participant.displayName}</p>
+          <p className="mt-0.5 truncate text-xs text-zinc-500 dark:text-zinc-400">{participant.championName}</p>
         </div>
       </div>
 
@@ -183,10 +183,10 @@ function ParticipantRow({
       <DamageCell damage={participant.damageToChampions} maxDamage={maxDamage} />
 
       {/* CS */}
-      <span className="text-sm font-semibold text-zinc-700">{participant.cs}</span>
+      <span className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">{participant.cs}</span>
 
       {/* Gold */}
-      <span className="text-sm font-semibold text-zinc-700">{formatCompact(participant.goldEarned)}</span>
+      <span className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">{formatCompact(participant.goldEarned)}</span>
 
       {/* Build */}
       <BuildCell assets={gameAssets} participant={participant} t={t} />
@@ -203,7 +203,7 @@ function ScoreBadge({ score }: { score: number }) {
       : score >= 6.5
         ? "bg-emerald-100 text-emerald-800"
         : score >= 4.5
-          ? "bg-zinc-100 text-zinc-700"
+          ? "bg-zinc-100 dark:bg-zinc-700 text-zinc-700 dark:text-zinc-300"
           : "bg-rose-100 text-rose-800";
 
   return <span className={["w-fit rounded-md px-1.5 py-0.5 text-sm font-bold", tone].join(" ")}>{score.toFixed(1)}</span>;
@@ -212,10 +212,10 @@ function ScoreBadge({ score }: { score: number }) {
 function KdaCell({ participant }: { participant: PostMatchParticipant }) {
   return (
     <div className="min-w-0">
-      <p className="text-sm font-semibold text-zinc-950">
+      <p className="text-sm font-semibold text-zinc-950 dark:text-zinc-50">
         {participant.kills}/{participant.deaths}/{participant.assists}
       </p>
-      <p className="mt-0.5 text-xs text-zinc-500">
+      <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
         {participant.kda === null ? "n/a" : `${participant.kda.toFixed(1)}:1`}
       </p>
     </div>
@@ -227,8 +227,8 @@ function DamageCell({ damage, maxDamage }: { damage: number; maxDamage: number }
 
   return (
     <div className="min-w-0">
-      <span className="text-sm font-semibold text-zinc-950">{formatCompact(damage)}</span>
-      <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-zinc-200">
+      <span className="text-sm font-semibold text-zinc-950 dark:text-zinc-50">{formatCompact(damage)}</span>
+      <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-700">
         <div className="h-full rounded-full bg-rose-500" style={{ width: `${pct}%` }} />
       </div>
     </div>
@@ -271,7 +271,7 @@ function AssetStrip({
   return (
     <div className="flex min-w-0 flex-wrap gap-0.5">
       {assetIds.length === 0 && kind === "item" && (
-        <span className="text-xs text-zinc-400">{t("analysis.noItems")}</span>
+        <span className="text-xs text-zinc-400 dark:text-zinc-500">{t("analysis.noItems")}</span>
       )}
       {assetIds.map((assetId, index) => (
         <AssetIcon
@@ -307,7 +307,7 @@ function AssetIcon({
   return (
     <span
       className={[
-        "group relative inline-flex shrink-0 items-center justify-center rounded border border-zinc-200 bg-zinc-100",
+        "group relative inline-flex shrink-0 items-center justify-center rounded border border-zinc-200 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-900",
         sizeClass,
       ].join(" ")}
       title={title}
@@ -315,7 +315,7 @@ function AssetIcon({
       {asset ? (
         <img alt={label} className="h-full w-full rounded object-cover" src={asset.imageUrl} />
       ) : (
-        <span className="text-[8px] font-semibold text-zinc-500">{assetId}</span>
+        <span className="text-[8px] font-semibold text-zinc-500 dark:text-zinc-400">{assetId}</span>
       )}
       <span className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 hidden w-64 -translate-x-1/2 rounded-md border border-zinc-800 bg-zinc-950 p-3 text-left text-xs text-white shadow-xl group-hover:block">
         <span className="block text-sm font-semibold">{label}</span>
@@ -357,12 +357,12 @@ function Leader({
   t: T;
 }) {
   return (
-    <div className="rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2">
-      <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">{label}</p>
-      <p className="mt-1 truncate text-sm font-semibold text-zinc-950">
+    <div className="rounded-md border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2">
+      <p className="text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">{label}</p>
+      <p className="mt-1 truncate text-sm font-semibold text-zinc-950 dark:text-zinc-50">
         {leader?.displayName ?? t("common.unavailable")}
       </p>
-      <p className="mt-1 text-xs text-zinc-500">
+      <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
         {leader ? formatLeaderValue(leader.value) : t("common.noData")}
       </p>
     </div>

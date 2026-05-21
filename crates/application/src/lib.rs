@@ -10,7 +10,7 @@ use domain::{
     ActivityEntry, ActivityKind, AdvisorDataResponse, AdvisorDataSnapshot, AdvisorItemBuild,
     AdvisorMatchup, AdvisorNamedRef, AdvisorPlayerTag, AdvisorPowerSpike, AdvisorRecord,
     AdvisorRunePage, AdvisorSkillOrder, AdvisorTagTone, AppLanguagePreference, AppSettings,
-    AppSnapshot, ChampSelectAdvisorPlayer, ChampSelectAdvisorSnapshot,
+    AppSnapshot, AppThemePreference, ChampSelectAdvisorPlayer, ChampSelectAdvisorSnapshot,
     ChampSelectRecentStatsStatus, ChampionRuneConfig, ClearActivityResult, ClearPlayerNoteResult,
     DatabaseStatus,
     HealthReport, ImportLocalDataResult, KdaTag, LeagueChampionDetails, LeagueChampionSummary,
@@ -223,6 +223,7 @@ pub struct SummonerBatchEntry {
 pub struct SettingsInput {
     pub startup_page: String,
     pub language: String,
+    pub theme: String,
     pub compact_mode: bool,
     pub activity_limit: i64,
     pub auto_accept_enabled: bool,
@@ -506,6 +507,7 @@ pub fn settings_defaults() -> SettingsValues {
     SettingsValues {
         startup_page: StartupPage::Dashboard,
         language: AppLanguagePreference::System,
+        theme: AppThemePreference::Light,
         compact_mode: false,
         activity_limit: DEFAULT_ACTIVITY_LIMIT,
         auto_accept_enabled: true,
@@ -1516,10 +1518,13 @@ fn validate_settings(input: SettingsInput) -> Result<SettingsValues, Application
     })?;
     let language = AppLanguagePreference::parse(input.language.as_str())
         .ok_or_else(|| ApplicationError::Validation("Language must be system, zh, or en".into()))?;
+    let theme = AppThemePreference::parse(input.theme.as_str())
+        .ok_or_else(|| ApplicationError::Validation("Theme must be light or dark".into()))?;
 
     let values = SettingsValues {
         startup_page,
         language,
+        theme,
         compact_mode: input.compact_mode,
         activity_limit: input.activity_limit,
         auto_accept_enabled: input.auto_accept_enabled,

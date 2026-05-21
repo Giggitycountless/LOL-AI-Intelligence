@@ -36,6 +36,7 @@ pub struct AppSnapshot {
 pub struct AppSettings {
     pub startup_page: StartupPage,
     pub language: AppLanguagePreference,
+    pub theme: AppThemePreference,
     pub compact_mode: bool,
     pub activity_limit: i64,
     pub auto_accept_enabled: bool,
@@ -54,6 +55,8 @@ pub struct SettingsValues {
     pub startup_page: StartupPage,
     #[serde(default)]
     pub language: AppLanguagePreference,
+    #[serde(default)]
+    pub theme: AppThemePreference,
     pub compact_mode: bool,
     pub activity_limit: i64,
     #[serde(default = "default_true")]
@@ -81,6 +84,7 @@ impl AppSettings {
         SettingsValues {
             startup_page: self.startup_page,
             language: self.language,
+            theme: self.theme,
             compact_mode: self.compact_mode,
             activity_limit: self.activity_limit,
             auto_accept_enabled: self.auto_accept_enabled,
@@ -117,6 +121,31 @@ impl AppLanguagePreference {
             "system" => Some(Self::System),
             "zh" => Some(Self::Zh),
             "en" => Some(Self::En),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AppThemePreference {
+    #[default]
+    Light,
+    Dark,
+}
+
+impl AppThemePreference {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Light => "light",
+            Self::Dark => "dark",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "light" => Some(Self::Light),
+            "dark" => Some(Self::Dark),
             _ => None,
         }
     }

@@ -61,6 +61,17 @@ export function AppShell() {
   const didApplyStartupPage = useRef(false);
   const didUserNavigate = useRef(false);
   const compactMode = snapshot?.settings.compactMode ?? false;
+  const isDark = snapshot?.settings.theme === "dark";
+
+  // Apply/remove `dark` class on <html> for Tailwind dark: variant
+  useEffect(() => {
+    const root = document.documentElement;
+    if (isDark) {
+      root.classList.add("dark");
+    } else {
+      root.classList.remove("dark");
+    }
+  }, [isDark]);
   const navigateTo = useCallback((page: Page, options?: { isUserInitiated?: boolean }) => {
     if (options?.isUserInitiated) {
       didUserNavigate.current = true;
@@ -89,21 +100,21 @@ export function AppShell() {
   }, [navigateTo]);
 
   return (
-    <div className="flex h-screen min-h-0 bg-zinc-100 text-zinc-950">
+    <div className="flex h-screen min-h-0 bg-zinc-100 dark:bg-zinc-950 text-zinc-950 dark:text-zinc-50">
       <aside
         className={[
-          "flex shrink-0 flex-col border-r border-zinc-200 bg-white transition-[width]",
+          "flex shrink-0 flex-col border-r border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 transition-[width]",
           compactMode ? "w-20" : "w-64",
         ].join(" ")}
       >
-        <div className={["flex h-20 items-center border-b border-zinc-200", compactMode ? "justify-center px-3" : "px-5"].join(" ")}>
+        <div className={["flex h-20 items-center border-b border-zinc-200 dark:border-zinc-700", compactMode ? "justify-center px-3" : "px-5"].join(" ")}>
           <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md bg-rose-700 text-sm font-bold text-white">
             LoL
           </div>
           {!compactMode && (
             <div className="ml-3 min-w-0">
-              <p className="truncate text-sm font-semibold text-zinc-950">{t("app.name")}</p>
-              <p className="text-xs font-medium text-zinc-500">{t("app.milestone")}</p>
+              <p className="truncate text-sm font-semibold text-zinc-950 dark:text-zinc-50">{t("app.name")}</p>
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">{t("app.milestone")}</p>
             </div>
           )}
         </div>
@@ -125,7 +136,7 @@ export function AppShell() {
                   compactMode ? "justify-center" : "",
                   isActive
                     ? "bg-rose-700 text-white shadow-sm"
-                    : "text-zinc-600 hover:bg-zinc-100 hover:text-zinc-950",
+                    : "text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-zinc-950 dark:hover:text-zinc-50",
                 ].join(" ")}
               >
                 <Icon name={page.icon} />
@@ -137,13 +148,13 @@ export function AppShell() {
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <div className="flex h-12 shrink-0 items-center justify-between border-b border-zinc-200 bg-white px-8">
-          <p className="text-sm font-medium text-zinc-500">{t(pages.find((p) => p.id === activePage)?.labelKey ?? "nav.dashboard")}</p>
+        <div className="flex h-12 shrink-0 items-center justify-between border-b border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-8">
+          <p className="text-sm font-medium text-zinc-500 dark:text-zinc-400">{t(pages.find((p) => p.id === activePage)?.labelKey ?? "nav.dashboard")}</p>
           <button
             type="button"
             onClick={() => void setLanguagePreference(oppositeLanguage(effectiveLanguage))}
             disabled={!snapshot}
-            className="inline-flex h-8 min-w-12 items-center justify-center rounded-md border border-zinc-300 bg-white px-3 text-sm font-semibold text-zinc-700 transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:text-zinc-400"
+            className="inline-flex h-8 min-w-12 items-center justify-center rounded-md border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 px-3 text-sm font-semibold text-zinc-700 dark:text-zinc-300 transition hover:bg-zinc-50 dark:hover:bg-zinc-700 disabled:cursor-not-allowed disabled:text-zinc-400"
           >
             {t("app.languageToggle")}
           </button>
@@ -164,7 +175,7 @@ export function AppShell() {
           </div>
         )}
         {isLoading && !snapshot && (
-          <div className="border-b border-zinc-200 bg-white px-8 py-3 text-sm font-medium text-zinc-600">
+          <div className="border-b border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-8 py-3 text-sm font-medium text-zinc-600 dark:text-zinc-400">
             {t("app.loadingState")}
           </div>
         )}

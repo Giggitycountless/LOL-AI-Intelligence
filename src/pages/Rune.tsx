@@ -106,11 +106,11 @@ export function Rune() {
       <div className="mx-auto flex w-full max-w-4xl flex-col gap-6">
         <header>
           <p className="text-sm font-medium uppercase tracking-wide text-rose-700">{t("rune.eyebrow")}</p>
-          <h1 className="mt-2 text-3xl font-semibold text-zinc-950">{t("rune.title")}</h1>
+          <h1 className="mt-2 text-3xl font-semibold text-zinc-950 dark:text-zinc-50">{t("rune.title")}</h1>
         </header>
 
         {!championId && (
-          <div className="rounded-lg border border-zinc-200 bg-white p-8 text-center text-sm text-zinc-500 shadow-sm">
+          <div className="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-8 text-center text-sm text-zinc-500 dark:text-zinc-400 shadow-sm">
             {t("rune.waiting")}
           </div>
         )}
@@ -124,15 +124,15 @@ export function Rune() {
             )}
 
             {isLoading && (
-              <div className="text-sm text-zinc-500">{t("common.loading")}</div>
+              <div className="text-sm text-zinc-500 dark:text-zinc-400">{t("common.loading")}</div>
             )}
 
             {savedConfig && (
-              <div className="rounded-lg border border-rose-200 bg-white p-5 shadow-sm">
+              <div className="rounded-lg border border-rose-200 bg-white dark:bg-zinc-900 p-5 shadow-sm">
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-wide text-rose-700">{t("rune.savedConfig")}</p>
-                    <p className="mt-1 text-sm font-medium text-zinc-950">
+                    <p className="mt-1 text-sm font-medium text-zinc-950 dark:text-zinc-50">
                       {styleLabel(savedConfig.page.primaryStyleId)} + {styleLabel(savedConfig.page.subStyleId)}
                     </p>
                   </div>
@@ -148,7 +148,7 @@ export function Rune() {
                     <button
                       type="button"
                       onClick={() => void handleDeleteConfig()}
-                      className="inline-flex h-8 items-center rounded-md border border-zinc-300 px-3 text-xs font-semibold text-zinc-700 transition hover:bg-zinc-50"
+                      className="inline-flex h-8 items-center rounded-md border border-zinc-300 dark:border-zinc-600 px-3 text-xs font-semibold text-zinc-700 dark:text-zinc-300 transition hover:bg-zinc-50 dark:hover:bg-zinc-800"
                     >
                       {t("rune.deleteConfig")}
                     </button>
@@ -158,7 +158,7 @@ export function Rune() {
             )}
 
             {!isLoading && recommendations.length === 0 && (
-              <div className="rounded-lg border border-zinc-200 bg-white p-6 text-sm text-zinc-500 shadow-sm">
+              <div className="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-6 text-sm text-zinc-500 dark:text-zinc-400 shadow-sm">
                 {t("rune.noRecommendations")}
               </div>
             )}
@@ -166,24 +166,24 @@ export function Rune() {
             {recommendations.map((rec, index) => (
               <div
                 key={index}
-                className="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm"
+                className="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-5 shadow-sm"
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className="inline-flex items-center rounded-md bg-zinc-100 px-2 py-0.5 text-xs font-semibold text-zinc-700">
+                      <span className="inline-flex items-center rounded-md bg-zinc-100 dark:bg-zinc-900 px-2 py-0.5 text-xs font-semibold text-zinc-700 dark:text-zinc-300">
                         {positionLabel(rec.position)}
                       </span>
-                      <span className="text-xs text-zinc-500">
+                      <span className="text-xs text-zinc-500 dark:text-zinc-400">
                         {rec.pickCount.toLocaleString()} {t("rune.pickCount")}
                       </span>
                     </div>
-                    <p className="mt-2 text-sm font-semibold text-zinc-950">
+                    <p className="mt-2 text-sm font-semibold text-zinc-950 dark:text-zinc-50">
                       {styleLabel(rec.page.primaryStyleId)}
-                      <span className="mx-1 font-normal text-zinc-400">+</span>
+                      <span className="mx-1 font-normal text-zinc-400 dark:text-zinc-500">+</span>
                       {styleLabel(rec.page.subStyleId)}
                     </p>
-                    <p className="mt-1 font-mono text-xs text-zinc-400">
+                    <p className="mt-1 font-mono text-xs text-zinc-400 dark:text-zinc-500">
                       {rec.page.selectedPerkIds.join(" · ")}
                     </p>
                   </div>
@@ -203,7 +203,7 @@ export function Rune() {
                     <button
                       type="button"
                       onClick={() => void handleSaveConfig(rec.page)}
-                      className="inline-flex h-8 items-center rounded-md border border-zinc-300 px-3 text-xs font-semibold text-zinc-700 transition hover:bg-zinc-50"
+                      className="inline-flex h-8 items-center rounded-md border border-zinc-300 dark:border-zinc-600 px-3 text-xs font-semibold text-zinc-700 dark:text-zinc-300 transition hover:bg-zinc-50 dark:hover:bg-zinc-800"
                     >
                       {t("rune.saveConfig")}
                     </button>

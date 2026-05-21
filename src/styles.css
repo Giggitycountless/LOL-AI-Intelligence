@@ -1,5 +1,8 @@
 @import "tailwindcss";
 
+/* Class-based dark mode: add `dark` to <html> to activate */
+@variant dark (&:where(.dark, .dark *));
+
 @layer base {
   :root {
     font-family:

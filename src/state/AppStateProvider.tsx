@@ -262,6 +262,7 @@ export function AppStateProvider({ children, mode = "main" }: { children: ReactN
       return saveSettingsAction({
         startupPage: current.startupPage,
         language,
+        theme: current.theme,
         compactMode: current.compactMode,
         activityLimit: current.activityLimit,
         autoAcceptEnabled: current.autoAcceptEnabled,

@@ -14,6 +14,7 @@ fn save_settings_does_not_log_activity_when_values_are_unchanged() {
         SettingsInput {
             startup_page: "dashboard".to_string(),
             language: "system".to_string(),
+            theme: "light".to_string(),
             compact_mode: false,
             activity_limit: 100,
             auto_accept_enabled: true,
@@ -40,6 +41,7 @@ fn save_settings_logs_activity_when_values_change() {
         SettingsInput {
             startup_page: "activity".to_string(),
             language: "zh".to_string(),
+            theme: "dark".to_string(),
             compact_mode: true,
             activity_limit: 50,
             auto_accept_enabled: false,
@@ -1062,6 +1064,7 @@ impl AppStore for FakeStore {
         let updated = AppSettings {
             startup_page: settings.startup_page,
             language: settings.language,
+            theme: settings.theme,
             compact_mode: settings.compact_mode,
             activity_limit: settings.activity_limit,
             auto_accept_enabled: settings.auto_accept_enabled,
@@ -1267,6 +1270,7 @@ fn default_settings() -> AppSettings {
     AppSettings {
         startup_page: StartupPage::Dashboard,
         language: AppLanguagePreference::System,
+        theme: domain::AppThemePreference::Light,
         compact_mode: false,
         activity_limit: 100,
         auto_accept_enabled: true,

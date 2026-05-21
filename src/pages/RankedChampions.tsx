@@ -96,15 +96,15 @@ export function RankedChampions() {
         <header className="flex flex-wrap items-end justify-between gap-4">
           <div>
             <p className="text-sm font-medium uppercase tracking-wide text-rose-700">{t("ranked.eyebrow")}</p>
-            <h1 className="mt-2 text-3xl font-semibold text-zinc-950">{t("ranked.title")}</h1>
+            <h1 className="mt-2 text-3xl font-semibold text-zinc-950 dark:text-zinc-50">{t("ranked.title")}</h1>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <div className="flex rounded-md border border-zinc-200 bg-white">
+            <div className="flex rounded-md border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900">
               {(["cn", "kr"] as Region[]).map((r) => (
                 <button
                   className={[
                     "h-9 px-3 text-sm font-semibold transition first:rounded-l-md last:rounded-r-md",
-                    region === r ? "bg-zinc-950 text-white" : "text-zinc-600 hover:bg-zinc-50",
+                    region === r ? "bg-zinc-950 text-white" : "text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800",
                   ].join(" ")}
                   key={r}
                   onClick={() => {
@@ -122,14 +122,14 @@ export function RankedChampions() {
                 </button>
               ))}
             </div>
-            <div className="flex rounded-md border border-zinc-200 bg-white">
+            <div className="flex rounded-md border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900">
               {activeTiers.map((tier) => (
                 <button
                   className={[
                     "h-9 px-3 text-sm font-semibold transition first:rounded-l-md last:rounded-r-md",
                     activeTier === tier.value
                       ? "bg-rose-700 text-white"
-                      : "text-zinc-600 hover:bg-zinc-50",
+                      : "text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800",
                   ].join(" ")}
                   key={tier.value}
                   onClick={() => setActiveTier(tier.value)}
@@ -140,7 +140,7 @@ export function RankedChampions() {
               ))}
             </div>
             <button
-              className="inline-flex h-10 items-center gap-2 rounded-md border border-zinc-300 bg-white px-3 text-sm font-semibold text-zinc-700 transition hover:border-zinc-400 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex h-10 items-center gap-2 rounded-md border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-900 px-3 text-sm font-semibold text-zinc-700 dark:text-zinc-300 transition hover:border-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60"
               disabled={isRankedChampionStatsLoading}
               onClick={() => void refreshRankedChampionStats({ lane, sortBy, tier: activeTier, region })}
               type="button"
@@ -148,7 +148,7 @@ export function RankedChampions() {
               <RefreshIcon />
               <span>{isRankedChampionStatsLoading ? t("common.refreshing") : t("common.refresh")}</span>
             </button>
-            <div className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-600">
+            <div className="rounded-md border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm font-medium text-zinc-600 dark:text-zinc-400">
               {isRankedChampionStatsLoading
                 ? t("common.loading")
                 : `${visibleRecords.length}/${records.length} ${t("ranked.champions")}`}
@@ -164,7 +164,7 @@ export function RankedChampions() {
                   "inline-flex h-10 items-center gap-2 rounded-md border px-3 text-sm font-semibold transition",
                   lane === laneOption.id
                     ? "border-rose-700 bg-rose-700 text-white shadow-sm"
-                    : "border-zinc-300 bg-white text-zinc-700 hover:border-zinc-400 hover:bg-zinc-50",
+                    : "border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 hover:border-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800",
                 ].join(" ")}
                 key={laneOption.id}
                 onClick={() => setLane(laneOption.id)}
@@ -183,7 +183,7 @@ export function RankedChampions() {
                   "h-10 rounded-md border px-3 text-sm font-semibold transition",
                   sortBy === sort.id
                     ? "border-zinc-950 bg-zinc-950 text-white shadow-sm"
-                    : "border-zinc-300 bg-white text-zinc-700 hover:border-zinc-400 hover:bg-zinc-50",
+                    : "border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 hover:border-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800",
                 ].join(" ")}
                 key={sort.id}
                 onClick={() => setSortBy(sort.id)}
@@ -195,35 +195,35 @@ export function RankedChampions() {
           </div>
         </section>
 
-        <section className="overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-sm">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-200 px-5 py-4">
+        <section className="overflow-hidden rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-200 dark:border-zinc-700 px-5 py-4">
             <div>
               <div className="flex flex-wrap items-center gap-2">
-                <h2 className="text-base font-semibold text-zinc-950">
+                <h2 className="text-base font-semibold text-zinc-950 dark:text-zinc-50">
                   {laneLabel(lane)} {t("ranked.champions")}
                 </h2>
                 <span className={["rounded px-2 py-0.5 text-xs font-bold", statusView.className].join(" ")}>
                   {statusView.label}
                 </span>
               </div>
-              <p className="mt-1 text-sm text-zinc-500">
+              <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
                 {t("ranked.sortedBy")} {activeSort.label.toLowerCase()} / {rankedChampionStats?.source ?? t("ranked.localSample")}
               </p>
             </div>
             <div className="text-right">
-              <p className="text-sm font-semibold text-zinc-700">{metadata || t("ranked.sampleData")}</p>
-              <p className="mt-1 text-xs font-medium text-zinc-500">{timeSummary(rankedChampionStats, t)}</p>
+              <p className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">{metadata || t("ranked.sampleData")}</p>
+              <p className="mt-1 text-xs font-medium text-zinc-500 dark:text-zinc-400">{timeSummary(rankedChampionStats, t)}</p>
             </div>
           </div>
 
           {rankedChampionStats?.statusMessage && (
-            <div className="border-b border-zinc-200 bg-zinc-50 px-5 py-3 text-sm font-medium text-zinc-600">
+            <div className="border-b border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-5 py-3 text-sm font-medium text-zinc-600 dark:text-zinc-400">
               {rankedChampionStats.statusMessage}
             </div>
           )}
 
           <div className="overflow-x-auto">
-            <div className="grid min-w-[64rem] grid-cols-[4rem_minmax(14rem,1.3fr)_7rem_8rem_8rem_8rem_11rem] gap-3 border-b border-zinc-200 bg-zinc-100 px-5 py-2 text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
+            <div className="grid min-w-[64rem] grid-cols-[4rem_minmax(14rem,1.3fr)_7rem_8rem_8rem_8rem_11rem] gap-3 border-b border-zinc-200 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-900 px-5 py-2 text-[11px] font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
               <span>{t("ranked.rank")}</span>
               <span>{t("ranked.champion")}</span>
               <span>{t("ranked.overall")}</span>
@@ -234,7 +234,7 @@ export function RankedChampions() {
             </div>
 
             {records.length === 0 && (
-              <div className="px-5 py-8 text-sm text-zinc-500">
+              <div className="px-5 py-8 text-sm text-zinc-500 dark:text-zinc-400">
                 {t("ranked.noLaneData")}
               </div>
             )}
@@ -251,7 +251,7 @@ export function RankedChampions() {
             ))}
 
             {visibleRecords.length < records.length && (
-              <div className="min-w-[64rem] border-t border-zinc-100 px-5 py-4 text-center text-xs font-semibold uppercase tracking-wide text-zinc-400">
+              <div className="min-w-[64rem] border-t border-zinc-100 dark:border-zinc-700 px-5 py-4 text-center text-xs font-semibold uppercase tracking-wide text-zinc-400 dark:text-zinc-500">
                 {t("common.loading")}
               </div>
             )}
@@ -276,22 +276,22 @@ function ChampionRow({
   t: T;
 }) {
   return (
-    <div className="grid min-w-[64rem] grid-cols-[4rem_minmax(14rem,1.3fr)_7rem_8rem_8rem_8rem_11rem] items-center gap-3 border-b border-zinc-100 px-5 py-3 last:border-b-0">
-      <span className="text-sm font-bold text-zinc-500">#{rank}</span>
+    <div className="grid min-w-[64rem] grid-cols-[4rem_minmax(14rem,1.3fr)_7rem_8rem_8rem_8rem_11rem] items-center gap-3 border-b border-zinc-100 dark:border-zinc-700 px-5 py-3 last:border-b-0">
+      <span className="text-sm font-bold text-zinc-500 dark:text-zinc-400">#{rank}</span>
       <div className="flex min-w-0 items-center gap-3">
         <ChampionImage championName={record.championName} imageUrl={imageUrl} size="lg" />
         <div className="min-w-0">
-          <p className="truncate text-sm font-semibold text-zinc-950">{record.championName}</p>
-          <p className="mt-1 text-xs text-zinc-500">{laneLabel(record.lane)}</p>
+          <p className="truncate text-sm font-semibold text-zinc-950 dark:text-zinc-50">{record.championName}</p>
+          <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">{laneLabel(record.lane)}</p>
         </div>
       </div>
       <Metric value={record.overallScore} suffix="" isActive={highlightMetric === "overallScore"} />
       <Metric value={record.winRate} suffix="%" isActive={highlightMetric === "winRate"} />
       <Metric value={record.pickRate} suffix="%" isActive={highlightMetric === "pickRate"} />
       <Metric value={record.banRate} suffix="%" isActive={highlightMetric === "banRate"} />
-      <div className="text-sm font-semibold text-zinc-700">
+      <div className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">
         <p>{formatGames(record.games)} {t("participant.recentMatches")}</p>
-        <p className="mt-1 text-xs font-medium text-zinc-500">
+        <p className="mt-1 text-xs font-medium text-zinc-500 dark:text-zinc-400">
           {formatGames(record.wins)}W / {formatGames(record.picks)}P / {formatGames(record.bans)}B
         </p>
       </div>
@@ -307,10 +307,10 @@ function Metric({ isActive, suffix, value }: { isActive: boolean; suffix: string
       <div
         className={[
           "mb-1 h-1.5 overflow-hidden rounded-full",
-          isActive ? "bg-rose-100" : "bg-zinc-100",
+          isActive ? "bg-rose-100" : "bg-zinc-100 dark:bg-zinc-700",
         ].join(" ")}
       >
-        <div className={["h-full rounded-full", isActive ? "bg-rose-700" : "bg-zinc-400"].join(" ")} style={{ width }} />
+        <div className={["h-full rounded-full", isActive ? "bg-rose-700" : "bg-zinc-400 dark:bg-zinc-500"].join(" ")} style={{ width }} />
       </div>
       <span className={["text-sm font-bold", isActive ? "text-rose-800" : "text-zinc-700"].join(" ")}>
         {value.toFixed(1)}

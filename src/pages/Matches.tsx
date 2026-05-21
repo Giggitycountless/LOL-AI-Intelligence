@@ -117,10 +117,10 @@ export function Matches() {
           <header className="flex flex-wrap items-end justify-between gap-4">
             <div>
               <p className="text-sm font-medium uppercase tracking-wide text-rose-700">{t("matches.eyebrow")}</p>
-              <h1 className="mt-2 text-3xl font-semibold text-zinc-950">{t("matches.title")}</h1>
+              <h1 className="mt-2 text-3xl font-semibold text-zinc-950 dark:text-zinc-50">{t("matches.title")}</h1>
             </div>
             <button
-              className="inline-flex h-10 items-center gap-2 rounded-md border border-zinc-300 bg-white px-3 text-sm font-medium text-zinc-800 transition hover:border-zinc-400 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex h-10 items-center gap-2 rounded-md border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-900 px-3 text-sm font-medium text-zinc-800 dark:text-zinc-200 transition hover:border-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60"
               disabled={isLeagueClientLoading}
               onClick={() => refreshLeagueClient({ matchLimit: 12 })}
               type="button"
@@ -130,10 +130,10 @@ export function Matches() {
             </button>
           </header>
 
-          <section className="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm">
+          <section className="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-5 shadow-sm">
             <div>
-              <h2 className="text-base font-semibold text-zinc-950">{t("matches.completed")}</h2>
-              <p className="mt-1 text-sm text-zinc-500">{matchCountLabel(matches.length, isLeagueClientLoading, t)}</p>
+              <h2 className="text-base font-semibold text-zinc-950 dark:text-zinc-50">{t("matches.completed")}</h2>
+              <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">{matchCountLabel(matches.length, isLeagueClientLoading, t)}</p>
             </div>
 
             <div className="mt-5 grid gap-3">
@@ -189,9 +189,9 @@ function MatchCard({
   t: T;
 }) {
   return (
-    <div className="rounded-md border border-zinc-200 bg-zinc-50">
+    <div className="rounded-md border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800">
       <button
-        className="grid w-full gap-3 p-3 text-left transition hover:bg-white sm:grid-cols-[1fr_auto]"
+        className="grid w-full gap-3 p-3 text-left transition hover:bg-white dark:hover:bg-zinc-900 sm:grid-cols-[1fr_auto]"
         onClick={onToggle}
         type="button"
       >
@@ -199,27 +199,27 @@ function MatchCard({
           <ChampionImage championName={match.championName} imageUrl={imageUrl} />
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <p className="truncate text-sm font-semibold text-zinc-950">{match.championName}</p>
+              <p className="truncate text-sm font-semibold text-zinc-950 dark:text-zinc-50">{match.championName}</p>
               <ResultBadge result={match.result} />
             </div>
-            <p className="mt-1 truncate text-xs text-zinc-500">
+            <p className="mt-1 truncate text-xs text-zinc-500 dark:text-zinc-400">
               {match.queueName ?? "Unknown queue"} - {formatTimestamp(match.playedAt, t)}
             </p>
           </div>
         </div>
         <div className="flex items-center justify-between gap-5 sm:justify-end">
           <div className="text-left sm:text-right">
-            <p className="text-sm font-semibold text-zinc-950">
+            <p className="text-sm font-semibold text-zinc-950 dark:text-zinc-50">
               {match.kills}/{match.deaths}/{match.assists}
             </p>
-            <p className="mt-1 text-xs text-zinc-500">KDA {match.kda === null ? "n/a" : match.kda.toFixed(1)}</p>
+            <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">KDA {match.kda === null ? "n/a" : match.kda.toFixed(1)}</p>
           </div>
           <ChevronIcon expanded={isExpanded} />
         </div>
       </button>
 
       {isExpanded && (
-        <div className="grid gap-4 border-t border-zinc-200 bg-white p-4">
+        <div className="grid gap-4 border-t border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-4">
           <div className="grid gap-3 grid-cols-4">
             <Detail label={t("matches.result")} value={formatResult(match.result, t)} />
             <Detail label={t("matches.duration")} value={formatDuration(match.gameDurationSeconds, t)} />
@@ -243,9 +243,9 @@ function MatchCard({
 
 function Detail({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-md border border-zinc-200 bg-zinc-50 px-4 py-3">
-      <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">{label}</p>
-      <p className="mt-1 text-sm font-semibold text-zinc-950">{value}</p>
+    <div className="rounded-md border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-4 py-3">
+      <p className="text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">{label}</p>
+      <p className="mt-1 text-sm font-semibold text-zinc-950 dark:text-zinc-50">{value}</p>
     </div>
   );
 }
@@ -253,7 +253,7 @@ function Detail({ label, value }: { label: string; value: string }) {
 
 function ChevronIcon({ expanded }: { expanded: boolean }) {
   return (
-    <svg aria-hidden="true" className="h-5 w-5 text-zinc-500" fill="none" viewBox="0 0 24 24">
+    <svg aria-hidden="true" className="h-5 w-5 text-zinc-500 dark:text-zinc-400" fill="none" viewBox="0 0 24 24">
       <path
         d={expanded ? "m6 15 6-6 6 6" : "m6 9 6 6 6-6"}
         stroke="currentColor"

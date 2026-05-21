@@ -2,6 +2,7 @@ export type ServiceStatus = "ok" | "degraded";
 export type DatabaseStatus = "ok" | "unavailable";
 export type StartupPage = "dashboard" | "activity" | "settings";
 export type AppLanguagePreference = "system" | "zh" | "en";
+export type AppThemePreference = "light" | "dark";
 export type ActivityKind = "note" | "settings" | "system";
 export type LeagueClientConnection = "connected" | "unavailable";
 export type AutoAcceptStatusState =
@@ -41,6 +42,7 @@ export type HealthcheckResult = {
 export type AppSettings = {
   startupPage: StartupPage;
   language: AppLanguagePreference;
+  theme: AppThemePreference;
   compactMode: boolean;
   activityLimit: number;
   autoAcceptEnabled: boolean;
@@ -56,6 +58,7 @@ export type AppSettings = {
 export type SaveSettingsInput = {
   startupPage: StartupPage;
   language: AppLanguagePreference;
+  theme: AppThemePreference;
   compactMode: boolean;
   activityLimit: number;
   autoAcceptEnabled: boolean;

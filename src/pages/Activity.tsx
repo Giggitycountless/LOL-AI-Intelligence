@@ -87,60 +87,60 @@ export function Activity() {
         <header className="flex flex-wrap items-end justify-between gap-4">
           <div>
             <p className="text-sm font-medium uppercase tracking-wide text-rose-700">{t("activity.eyebrow")}</p>
-            <h1 className="mt-2 text-3xl font-semibold text-zinc-950">{t("activity.title")}</h1>
+            <h1 className="mt-2 text-3xl font-semibold text-zinc-950 dark:text-zinc-50">{t("activity.title")}</h1>
           </div>
           <button
             type="button"
             onClick={handleRefresh}
             disabled={isActivityLoading}
-            className="inline-flex h-10 items-center justify-center rounded-md border border-zinc-300 bg-white px-4 text-sm font-semibold text-zinc-700 shadow-sm transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:text-zinc-400"
+            className="inline-flex h-10 items-center justify-center rounded-md border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-900 px-4 text-sm font-semibold text-zinc-700 dark:text-zinc-300 shadow-sm transition hover:bg-zinc-50 dark:hover:bg-zinc-800 disabled:cursor-not-allowed disabled:text-zinc-400"
           >
             {isActivityLoading ? t("common.refreshing") : t("common.refresh")}
           </button>
         </header>
 
         <section className="grid gap-4 lg:grid-cols-[0.8fr_1.2fr]">
-          <form className="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm" onSubmit={handleSubmit}>
-            <h2 className="text-base font-semibold text-zinc-950">{t("activity.newNote")}</h2>
+          <form className="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-5 shadow-sm" onSubmit={handleSubmit}>
+            <h2 className="text-base font-semibold text-zinc-950 dark:text-zinc-50">{t("activity.newNote")}</h2>
             <div className="mt-5 grid gap-4">
               <label className="grid gap-2">
-                <span className="text-sm font-medium text-zinc-700">{t("activity.noteTitle")}</span>
+                <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{t("activity.noteTitle")}</span>
                 <input
                   value={title}
                   onChange={(event) => setTitle(event.target.value)}
-                  className="h-10 rounded-md border border-zinc-300 bg-white px-3 text-sm text-zinc-950 outline-none focus:border-rose-700 focus:ring-2 focus:ring-rose-100"
+                  className="h-10 rounded-md border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-900 px-3 text-sm text-zinc-950 dark:text-zinc-50 outline-none focus:border-rose-700 focus:ring-2 focus:ring-rose-100"
                 />
               </label>
 
               <label className="grid gap-2">
-                <span className="text-sm font-medium text-zinc-700">{t("activity.body")}</span>
+                <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{t("activity.body")}</span>
                 <textarea
                   value={body}
                   onChange={(event) => setBody(event.target.value)}
                   rows={5}
-                  className="resize-none rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950 outline-none focus:border-rose-700 focus:ring-2 focus:ring-rose-100"
+                  className="resize-none rounded-md border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-zinc-950 dark:text-zinc-50 outline-none focus:border-rose-700 focus:ring-2 focus:ring-rose-100"
                 />
               </label>
 
               <button
                 type="submit"
                 disabled={isSubmitting}
-                className="inline-flex h-10 items-center justify-center rounded-md bg-rose-700 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-rose-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
+                className="inline-flex h-10 items-center justify-center rounded-md bg-rose-700 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-rose-800 disabled:cursor-not-allowed disabled:bg-zinc-300 dark:disabled:bg-zinc-600"
               >
                 {isSubmitting ? t("common.saving") : t("activity.saveNote")}
               </button>
             </div>
           </form>
 
-          <section className="rounded-lg border border-zinc-200 bg-white shadow-sm">
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-200 px-5 py-3">
+          <section className="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 shadow-sm">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-200 dark:border-zinc-700 px-5 py-3">
               <div className="flex flex-wrap items-center gap-3">
-                <label className="flex items-center gap-2 text-sm font-medium text-zinc-700">
+                <label className="flex items-center gap-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">
                   {t("activity.kind")}
                   <select
                     value={filter}
                     onChange={(event) => setFilter(event.target.value as ActivityFilter)}
-                    className="h-9 rounded-md border border-zinc-300 bg-white px-2 text-sm text-zinc-950 outline-none focus:border-rose-700 focus:ring-2 focus:ring-rose-100"
+                    className="h-9 rounded-md border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-900 px-2 text-sm text-zinc-950 dark:text-zinc-50 outline-none focus:border-rose-700 focus:ring-2 focus:ring-rose-100"
                   >
                     <option value="all">{t("activity.all")}</option>
                     <option value="note">{t("activity.notes")}</option>
@@ -149,7 +149,7 @@ export function Activity() {
                   </select>
                 </label>
 
-                <label className="flex items-center gap-2 text-sm font-medium text-zinc-700">
+                <label className="flex items-center gap-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">
                   {t("activity.limit")}
                   <input
                     type="number"
@@ -157,44 +157,44 @@ export function Activity() {
                     max={500}
                     value={limit}
                     onChange={(event) => setLimit(Number(event.target.value))}
-                    className="h-9 w-24 rounded-md border border-zinc-300 bg-white px-2 text-sm text-zinc-950 outline-none focus:border-rose-700 focus:ring-2 focus:ring-rose-100"
+                    className="h-9 w-24 rounded-md border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-900 px-2 text-sm text-zinc-950 dark:text-zinc-50 outline-none focus:border-rose-700 focus:ring-2 focus:ring-rose-100"
                   />
                 </label>
               </div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+              <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
                 {visibleEntries.length}/{activityEntries.length} {t("activity.shown")}
               </p>
             </div>
 
             {isActivityLoading && activityEntries.length === 0 && (
-              <div className="px-5 py-12 text-center text-sm text-zinc-500">{t("dashboard.loadingActivity")}</div>
+              <div className="px-5 py-12 text-center text-sm text-zinc-500 dark:text-zinc-400">{t("dashboard.loadingActivity")}</div>
             )}
 
             {!isActivityLoading && activityEntries.length === 0 && (
               <div className="px-5 py-12 text-center">
-                <p className="text-sm font-medium text-zinc-600">{t("activity.noEntries")}</p>
-                <p className="mt-1 text-sm text-zinc-500">{t("activity.emptyHint")}</p>
+                <p className="text-sm font-medium text-zinc-600 dark:text-zinc-400">{t("activity.noEntries")}</p>
+                <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">{t("activity.emptyHint")}</p>
               </div>
             )}
 
             {activityEntries.length > 0 && (
-              <div className="divide-y divide-zinc-200">
+              <div className="divide-y divide-zinc-200 dark:divide-zinc-700">
                 {visibleEntries.map((entry) => (
                   <article key={entry.id} className="grid grid-cols-[1fr_9rem] gap-4 px-5 py-4">
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className="rounded-md bg-zinc-100 px-2 py-1 text-xs font-semibold capitalize text-zinc-600">
+                        <span className="rounded-md bg-zinc-100 dark:bg-zinc-900 px-2 py-1 text-xs font-semibold capitalize text-zinc-600 dark:text-zinc-400">
                           {entry.kind}
                         </span>
-                        <h2 className="truncate text-sm font-semibold text-zinc-950">{entry.title}</h2>
+                        <h2 className="truncate text-sm font-semibold text-zinc-950 dark:text-zinc-50">{entry.title}</h2>
                       </div>
-                      {entry.body && <p className="mt-2 text-sm text-zinc-600">{entry.body}</p>}
+                      {entry.body && <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">{entry.body}</p>}
                     </div>
-                    <time className="text-right text-xs font-medium text-zinc-500">{entry.createdAt}</time>
+                    <time className="text-right text-xs font-medium text-zinc-500 dark:text-zinc-400">{entry.createdAt}</time>
                   </article>
                 ))}
                 {visibleEntries.length < activityEntries.length && (
-                  <div className="px-5 py-4 text-center text-xs font-semibold uppercase tracking-wide text-zinc-400">
+                  <div className="px-5 py-4 text-center text-xs font-semibold uppercase tracking-wide text-zinc-400 dark:text-zinc-500">
                     {t("common.loading")}
                   </div>
                 )}

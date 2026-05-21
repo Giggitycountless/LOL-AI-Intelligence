@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useId, useMemo, useState, type KeyboardEvent } from "react";
 
 import { fetchLeagueChampionCatalog } from "../backend/leagueClient";
-import type { AppLanguagePreference, AutoAcceptStatus, LeagueChampionSummary, SaveSettingsInput, StartupPage } from "../backend/types";
+import type { AppLanguagePreference, AppThemePreference, AutoAcceptStatus, LeagueChampionSummary, SaveSettingsInput, StartupPage } from "../backend/types";
 import type { TranslationKey } from "../i18n";
 import { useAppCore } from "../state/AppStateProvider";
 
@@ -24,6 +24,7 @@ export function Settings() {
   const [draft, setDraft] = useState<SaveSettingsInput>({
     startupPage: "dashboard",
     language: "system",
+    theme: "light",
     compactMode: false,
     activityLimit: 100,
     autoAcceptEnabled: true,
@@ -52,6 +53,7 @@ export function Settings() {
       setDraft({
         startupPage: persisted.startupPage,
         language: persisted.language,
+        theme: persisted.theme,
         compactMode: persisted.compactMode,
         activityLimit: persisted.activityLimit,
         autoAcceptEnabled: persisted.autoAcceptEnabled,
@@ -100,6 +102,7 @@ export function Settings() {
     persisted &&
       (draft.startupPage !== persisted.startupPage ||
         draft.language !== persisted.language ||
+        draft.theme !== persisted.theme ||
         draft.compactMode !== persisted.compactMode ||
         draft.activityLimit !== persisted.activityLimit ||
         draft.autoAcceptEnabled !== persisted.autoAcceptEnabled ||
@@ -240,8 +243,25 @@ export function Settings() {
                 </select>
               </label>
 
-              <label className="flex items-center justify-between gap-4 rounded-md border border-zinc-200 bg-zinc-50 px-4 py-3">
-                <span className="text-sm font-medium text-zinc-700">{t("settings.compactMode")}</span>
+              <label className="grid gap-2">
+                <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{t("settings.theme")}</span>
+                <select
+                  value={draft.theme}
+                  onChange={(event) =>
+                    setDraft((current) => ({
+                      ...current,
+                      theme: event.target.value as AppThemePreference,
+                    }))
+                  }
+                  className="h-10 rounded-md border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 px-3 text-sm text-zinc-950 dark:text-zinc-50 outline-none focus:border-rose-700 focus:ring-2 focus:ring-rose-100"
+                >
+                  <option value="light">{t("settings.themeLight")}</option>
+                  <option value="dark">{t("settings.themeDark")}</option>
+                </select>
+              </label>
+
+              <label className="flex items-center justify-between gap-4 rounded-md border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-4 py-3">
+                <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{t("settings.compactMode")}</span>
                 <input
                   type="checkbox"
                   checked={draft.compactMode}
@@ -342,6 +362,7 @@ export function Settings() {
             <dl className="mt-5 grid gap-4">
               <SettingRow label={t("settings.startupPage")} value={persisted ? startupPageLabel(persisted.startupPage, t) : t("common.loading")} />
               <SettingRow label={t("settings.language")} value={persisted ? languageLabel(persisted.language, t) : t("common.loading")} />
+              <SettingRow label={t("settings.theme")} value={persisted ? themeLabel(persisted.theme, t) : t("common.loading")} />
               <SettingRow label={t("settings.compactMode")} value={persisted?.compactMode ? t("common.on") : t("common.off")} />
               <SettingRow label={t("settings.activityLimit")} value={persisted ? String(persisted.activityLimit) : t("common.loading")} />
               <SettingRow label={t("settings.autoAcceptShort")} value={persisted ? (persisted.autoAcceptEnabled ? t("common.on") : t("common.off")) : t("common.loading")} />
@@ -907,4 +928,8 @@ function languageLabel(language: AppLanguagePreference, t: (key: TranslationKey)
     case "en":
       return t("settings.languageEn");
   }
+}
+
+function themeLabel(theme: AppThemePreference, t: (key: TranslationKey) => string) {
+  return theme === "dark" ? t("settings.themeDark") : t("settings.themeLight");
 }

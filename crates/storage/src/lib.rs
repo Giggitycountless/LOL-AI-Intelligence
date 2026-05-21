@@ -5,9 +5,9 @@ use std::{
 
 use domain::{
     ActivityEntry, ActivityKind, AdvisorDataSnapshot, AppLanguagePreference, AppSettings,
-    ChampionRuneConfig, ImportLocalDataResult, LocalActivityEntry, NewActivityEntry,
-    RankedChampionDataSnapshot, RankedChampionLane, RankedChampionStat, RunePage,
-    SettingsValues, StartupPage,
+    AppThemePreference, ChampionRuneConfig, ImportLocalDataResult, LocalActivityEntry,
+    NewActivityEntry, RankedChampionDataSnapshot, RankedChampionLane, RankedChampionStat,
+    RunePage, SettingsValues, StartupPage,
 };
 #[cfg(test)]
 use domain::{
@@ -336,6 +336,11 @@ fn run_migrations(connection: &mut Connection) -> StorageResult<()> {
             description: "champion_rune_configs",
             sql: MIGRATION_0009,
         },
+        Migration {
+            version: 10,
+            description: "theme_preference",
+            sql: MIGRATION_0010,
+        },
     ] {
         let migration_is_applied = transaction
             .query_row(
@@ -379,29 +384,32 @@ fn read_schema_version(connection: &Connection) -> StorageResult<i64> {
 fn read_settings(connection: &Connection) -> StorageResult<AppSettings> {
     connection
         .query_row(
-            "SELECT startup_page, language, compact_mode, activity_limit, auto_accept_enabled,
-                auto_pick_enabled, auto_pick_champion_id, auto_pick_delay_seconds,
-                auto_ban_enabled, auto_ban_champion_id, auto_ban_delay_seconds, updated_at
+            "SELECT startup_page, language, theme, compact_mode, activity_limit,
+                auto_accept_enabled, auto_pick_enabled, auto_pick_champion_id,
+                auto_pick_delay_seconds, auto_ban_enabled, auto_ban_champion_id,
+                auto_ban_delay_seconds, updated_at
             FROM app_settings
             WHERE id = 1",
             [],
             |row| {
                 let startup_page: String = row.get(0)?;
                 let language: String = row.get(1)?;
+                let theme: String = row.get(2)?;
 
                 Ok((
                     startup_page,
                     language,
-                    row.get::<_, i64>(2)?,
+                    theme,
                     row.get::<_, i64>(3)?,
                     row.get::<_, i64>(4)?,
                     row.get::<_, i64>(5)?,
-                    row.get::<_, Option<i64>>(6)?,
-                    row.get::<_, f64>(7)?,
-                    row.get::<_, i64>(8)?,
-                    row.get::<_, Option<i64>>(9)?,
-                    row.get::<_, f64>(10)?,
-                    row.get::<_, String>(11)?,
+                    row.get::<_, i64>(6)?,
+                    row.get::<_, Option<i64>>(7)?,
+                    row.get::<_, f64>(8)?,
+                    row.get::<_, i64>(9)?,
+                    row.get::<_, Option<i64>>(10)?,
+                    row.get::<_, f64>(11)?,
+                    row.get::<_, String>(12)?,
                 ))
             },
         )
@@ -410,6 +418,7 @@ fn read_settings(connection: &Connection) -> StorageResult<AppSettings> {
             |(
                 startup_page,
                 language,
+                theme,
                 compact_mode,
                 activity_limit,
                 auto_accept_enabled,
@@ -425,10 +434,13 @@ fn read_settings(connection: &Connection) -> StorageResult<AppSettings> {
                     .ok_or(StorageError::InvalidStartupPage(startup_page))?;
                 let language = AppLanguagePreference::parse(language.as_str())
                     .ok_or(StorageError::InvalidLanguagePreference(language))?;
+                let theme = AppThemePreference::parse(theme.as_str())
+                    .unwrap_or_default();
 
                 Ok(AppSettings {
                     startup_page,
                     language,
+                    theme,
                     compact_mode: int_to_bool(compact_mode),
                     activity_limit,
                     auto_accept_enabled: int_to_bool(auto_accept_enabled),
@@ -449,20 +461,22 @@ fn write_settings(connection: &Connection, settings: &SettingsValues) -> Storage
         "UPDATE app_settings
         SET startup_page = ?1,
             language = ?2,
-            compact_mode = ?3,
-            activity_limit = ?4,
-            auto_accept_enabled = ?5,
-            auto_pick_enabled = ?6,
-            auto_pick_champion_id = ?7,
-            auto_pick_delay_seconds = ?8,
-            auto_ban_enabled = ?9,
-            auto_ban_champion_id = ?10,
-            auto_ban_delay_seconds = ?11,
+            theme = ?3,
+            compact_mode = ?4,
+            activity_limit = ?5,
+            auto_accept_enabled = ?6,
+            auto_pick_enabled = ?7,
+            auto_pick_champion_id = ?8,
+            auto_pick_delay_seconds = ?9,
+            auto_ban_enabled = ?10,
+            auto_ban_champion_id = ?11,
+            auto_ban_delay_seconds = ?12,
             updated_at = CURRENT_TIMESTAMP
         WHERE id = 1",
         (
             settings.startup_page.as_str(),
             settings.language.as_str(),
+            settings.theme.as_str(),
             bool_to_int(settings.compact_mode),
             settings.activity_limit,
             bool_to_int(settings.auto_accept_enabled),
@@ -1069,13 +1083,10 @@ mod tests {
         let store = SqliteStore::initialize(&data_dir).expect("storage initializes");
 
         assert!(store.database_path().exists());
-        assert_eq!(store.health().expect("storage health").schema_version, 9);
+        assert_eq!(store.health().expect("storage health").schema_version, 10);
         assert_eq!(store.get_settings().expect("settings").activity_limit, 100);
-        assert_eq!(
-            store.get_settings().expect("settings").language,
-            AppLanguagePreference::System
-        );
-        assert_eq!(migration_count(store.database_path()), 9);
+        assert_eq!(store.get_settings().expect("settings").language, AppLanguagePreference::System);
+        assert_eq!(migration_count(store.database_path()), 10);
 
         let _ = fs::remove_dir_all(data_dir);
     }
@@ -1088,8 +1099,8 @@ mod tests {
         let second = SqliteStore::initialize(&data_dir).expect("second initialization");
 
         assert_eq!(first.database_path(), second.database_path());
-        assert_eq!(second.health().expect("storage health").schema_version, 9);
-        assert_eq!(migration_count(second.database_path()), 9);
+        assert_eq!(second.health().expect("storage health").schema_version, 10);
+        assert_eq!(migration_count(store.database_path()), 10);
 
         let _ = fs::remove_dir_all(data_dir);
     }
@@ -1123,7 +1134,7 @@ mod tests {
 
         let store = SqliteStore::initialize(&data_dir).expect("upgrade database");
 
-        assert_eq!(store.health().expect("storage health").schema_version, 9);
+        assert_eq!(store.health().expect("storage health").schema_version, 10);
         assert_eq!(
             store.get_settings().expect("settings").startup_page,
             StartupPage::Dashboard
@@ -1132,7 +1143,7 @@ mod tests {
             store.get_settings().expect("settings").language,
             AppLanguagePreference::System
         );
-        assert_eq!(migration_count(store.database_path()), 9);
+        assert_eq!(migration_count(store.database_path()), 10);
 
         let _ = fs::remove_dir_all(data_dir);
     }
@@ -1146,6 +1157,7 @@ mod tests {
             .save_settings(&SettingsValues {
                 startup_page: StartupPage::Activity,
                 language: AppLanguagePreference::Zh,
+                theme: AppThemePreference::Dark,
                 compact_mode: true,
                 activity_limit: 25,
                 auto_accept_enabled: false,
@@ -1162,6 +1174,7 @@ mod tests {
         assert_eq!(settings.language, AppLanguagePreference::Zh);
         assert!(settings.compact_mode);
         assert!(!settings.auto_accept_enabled);
+        assert_eq!(settings.theme, AppThemePreference::Dark);
         assert!(settings.auto_pick_enabled);
         assert_eq!(settings.auto_pick_champion_id, Some(103));
         assert_eq!(settings.auto_pick_delay_seconds, 1.5);
@@ -1245,6 +1258,7 @@ mod tests {
                 &SettingsValues {
                     startup_page: StartupPage::Activity,
                     language: AppLanguagePreference::En,
+                    theme: AppThemePreference::Light,
                     compact_mode: true,
                     activity_limit: 25,
                     auto_accept_enabled: true,

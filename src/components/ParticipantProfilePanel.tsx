@@ -62,7 +62,7 @@ export function ParticipantProfilePanel({
   }, [profile?.gameId, profile?.participantId, profile?.note?.note, profile?.note?.tags]);
 
   const containerClass = [
-    "rounded-lg border border-zinc-200 bg-white p-5 shadow-sm",
+    "rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-5 shadow-sm",
     sticky ? "xl:sticky xl:top-7 xl:self-start" : "",
     className,
   ]
@@ -72,8 +72,8 @@ export function ParticipantProfilePanel({
   if (!selection) {
     return (
       <aside className={containerClass}>
-        <h2 className="text-base font-semibold text-zinc-950">{t("participant.profile")}</h2>
-        <p className="mt-2 text-sm text-zinc-500">{t("participant.empty")}</p>
+        <h2 className="text-base font-semibold text-zinc-950 dark:text-zinc-50">{t("participant.profile")}</h2>
+        <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">{t("participant.empty")}</p>
       </aside>
     );
   }
@@ -81,8 +81,8 @@ export function ParticipantProfilePanel({
   if (!profile) {
     return (
       <aside className={containerClass}>
-        <h2 className="text-base font-semibold text-zinc-950">{t("participant.loading")}</h2>
-        <p className="mt-2 text-sm text-zinc-500">{t("participant.reading")}</p>
+        <h2 className="text-base font-semibold text-zinc-950 dark:text-zinc-50">{t("participant.loading")}</h2>
+        <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">{t("participant.reading")}</p>
       </aside>
     );
   }
@@ -116,8 +116,8 @@ export function ParticipantProfilePanel({
       <div className="flex items-center gap-3">
         <ProfileImage displayName={activeProfile.displayName} imageUrl={profileImageUrl} />
         <div className="min-w-0">
-          <h2 className="truncate text-base font-semibold text-zinc-950">{activeProfile.displayName}</h2>
-          <p className="mt-1 text-xs text-zinc-500">{t("participant.completed")}</p>
+          <h2 className="truncate text-base font-semibold text-zinc-950 dark:text-zinc-50">{activeProfile.displayName}</h2>
+          <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">{t("participant.completed")}</p>
         </div>
       </div>
 
@@ -138,19 +138,19 @@ export function ParticipantProfilePanel({
       )}
 
       <div className="mt-5 grid gap-3">
-        <label className="grid gap-1 text-sm font-medium text-zinc-700">
+        <label className="grid gap-1 text-sm font-medium text-zinc-700 dark:text-zinc-300">
           {t("participant.note")}
           <textarea
-            className="min-h-28 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950 outline-none transition focus:border-rose-400 focus:ring-2 focus:ring-rose-100"
+            className="min-h-28 rounded-md border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-zinc-950 dark:text-zinc-50 outline-none transition focus:border-rose-400 focus:ring-2 focus:ring-rose-100"
             maxLength={1000}
             onChange={(event) => setNoteDraft(event.target.value)}
             value={noteDraft}
           />
         </label>
-        <label className="grid gap-1 text-sm font-medium text-zinc-700">
+        <label className="grid gap-1 text-sm font-medium text-zinc-700 dark:text-zinc-300">
           {t("participant.tags")}
           <input
-            className="h-10 rounded-md border border-zinc-300 bg-white px-3 text-sm text-zinc-950 outline-none transition focus:border-rose-400 focus:ring-2 focus:ring-rose-100"
+            className="h-10 rounded-md border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-900 px-3 text-sm text-zinc-950 dark:text-zinc-50 outline-none transition focus:border-rose-400 focus:ring-2 focus:ring-rose-100"
             onChange={(event) => setTagsDraft(event.target.value)}
             placeholder="support, calm"
             value={tagsDraft}
@@ -165,7 +165,7 @@ export function ParticipantProfilePanel({
             {t("participant.saveNote")}
           </button>
           <button
-            className="h-10 rounded-md border border-zinc-300 bg-white px-3 text-sm font-semibold text-zinc-700 transition hover:bg-zinc-50"
+            className="h-10 rounded-md border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-900 px-3 text-sm font-semibold text-zinc-700 dark:text-zinc-300 transition hover:bg-zinc-50 dark:hover:bg-zinc-800"
             onClick={() => void handleClearNote()}
             type="button"
           >
@@ -244,12 +244,12 @@ function RecentMatchesList({ matches }: { matches: RecentMatchSummary[] }) {
   return (
     <section className="mt-5">
       <div className="flex items-center justify-between gap-3">
-        <h3 className="text-sm font-semibold text-zinc-950">{t("participant.recentSix")}</h3>
-        <span className="text-xs font-medium text-zinc-500">{matches.length} {t("participant.loaded")}</span>
+        <h3 className="text-sm font-semibold text-zinc-950 dark:text-zinc-50">{t("participant.recentSix")}</h3>
+        <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">{matches.length} {t("participant.loaded")}</span>
       </div>
       <div className="mt-3 grid gap-2">
         {matches.length === 0 && (
-          <div className="rounded-md border border-zinc-200 bg-zinc-50 p-3 text-sm text-zinc-500">{t("participant.publicUnavailable")}</div>
+          <div className="rounded-md border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 p-3 text-sm text-zinc-500 dark:text-zinc-400">{t("participant.publicUnavailable")}</div>
         )}
         {matches.map((match) => (
           <RecentMatchRow
@@ -292,34 +292,34 @@ function RecentMatchRow({
   t: T;
 }) {
   return (
-    <div className="rounded-md border border-zinc-200 bg-zinc-50">
+    <div className="rounded-md border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800">
       <button
-        className="grid w-full grid-cols-[auto_1fr_auto_auto] items-center gap-3 p-2 text-left transition hover:bg-white"
+        className="grid w-full grid-cols-[auto_1fr_auto_auto] items-center gap-3 p-2 text-left transition hover:bg-white dark:hover:bg-zinc-900"
         onClick={onToggle}
         type="button"
       >
         <ChampionImage championName={match.championName} imageUrl={imageUrl} size="sm" />
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <p className="truncate text-sm font-semibold text-zinc-950">{match.championName}</p>
+            <p className="truncate text-sm font-semibold text-zinc-950 dark:text-zinc-50">{match.championName}</p>
             <ResultBadge result={match.result} />
           </div>
-          <p className="mt-1 truncate text-xs text-zinc-500">
+          <p className="mt-1 truncate text-xs text-zinc-500 dark:text-zinc-400">
             {match.queueName ?? t("common.unknown")} - {formatTimestamp(match.playedAt, t)}
           </p>
-          <p className="mt-1 text-xs text-zinc-500">{formatDuration(match.gameDurationSeconds, t)}</p>
+          <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">{formatDuration(match.gameDurationSeconds, t)}</p>
         </div>
         <div className="text-right">
-          <p className="text-sm font-semibold text-zinc-950">
+          <p className="text-sm font-semibold text-zinc-950 dark:text-zinc-50">
             {match.kills}/{match.deaths}/{match.assists}
           </p>
-          <p className="mt-1 text-xs text-zinc-500">{match.kda === null ? "KDA n/a" : `KDA ${match.kda.toFixed(1)}`}</p>
+          <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">{match.kda === null ? "KDA n/a" : `KDA ${match.kda.toFixed(1)}`}</p>
         </div>
         <ChevronIcon expanded={isExpanded} />
       </button>
 
       {isExpanded && (
-        <div className="grid gap-4 border-t border-zinc-200 bg-white p-3">
+        <div className="grid gap-4 border-t border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-3">
           <div className="grid gap-2">
             <Detail label={t("matches.result")} value={formatResult(match.result, t)} />
             <Detail label={t("matches.duration")} value={formatDuration(match.gameDurationSeconds, t)} />
@@ -343,11 +343,11 @@ function RecentMatchRow({
 
 function ProfileImage({ displayName, imageUrl }: { displayName: string; imageUrl: string | undefined }) {
   if (imageUrl) {
-    return <img alt={`${displayName} profile icon`} className="h-14 w-14 shrink-0 rounded-md border border-zinc-200 object-cover" src={imageUrl} />;
+    return <img alt={`${displayName} profile icon`} className="h-14 w-14 shrink-0 rounded-md border border-zinc-200 dark:border-zinc-700 object-cover" src={imageUrl} />;
   }
 
   return (
-    <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-md border border-zinc-200 bg-zinc-100 text-sm font-semibold text-zinc-500">
+    <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-md border border-zinc-200 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-900 text-sm font-semibold text-zinc-500 dark:text-zinc-400">
       {initials(displayName)}
     </div>
   );
@@ -355,16 +355,16 @@ function ProfileImage({ displayName, imageUrl }: { displayName: string; imageUrl
 
 function Detail({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-md border border-zinc-200 bg-zinc-50 px-4 py-3">
-      <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">{label}</p>
-      <p className="mt-1 text-sm font-semibold text-zinc-950">{value}</p>
+    <div className="rounded-md border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-4 py-3">
+      <p className="text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">{label}</p>
+      <p className="mt-1 text-sm font-semibold text-zinc-950 dark:text-zinc-50">{value}</p>
     </div>
   );
 }
 
 function ChevronIcon({ expanded }: { expanded: boolean }) {
   return (
-    <svg aria-hidden="true" className="h-5 w-5 text-zinc-500" fill="none" viewBox="0 0 24 24">
+    <svg aria-hidden="true" className="h-5 w-5 text-zinc-500 dark:text-zinc-400" fill="none" viewBox="0 0 24 24">
       <path
         d={expanded ? "m6 15 6-6 6 6" : "m6 9 6 6 6-6"}
         stroke="currentColor"

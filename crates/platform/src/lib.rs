@@ -48,6 +48,10 @@ struct AutomationFeedbackEvent {
 const AUTO_ACCEPT_STATUS_EVENT: &str = "auto-accept-status-update";
 const SELF_HISTORY_OVERLAY_WINDOW_LABEL: &str = "self-history-overlay";
 
+fn default_theme() -> String {
+    "light".to_string()
+}
+
 fn log_auto_accept_monitor_event(message: &str) {
     eprintln!("[auto-accept-monitor] {message}");
 }
@@ -568,6 +572,8 @@ pub struct SaveSettingsCommand {
 pub struct SettingsPayload {
     pub startup_page: String,
     pub language: String,
+    #[serde(default = "default_theme")]
+    pub theme: String,
     pub compact_mode: bool,
     pub activity_limit: i64,
     pub auto_accept_enabled: bool,
@@ -1586,6 +1592,7 @@ pub fn save_settings(
         SettingsInput {
             startup_page: command.settings.startup_page,
             language: command.settings.language,
+            theme: command.settings.theme,
             compact_mode: command.settings.compact_mode,
             activity_limit: command.settings.activity_limit,
             auto_accept_enabled: command.settings.auto_accept_enabled,
@@ -2682,6 +2689,7 @@ mod tests {
                 settings: SettingsPayload {
                     startup_page: current_settings.startup_page.as_str().to_string(),
                     language: current_settings.language.as_str().to_string(),
+                    theme: current_settings.theme.as_str().to_string(),
                     compact_mode: current_settings.compact_mode,
                     activity_limit: current_settings.activity_limit,
                     auto_accept_enabled: current_settings.auto_accept_enabled,

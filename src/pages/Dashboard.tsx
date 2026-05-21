@@ -14,7 +14,7 @@ export function Dashboard() {
         <header className="flex flex-wrap items-end justify-between gap-4">
           <div>
             <p className="text-sm font-medium uppercase tracking-wide text-rose-700">{t("dashboard.eyebrow")}</p>
-            <h1 className="mt-2 text-3xl font-semibold text-zinc-950">{t("app.name")}</h1>
+            <h1 className="mt-2 text-3xl font-semibold text-zinc-950 dark:text-zinc-50">{t("app.name")}</h1>
           </div>
           <HealthBadge status={health?.status ?? (isLoading ? "loading" : "degraded")} t={t} />
         </header>
@@ -44,8 +44,8 @@ export function Dashboard() {
         />
 
         <section className="grid gap-4 lg:grid-cols-2">
-          <div className="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm">
-            <h2 className="text-base font-semibold text-zinc-950">{t("dashboard.currentState")}</h2>
+          <div className="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-5 shadow-sm">
+            <h2 className="text-base font-semibold text-zinc-950 dark:text-zinc-50">{t("dashboard.currentState")}</h2>
             <div className="mt-5 grid gap-3 sm:grid-cols-2">
               <Metric label={t("dashboard.startup")} value={snapshot?.settings.startupPage ?? t("common.loading")} />
               <Metric label={t("dashboard.density")} value={snapshot?.settings.compactMode ? t("dashboard.compact") : t("dashboard.standard")} />
@@ -54,17 +54,17 @@ export function Dashboard() {
             </div>
           </div>
 
-          <div className="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm">
-            <h2 className="text-base font-semibold text-zinc-950">{t("dashboard.recentActivity")}</h2>
-            <div className="mt-5 min-h-24 rounded-md border border-zinc-200 bg-zinc-50 p-4 text-sm text-zinc-700">
+          <div className="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-5 shadow-sm">
+            <h2 className="text-base font-semibold text-zinc-950 dark:text-zinc-50">{t("dashboard.recentActivity")}</h2>
+            <div className="mt-5 min-h-24 rounded-md border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 p-4 text-sm text-zinc-700 dark:text-zinc-300">
               {isLoading && t("dashboard.loadingActivity")}
               {!isLoading && recentActivity.length === 0 && t("dashboard.noActivity")}
               {!isLoading && recentActivity.length > 0 && (
                 <div className="grid gap-3">
                   {recentActivity.slice(0, 3).map((entry) => (
                     <div key={entry.id} className="min-w-0">
-                      <p className="truncate font-semibold text-zinc-950">{entry.title}</p>
-                      <p className="mt-1 text-xs capitalize text-zinc-500">{entry.kind}</p>
+                      <p className="truncate font-semibold text-zinc-950 dark:text-zinc-50">{entry.title}</p>
+                      <p className="mt-1 text-xs capitalize text-zinc-500 dark:text-zinc-400">{entry.kind}</p>
                     </div>
                   ))}
                 </div>
@@ -95,16 +95,16 @@ function LeagueOverview({
   t: T;
 }) {
   return (
-    <section className="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm">
+    <section className="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-5 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-base font-semibold text-zinc-950">{t("dashboard.leagueClient")}</h2>
-          <p className="mt-1 text-sm text-zinc-500">{leagueStatusMessage(status, isLoading, t)}</p>
+          <h2 className="text-base font-semibold text-zinc-950 dark:text-zinc-50">{t("dashboard.leagueClient")}</h2>
+          <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">{leagueStatusMessage(status, isLoading, t)}</p>
         </div>
         <div className="flex items-center gap-2">
           <LeagueStatusBadge isLoading={isLoading} status={status} t={t} />
           <button
-            className="inline-flex h-10 items-center gap-2 rounded-md border border-zinc-300 bg-white px-3 text-sm font-medium text-zinc-800 transition hover:border-zinc-400 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex h-10 items-center gap-2 rounded-md border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-900 px-3 text-sm font-medium text-zinc-800 dark:text-zinc-200 transition hover:border-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60"
             disabled={isLoading}
             onClick={onRefresh}
             type="button"
@@ -164,8 +164,8 @@ function HealthBadge({ status, t }: { status: "ok" | "degraded" | "loading"; t: 
 
 function StatusTile({ label, value, tone }: { label: string; value: string; tone: "good" | "warn" }) {
   return (
-    <div className="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm">
-      <p className="text-sm font-medium text-zinc-500">{label}</p>
+    <div className="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-5 shadow-sm">
+      <p className="text-sm font-medium text-zinc-500 dark:text-zinc-400">{label}</p>
       <p className={["mt-3 text-2xl font-semibold capitalize", tone === "good" ? "text-emerald-700" : "text-amber-700"].join(" ")}>
         {value}
       </p>

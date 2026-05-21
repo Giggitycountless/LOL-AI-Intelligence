@@ -49,11 +49,11 @@ export function Profile() {
         <header className="flex flex-wrap items-end justify-between gap-4">
           <div>
             <p className="text-sm font-medium uppercase tracking-wide text-rose-700">{t("profile.eyebrow")}</p>
-            <h1 className="mt-2 text-3xl font-semibold text-zinc-950">{t("profile.title")}</h1>
+            <h1 className="mt-2 text-3xl font-semibold text-zinc-950 dark:text-zinc-50">{t("profile.title")}</h1>
           </div>
           <div className="flex items-center gap-2">
             <button
-              className="inline-flex h-10 items-center gap-2 rounded-md border border-zinc-300 bg-white px-3 text-sm font-medium text-zinc-800 transition hover:border-zinc-400 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex h-10 items-center gap-2 rounded-md border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-900 px-3 text-sm font-medium text-zinc-800 dark:text-zinc-200 transition hover:border-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60"
               disabled={isLeagueClientLoading}
               onClick={() => refreshLeagueClient({ matchLimit: 6 })}
               type="button"
@@ -72,7 +72,7 @@ export function Profile() {
         {league && summoner && (
           <>
             <section className="grid gap-4 lg:grid-cols-[1fr_1.15fr]">
-              <div className="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm">
+              <div className="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-5 shadow-sm">
                 <div className="flex items-center gap-4">
                   <LeagueImage
                     alt={`${summoner.displayName} profile icon`}
@@ -81,9 +81,9 @@ export function Profile() {
                     src={profileIconUrl}
                   />
                   <div className="min-w-0">
-                    <p className="truncate text-2xl font-semibold text-zinc-950">{summoner.displayName}</p>
+                    <p className="truncate text-2xl font-semibold text-zinc-950 dark:text-zinc-50">{summoner.displayName}</p>
                     <div className="mt-1 flex flex-wrap items-center gap-2">
-                      <p className="text-sm font-medium text-zinc-500">{t("profile.level")} {summoner.summonerLevel}</p>
+                      <p className="text-sm font-medium text-zinc-500 dark:text-zinc-400">{t("profile.level")} {summoner.summonerLevel}</p>
                       {summoner.honorLevel !== null && summoner.honorLevel !== undefined && (
                         <HonorBadge level={summoner.honorLevel} t={t} />
                       )}
@@ -97,11 +97,11 @@ export function Profile() {
                 </div>
               </div>
 
-              <div className="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm">
+              <div className="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-5 shadow-sm">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
-                    <h2 className="text-base font-semibold text-zinc-950">{t("profile.recentPerformance")}</h2>
-                    <p className="mt-1 text-sm text-zinc-500">{performanceLabel(league.recentPerformance.matchCount, t)}</p>
+                    <h2 className="text-base font-semibold text-zinc-950 dark:text-zinc-50">{t("profile.recentPerformance")}</h2>
+                    <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">{performanceLabel(league.recentPerformance.matchCount, t)}</p>
                   </div>
                   <KdaBadge tag={league.recentPerformance.kdaTag} value={league.recentPerformance.averageKda} t={t} />
                 </div>
@@ -117,7 +117,7 @@ export function Profile() {
                       />
                     ))
                   ) : (
-                    <p className="text-sm text-zinc-500 sm:col-span-3">{t("profile.noRecentChampion")}</p>
+                    <p className="text-sm text-zinc-500 dark:text-zinc-400 sm:col-span-3">{t("profile.noRecentChampion")}</p>
                   )}
                 </div>
               </div>
@@ -128,9 +128,9 @@ export function Profile() {
               <RankedCard label={t("profile.flex")} queue="flex" summary={flex} t={t} />
             </section>
 
-            <section className="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm">
+            <section className="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-5 shadow-sm">
               <div className="flex items-center justify-between gap-3">
-                <h2 className="text-base font-semibold text-zinc-950">{t("profile.mastery")}</h2>
+                <h2 className="text-base font-semibold text-zinc-950 dark:text-zinc-50">{t("profile.mastery")}</h2>
                 {topMastery.length > MASTERY_INITIAL_SHOW && (
                   <button
                     type="button"
@@ -143,7 +143,7 @@ export function Profile() {
               </div>
 
               {topMastery.length === 0 ? (
-                <p className="mt-4 text-sm text-zinc-500">{t("profile.noMastery")}</p>
+                <p className="mt-4 text-sm text-zinc-500 dark:text-zinc-400">{t("profile.noMastery")}</p>
               ) : (
                 <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
                   {visibleMastery.map((entry) => (
@@ -170,7 +170,7 @@ function HonorBadge({ level, t }: { level: number; t: T }) {
       ? "border-emerald-200 bg-emerald-50 text-emerald-800"
       : level >= 3
         ? "border-sky-200 bg-sky-50 text-sky-800"
-        : "border-zinc-200 bg-zinc-50 text-zinc-600";
+        : "border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400";
 
   return (
     <span className={["inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs font-semibold", colors].join(" ")}>
@@ -181,10 +181,10 @@ function HonorBadge({ level, t }: { level: number; t: T }) {
 
 function MasteryCard({ entry, imageUrl, t }: { entry: ChampionMasteryEntry; imageUrl: string | undefined; t: T }) {
   return (
-    <div className="flex items-center gap-3 rounded-md border border-zinc-200 bg-zinc-50 p-3">
+    <div className="flex items-center gap-3 rounded-md border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 p-3">
       <LeagueImage alt={`${entry.championName} icon`} fallback={initials(entry.championName)} size="small" src={imageUrl} />
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-semibold text-zinc-950">{entry.championName}</p>
+        <p className="truncate text-sm font-semibold text-zinc-950 dark:text-zinc-50">{entry.championName}</p>
         <div className="mt-1 flex items-center gap-2">
           <span className={[
             "inline-flex items-center rounded px-1.5 py-0.5 text-xs font-semibold",
@@ -192,11 +192,11 @@ function MasteryCard({ entry, imageUrl, t }: { entry: ChampionMasteryEntry; imag
               ? "bg-rose-100 text-rose-700"
               : entry.masteryLevel >= 5
                 ? "bg-amber-100 text-amber-700"
-                : "bg-zinc-200 text-zinc-600",
+                : "bg-zinc-200 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-400",
           ].join(" ")}>
             {t("profile.masteryLevel")} {entry.masteryLevel}
           </span>
-          <span className="text-xs text-zinc-500">
+          <span className="text-xs text-zinc-500 dark:text-zinc-400">
             {entry.masteryPoints.toLocaleString()} {t("profile.masteryPoints")}
           </span>
         </div>
@@ -207,11 +207,11 @@ function MasteryCard({ entry, imageUrl, t }: { entry: ChampionMasteryEntry; imag
 
 function ChampionCard({ champion, imageUrl, t }: { champion: RecentChampionSummary; imageUrl: string | undefined; t: (key: TranslationKey) => string }) {
   return (
-    <div className="flex min-w-0 items-center gap-3 rounded-md border border-zinc-200 bg-zinc-50 p-3">
+    <div className="flex min-w-0 items-center gap-3 rounded-md border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 p-3">
       <LeagueImage alt={`${champion.championName} icon`} fallback={initials(champion.championName)} size="small" src={imageUrl} />
       <div className="min-w-0">
-        <p className="truncate text-sm font-semibold text-zinc-950">{champion.championName}</p>
-        <p className="mt-1 text-xs font-medium text-zinc-500">{champion.games} {t("participant.recentMatches")}</p>
+        <p className="truncate text-sm font-semibold text-zinc-950 dark:text-zinc-50">{champion.championName}</p>
+        <p className="mt-1 text-xs font-medium text-zinc-500 dark:text-zinc-400">{champion.games} {t("participant.recentMatches")}</p>
       </div>
     </div>
   );
@@ -219,15 +219,15 @@ function ChampionCard({ champion, imageUrl, t }: { champion: RecentChampionSumma
 
 function RankedCard({ label, queue, summary, t }: { label: string; queue: RankedQueue; summary: RankedQueueSummary | undefined; t: (key: TranslationKey) => string }) {
   return (
-    <div className="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm">
-      <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">{label}</p>
-      <p className="mt-2 text-2xl font-semibold text-zinc-950">{formatRank(summary, t)}</p>
+    <div className="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-5 shadow-sm">
+      <p className="text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">{label}</p>
+      <p className="mt-2 text-2xl font-semibold text-zinc-950 dark:text-zinc-50">{formatRank(summary, t)}</p>
       <div className="mt-5 grid gap-3 sm:grid-cols-3">
         <Metric label={t("profile.wins")} value={summary ? String(summary.wins) : "0"} />
         <Metric label={t("profile.losses")} value={summary ? String(summary.losses) : "0"} />
         <Metric label={t("profile.winRate")} value={summary ? formatWinRate(summary) : "0%"} />
       </div>
-      <p className="mt-4 text-sm text-zinc-500">{queue === "soloDuo" ? t("profile.rankedSolo") : t("profile.rankedFlex")}</p>
+      <p className="mt-4 text-sm text-zinc-500 dark:text-zinc-400">{queue === "soloDuo" ? t("profile.rankedSolo") : t("profile.rankedFlex")}</p>
     </div>
   );
 }
@@ -239,11 +239,11 @@ function LeagueImage({ alt, fallback, size, src }: { alt: string; fallback: stri
       : "h-12 w-12 rounded-md text-sm";
 
   if (src) {
-    return <img alt={alt} className={`${className} shrink-0 border border-zinc-200 object-cover`} src={src} />;
+    return <img alt={alt} className={`${className} shrink-0 border border-zinc-200 dark:border-zinc-700 object-cover`} src={src} />;
   }
 
   return (
-    <div className={`${className} flex shrink-0 items-center justify-center border border-zinc-200 bg-zinc-100 font-semibold text-zinc-500`}>
+    <div className={`${className} flex shrink-0 items-center justify-center border border-zinc-200 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-900 font-semibold text-zinc-500 dark:text-zinc-400`}>
       {fallback}
     </div>
   );
@@ -255,7 +255,7 @@ function KdaBadge({ tag, value, t }: { tag: KdaTag; value: number | null; t: (ke
       ? "border-emerald-200 bg-emerald-50 text-emerald-800"
       : tag === "standard"
         ? "border-amber-200 bg-amber-50 text-amber-800"
-        : "border-zinc-200 bg-white text-zinc-600";
+        : "border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400";
   const label = value === null ? `KDA ${t("common.unavailable")}` : `Avg KDA ${value.toFixed(1)}`;
 
   return <span className={["rounded-md border px-2.5 py-1 text-xs font-semibold", tone].join(" ")}>{label}</span>;
@@ -263,9 +263,9 @@ function KdaBadge({ tag, value, t }: { tag: KdaTag; value: number | null; t: (ke
 
 function StatePanel({ title, body }: { title: string; body: string }) {
   return (
-    <section className="rounded-lg border border-zinc-200 bg-white p-6 shadow-sm">
-      <h2 className="text-base font-semibold text-zinc-950">{title}</h2>
-      <p className="mt-2 text-sm text-zinc-500">{body}</p>
+    <section className="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-6 shadow-sm">
+      <h2 className="text-base font-semibold text-zinc-950 dark:text-zinc-50">{title}</h2>
+      <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">{body}</p>
     </section>
   );
 }
