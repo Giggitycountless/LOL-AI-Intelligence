@@ -1,6 +1,7 @@
 use super::*;
 use domain::{
     LeagueClientConnection, LeagueClientPhase, LeagueDataSection, LeagueDataWarning, MatchResult,
+    RunePage,
 };
 use std::{cell::RefCell, sync::Mutex};
 
@@ -18,8 +19,10 @@ fn save_settings_does_not_log_activity_when_values_are_unchanged() {
             auto_accept_enabled: true,
             auto_pick_enabled: false,
             auto_pick_champion_id: None,
+            auto_pick_delay_seconds: 0.0,
             auto_ban_enabled: false,
             auto_ban_champion_id: None,
+            auto_ban_delay_seconds: 0.0,
         },
     )
     .expect("settings save succeeds");
@@ -42,8 +45,10 @@ fn save_settings_logs_activity_when_values_change() {
             auto_accept_enabled: false,
             auto_pick_enabled: true,
             auto_pick_champion_id: Some(103),
+            auto_pick_delay_seconds: 1.5,
             auto_ban_enabled: true,
             auto_ban_champion_id: Some(122),
+            auto_ban_delay_seconds: 0.5,
         },
     )
     .expect("settings save succeeds");
@@ -139,7 +144,7 @@ fn ready_check_automation_treats_accept_error_as_success_when_phase_moves() {
 }
 
 #[test]
-fn champ_select_automation_does_not_call_reader_when_settings_are_enabled() {
+fn champ_select_automation_calls_reader_when_settings_are_enabled() {
     let mut settings = default_settings();
     settings.auto_pick_enabled = true;
     settings.auto_pick_champion_id = Some(103);
@@ -148,7 +153,17 @@ fn champ_select_automation_does_not_call_reader_when_settings_are_enabled() {
     let store = FakeStore::new(settings);
     let reader = FakeLeagueClientReader::new(Vec::new());
 
-    run_champ_select_automation(&store, &reader).expect("automation no-ops safely");
+    run_champ_select_automation(&store, &reader).expect("automation executes safely");
+
+    assert_eq!(reader.champ_select_preference_call_count(), 1);
+}
+
+#[test]
+fn champ_select_automation_no_ops_when_both_disabled() {
+    let store = FakeStore::new(default_settings());
+    let reader = FakeLeagueClientReader::new(Vec::new());
+
+    run_champ_select_automation(&store, &reader).expect("automation no-ops when disabled");
 
     assert_eq!(reader.champ_select_preference_call_count(), 0);
 }
@@ -504,7 +519,7 @@ fn ranked_champion_refresh_persists_provider_snapshot() {
     let response = refresh_ranked_champion_stats(
         &store,
         &provider,
-        RankedChampionRefreshInput { url: None },
+        RankedChampionRefreshInput::default(),
         RankedChampionStatsInput {
             lane: Some(RankedChampionLane::Middle),
             sort_by: Some(RankedChampionSort::WinRate),
@@ -533,7 +548,7 @@ fn ranked_champion_refresh_returns_stale_cache_when_remote_fails() {
     let response = refresh_ranked_champion_stats(
         &store,
         &provider,
-        RankedChampionRefreshInput { url: None },
+        RankedChampionRefreshInput::default(),
         RankedChampionStatsInput {
             lane: Some(RankedChampionLane::Middle),
             sort_by: Some(RankedChampionSort::Overall),
@@ -555,7 +570,7 @@ fn ranked_champion_refresh_errors_without_cache_when_remote_fails() {
     let error = refresh_ranked_champion_stats(
         &store,
         &provider,
-        RankedChampionRefreshInput { url: None },
+        RankedChampionRefreshInput::default(),
         RankedChampionStatsInput {
             lane: None,
             sort_by: None,
@@ -1052,8 +1067,10 @@ impl AppStore for FakeStore {
             auto_accept_enabled: settings.auto_accept_enabled,
             auto_pick_enabled: settings.auto_pick_enabled,
             auto_pick_champion_id: settings.auto_pick_champion_id,
+            auto_pick_delay_seconds: settings.auto_pick_delay_seconds,
             auto_ban_enabled: settings.auto_ban_enabled,
             auto_ban_champion_id: settings.auto_ban_champion_id,
+            auto_ban_delay_seconds: settings.auto_ban_delay_seconds,
             updated_at: "2026-04-18 00:00:00".to_string(),
         };
 
@@ -1182,6 +1199,29 @@ impl AppStore for FakeStore {
         self.advisor_snapshot.replace(Some(snapshot.clone()));
         Ok(snapshot)
     }
+
+    fn get_champion_rune_config(
+        &self,
+        _champion_id: i64,
+    ) -> Result<Option<ChampionRuneConfig>, String> {
+        Ok(None)
+    }
+
+    fn save_champion_rune_config(
+        &self,
+        champion_id: i64,
+        page: RunePage,
+    ) -> Result<ChampionRuneConfig, String> {
+        Ok(ChampionRuneConfig {
+            champion_id,
+            page,
+            saved_at: "2026-05-22 00:00:00".to_string(),
+        })
+    }
+
+    fn delete_champion_rune_config(&self, _champion_id: i64) -> Result<bool, String> {
+        Ok(false)
+    }
 }
 
 struct FakeRankedChampionProvider {
@@ -1232,8 +1272,10 @@ fn default_settings() -> AppSettings {
         auto_accept_enabled: true,
         auto_pick_enabled: false,
         auto_pick_champion_id: None,
+        auto_pick_delay_seconds: 0.0,
         auto_ban_enabled: false,
         auto_ban_champion_id: None,
+        auto_ban_delay_seconds: 0.0,
         updated_at: "2026-04-18 00:00:00".to_string(),
     }
 }
@@ -1795,6 +1837,14 @@ impl LeagueClientReader for FakeLeagueClientReader {
             return Err(error.clone());
         }
 
+        Ok(())
+    }
+
+    fn apply_rune_page(
+        &self,
+        _page: &domain::RunePage,
+        _champion_name: &str,
+    ) -> Result<(), LeagueClientReadError> {
         Ok(())
     }
 

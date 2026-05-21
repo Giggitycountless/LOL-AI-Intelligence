@@ -11,7 +11,8 @@ use domain::{
     AdvisorMatchup, AdvisorNamedRef, AdvisorPlayerTag, AdvisorPowerSpike, AdvisorRecord,
     AdvisorRunePage, AdvisorSkillOrder, AdvisorTagTone, AppLanguagePreference, AppSettings,
     AppSnapshot, ChampSelectAdvisorPlayer, ChampSelectAdvisorSnapshot,
-    ChampSelectRecentStatsStatus, ClearActivityResult, ClearPlayerNoteResult, DatabaseStatus,
+    ChampSelectRecentStatsStatus, ChampionRuneConfig, ClearActivityResult, ClearPlayerNoteResult,
+    DatabaseStatus,
     HealthReport, ImportLocalDataResult, KdaTag, LeagueChampionDetails, LeagueChampionSummary,
     LeagueClientStatus, LeagueDataSection, LeagueDataWarning, LeagueGameAsset, LeagueGameAssetKind,
     LeagueImageAsset, LeagueSelfData, LeagueSelfSnapshot, LiveOverlaySnapshot, LocalActivityEntry,
@@ -20,7 +21,7 @@ use domain::{
     PostMatchComparison, PostMatchDetail, PostMatchParticipant, PostMatchTeam, PostMatchTeamTotals,
     RankedChampionDataSnapshot, RankedChampionDataStatus, RankedChampionLane, RankedChampionSort,
     RankedChampionStat, RankedChampionStatsResponse, RecentChampionSummary, RecentMatchSummary,
-    RecentPerformanceSummary, ServiceStatus, SettingsValues, StartupPage,
+    RecentPerformanceSummary, RunePage, ServiceStatus, SettingsValues, StartupPage,
 };
 
 mod constants;
@@ -68,6 +69,16 @@ pub trait AppStore {
         &self,
         snapshot: AdvisorDataSnapshot,
     ) -> Result<AdvisorDataSnapshot, String>;
+    fn get_champion_rune_config(
+        &self,
+        champion_id: i64,
+    ) -> Result<Option<ChampionRuneConfig>, String>;
+    fn save_champion_rune_config(
+        &self,
+        champion_id: i64,
+        page: RunePage,
+    ) -> Result<ChampionRuneConfig, String>;
+    fn delete_champion_rune_config(&self, champion_id: i64) -> Result<bool, String>;
 }
 
 pub trait LeagueClientReader {
@@ -113,6 +124,11 @@ pub trait LeagueClientReader {
     fn gameflow_phase(&self) -> Result<String, LeagueClientReadError>;
     fn live_overlay(&self) -> Result<LiveOverlaySnapshot, LeagueClientReadError>;
     fn accept_ready_check(&self) -> Result<(), LeagueClientReadError>;
+    fn apply_rune_page(
+        &self,
+        page: &domain::RunePage,
+        champion_name: &str,
+    ) -> Result<(), LeagueClientReadError>;
     fn apply_champ_select_preferences(
         &self,
         pick_champion_id: Option<i64>,
@@ -132,6 +148,13 @@ pub trait AdvisorDataProvider {
         &self,
         input: AdvisorDataRefreshInput,
     ) -> Result<AdvisorDataSnapshot, RankedChampionDataError>;
+}
+
+pub trait RuneRecommendationProvider {
+    fn fetch_rune_recommendations(
+        &self,
+        champion_id: i64,
+    ) -> Vec<domain::RuneRecommendation>;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -196,7 +219,7 @@ pub struct SummonerBatchEntry {
     pub display_name: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct SettingsInput {
     pub startup_page: String,
     pub language: String,
@@ -205,8 +228,10 @@ pub struct SettingsInput {
     pub auto_accept_enabled: bool,
     pub auto_pick_enabled: bool,
     pub auto_pick_champion_id: Option<i64>,
+    pub auto_pick_delay_seconds: f64,
     pub auto_ban_enabled: bool,
     pub auto_ban_champion_id: Option<i64>,
+    pub auto_ban_delay_seconds: f64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -486,8 +511,10 @@ pub fn settings_defaults() -> SettingsValues {
         auto_accept_enabled: true,
         auto_pick_enabled: false,
         auto_pick_champion_id: None,
+        auto_pick_delay_seconds: 0.0,
         auto_ban_enabled: false,
         auto_ban_champion_id: None,
+        auto_ban_delay_seconds: 0.0,
     }
 }
 
@@ -634,6 +661,90 @@ pub fn clear_activity_entries(
         .map_err(|error| storage_failure("clear activity entries", error))?;
 
     Ok(ClearActivityResult { deleted_count })
+}
+
+// ── Rune system ──────────────────────────────────────────────────────────────
+
+pub fn get_champion_rune_recommendations(
+    provider: &impl RuneRecommendationProvider,
+    champion_id: i64,
+) -> Vec<domain::RuneRecommendation> {
+    provider.fetch_rune_recommendations(champion_id)
+}
+
+pub fn auto_apply_rune_on_lock_in(
+    store: &impl AppStore,
+    reader: &impl LeagueClientReader,
+    provider: &impl RuneRecommendationProvider,
+    champion_id: i64,
+    champion_name: &str,
+) -> Result<bool, ApplicationError> {
+    let page = if let Some(saved) = store
+        .get_champion_rune_config(champion_id)
+        .map_err(ApplicationError::Storage)?
+    {
+        saved.page
+    } else {
+        let recs = provider.fetch_rune_recommendations(champion_id);
+        match recs.into_iter().next() {
+            Some(rec) => rec.page,
+            None => return Ok(false),
+        }
+    };
+
+    reader
+        .apply_rune_page(&page, champion_name)
+        .map_err(ApplicationError::from)?;
+
+    Ok(true)
+}
+
+pub fn apply_specific_rune_page(
+    reader: &impl LeagueClientReader,
+    page: RunePage,
+    champion_name: &str,
+) -> Result<(), ApplicationError> {
+    reader
+        .apply_rune_page(&page, champion_name)
+        .map_err(ApplicationError::from)
+}
+
+pub fn get_stored_rune_config(
+    store: &impl AppStore,
+    champion_id: i64,
+) -> Result<Option<ChampionRuneConfig>, ApplicationError> {
+    store
+        .get_champion_rune_config(champion_id)
+        .map_err(ApplicationError::Storage)
+}
+
+pub fn save_rune_config(
+    store: &impl AppStore,
+    champion_id: i64,
+    page: RunePage,
+) -> Result<ChampionRuneConfig, ApplicationError> {
+    if champion_id <= 0 {
+        return Err(ApplicationError::Validation(
+            "Champion id must be greater than 0".to_string(),
+        ));
+    }
+    store
+        .save_champion_rune_config(champion_id, page)
+        .map_err(ApplicationError::Storage)
+}
+
+pub fn delete_rune_config(
+    store: &impl AppStore,
+    champion_id: i64,
+) -> Result<bool, ApplicationError> {
+    if champion_id <= 0 {
+        return Err(ApplicationError::Validation(
+            "Champion id must be greater than 0".to_string(),
+        ));
+    }
+    store
+        .delete_champion_rune_config(champion_id)
+        .map_err(ApplicationError::Storage)
 }
 
 pub fn get_league_client_status(
@@ -1414,8 +1525,10 @@ fn validate_settings(input: SettingsInput) -> Result<SettingsValues, Application
         auto_accept_enabled: input.auto_accept_enabled,
         auto_pick_enabled: input.auto_pick_enabled,
         auto_pick_champion_id: input.auto_pick_champion_id,
+        auto_pick_delay_seconds: normalize_delay_seconds(input.auto_pick_delay_seconds),
         auto_ban_enabled: input.auto_ban_enabled,
         auto_ban_champion_id: input.auto_ban_champion_id,
+        auto_ban_delay_seconds: normalize_delay_seconds(input.auto_ban_delay_seconds),
     };
 
     validate_settings_values(&values)?;
@@ -1451,6 +1564,12 @@ fn validate_optional_champion_id(
     }
 
     Ok(())
+}
+
+fn normalize_delay_seconds(value: f64) -> f64 {
+    // Clamp to 0.0–5.0 and round to the nearest 0.5-second step.
+    let clamped = value.clamp(0.0, 5.0);
+    (clamped * 2.0).round() / 2.0
 }
 
 fn normalize_activity_limit(limit: i64) -> Result<i64, ApplicationError> {
@@ -2471,15 +2590,20 @@ pub fn run_ready_check_automation(
 
 pub fn run_champ_select_automation(
     store: &impl AppStore,
-    _reader: &impl LeagueClientReader,
+    reader: &impl LeagueClientReader,
 ) -> Result<(), ApplicationError> {
     let settings = store.get_settings().map_err(ApplicationError::Storage)?;
 
-    if settings.auto_pick_enabled || settings.auto_ban_enabled {
-        log_auto_accept_event("champ-select automation execution is disabled");
+    let pick = if settings.auto_pick_enabled { settings.auto_pick_champion_id } else { None };
+    let ban = if settings.auto_ban_enabled { settings.auto_ban_champion_id } else { None };
+
+    if pick.is_none() && ban.is_none() {
+        return Ok(());
     }
 
-    Ok(())
+    reader
+        .apply_champ_select_preferences(pick, ban)
+        .map_err(ApplicationError::from)
 }
 
 pub fn normalize_player_name(value: &str) -> String {
