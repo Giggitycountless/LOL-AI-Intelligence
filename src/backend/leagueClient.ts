@@ -1,6 +1,9 @@
 import { callBackend } from "./commands";
 import type {
   AdvisorDataInput,
+  ChampionRuneConfig,
+  RunePage,
+  RuneRecommendation,
   AdvisorDataRefreshInput,
   AdvisorDataResponse,
   ChampSelectSnapshot,
@@ -130,5 +133,35 @@ export function savePlayerNote(input: SavePlayerNoteInput): Promise<PlayerNoteVi
 export function clearPlayerNote(input: ClearPlayerNoteInput): Promise<ClearPlayerNoteResult> {
   return callBackend<ClearPlayerNoteResult>("clear_player_note", {
     input,
+  });
+}
+
+export function fetchRuneRecommendations(championId: number): Promise<RuneRecommendation[]> {
+  return callBackend<RuneRecommendation[]>("get_rune_recommendations", {
+    input: { championId },
+  });
+}
+
+export function applyRunePage(championId: number, page: RunePage, championName: string): Promise<void> {
+  return callBackend<void>("apply_rune_page", {
+    input: { championId, page, championName },
+  });
+}
+
+export function saveChampionRuneConfig(championId: number, page: RunePage): Promise<ChampionRuneConfig> {
+  return callBackend<ChampionRuneConfig>("save_champion_rune_config", {
+    input: { championId, page },
+  });
+}
+
+export function fetchChampionRuneConfig(championId: number): Promise<ChampionRuneConfig | null> {
+  return callBackend<ChampionRuneConfig | null>("get_champion_rune_config", {
+    input: { championId },
+  });
+}
+
+export function deleteChampionRuneConfig(championId: number): Promise<boolean> {
+  return callBackend<boolean>("delete_champion_rune_config", {
+    input: { championId },
   });
 }

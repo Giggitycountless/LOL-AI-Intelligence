@@ -1,4 +1,5 @@
 import { startTransition, useCallback, useEffect, useRef, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 
 import { Activity } from "./pages/Activity";
@@ -8,6 +9,7 @@ import { ParticipantProfileWindow } from "./pages/ParticipantProfileWindow";
 import { Profile } from "./pages/Profile";
 import { Advisor } from "./pages/Advisor";
 import { RankedChampions } from "./pages/RankedChampions";
+import { Rune } from "./pages/Rune";
 import { SelfHistoryOverlay } from "./pages/SelfHistoryOverlay";
 import { Settings } from "./pages/Settings";
 import { AppStateProvider, useAppCore, type AppWindowMode } from "./state/AppStateProvider";
@@ -16,7 +18,7 @@ import { oppositeLanguage, type TranslationKey } from "./i18n";
 import { selectionFromParticipantProfileHash } from "./windows/participantProfileWindow";
 import { isSelfHistoryOverlayHash } from "./windows/selfHistoryOverlayWindow";
 
-type Page = StartupPage | "profile" | "matches" | "ranked" | "advisor";
+type Page = StartupPage | "profile" | "matches" | "ranked" | "advisor" | "rune";
 
 const pages: Array<{ id: Page; labelKey: TranslationKey; icon: IconName }> = [
   { id: "dashboard", labelKey: "nav.dashboard", icon: "dashboard" },
@@ -24,6 +26,7 @@ const pages: Array<{ id: Page; labelKey: TranslationKey; icon: IconName }> = [
   { id: "matches", labelKey: "nav.matches", icon: "matches" },
   { id: "advisor", labelKey: "nav.advisor", icon: "advisor" },
   { id: "ranked", labelKey: "nav.ranked", icon: "ranked" },
+  { id: "rune", labelKey: "nav.rune", icon: "rune" },
   { id: "activity", labelKey: "nav.activity", icon: "activity" },
   { id: "settings", labelKey: "nav.settings", icon: "settings" },
 ];
@@ -74,6 +77,16 @@ export function AppShell() {
       didApplyStartupPage.current = true;
     }
   }, [navigateTo, snapshot]);
+
+  // Auto-navigate to rune page on champion lock-in
+  useEffect(() => {
+    const unlisten = listen("champion-locked-in", () => {
+      navigateTo("rune");
+    });
+    return () => {
+      void unlisten.then((fn) => fn());
+    };
+  }, [navigateTo]);
 
   return (
     <div className="flex h-screen min-h-0 bg-zinc-100 text-zinc-950">
@@ -172,6 +185,7 @@ export function AppShell() {
         {activePage === "matches" && <Matches />}
         {activePage === "advisor" && <Advisor />}
         {activePage === "ranked" && <RankedChampions />}
+        {activePage === "rune" && <Rune />}
         {activePage === "activity" && <Activity />}
         {activePage === "settings" && <Settings />}
       </div>
@@ -179,7 +193,7 @@ export function AppShell() {
   );
 }
 
-type IconName = "dashboard" | "profile" | "matches" | "advisor" | "ranked" | "activity" | "settings";
+type IconName = "dashboard" | "profile" | "matches" | "advisor" | "ranked" | "rune" | "activity" | "settings";
 
 function Icon({ name }: { name: IconName }) {
   const paths: Record<IconName, string> = {
@@ -192,6 +206,7 @@ function Icon({ name }: { name: IconName }) {
       "M12 3 4 7v5c0 5 3.3 8 8 9 4.7-1 8-4 8-9V7l-8-4Zm0 3.2 5 2.5V12c0 3.1-1.8 5.2-5 6-3.2-.8-5-2.9-5-6V8.7l5-2.5Zm-2.5 4.3h5v2h-5v-2Zm0 3.5h5v2h-5v-2Z",
     ranked:
       "M6 20V9h3v11H6Zm5 0V4h3v16h-3Zm5 0v-7h3v7h-3ZM4 20h17v2H4v-2Z",
+    rune: "M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14H9V8h2v8zm4 0h-2V8h2v8z",
     activity:
       "M5 4h14v2H5V4Zm0 4h9v2H5V8Zm0 4h14v2H5v-2Zm0 4h9v2H5v-2Zm12-8 4 4-4 4v-3h-5v-2h5V8Z",
     settings:
