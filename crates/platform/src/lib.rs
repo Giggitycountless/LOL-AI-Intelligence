@@ -47,6 +47,7 @@ struct AutomationFeedbackEvent {
 
 const AUTO_ACCEPT_STATUS_EVENT: &str = "auto-accept-status-update";
 const SELF_HISTORY_OVERLAY_WINDOW_LABEL: &str = "self-history-overlay";
+const POST_GAME_NOTES_WINDOW_LABEL: &str = "post-game-notes";
 
 fn default_theme() -> String {
     "light".to_string()
@@ -1046,6 +1047,9 @@ fn handle_league_phase_change<R: Runtime + 'static>(
                 let _ = app_handle.emit("open-self-history-overlay", ());
             }
         }
+        "EndOfGame" => {
+            let _ = app_handle.emit("post-game-notes-open", ());
+        }
         "ReadyCheck" => {
             run_ready_check_automation_guarded(app_handle, state);
         }
@@ -1183,6 +1187,12 @@ fn can_complete_champ_select_hydration_for_phase(phase: Option<&str>) -> bool {
 
 pub fn destroy_self_history_overlay_window<R: Runtime>(app_handle: &AppHandle<R>) {
     if let Some(window) = app_handle.get_webview_window(SELF_HISTORY_OVERLAY_WINDOW_LABEL) {
+        let _ = window.destroy();
+    }
+}
+
+pub fn destroy_post_game_notes_window<R: Runtime>(app_handle: &AppHandle<R>) {
+    if let Some(window) = app_handle.get_webview_window(POST_GAME_NOTES_WINDOW_LABEL) {
         let _ = window.destroy();
     }
 }

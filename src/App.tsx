@@ -6,6 +6,7 @@ import { Activity } from "./pages/Activity";
 import { Dashboard } from "./pages/Dashboard";
 import { Matches } from "./pages/Matches";
 import { ParticipantProfileWindow } from "./pages/ParticipantProfileWindow";
+import { PostGameNotesWindowRoot } from "./pages/PostGameNotesWindow";
 import { Profile } from "./pages/Profile";
 import { Advisor } from "./pages/Advisor";
 import { RankedChampions } from "./pages/RankedChampions";
@@ -17,6 +18,7 @@ import type { StartupPage } from "./backend/types";
 import { oppositeLanguage, type TranslationKey } from "./i18n";
 import { selectionFromParticipantProfileHash } from "./windows/participantProfileWindow";
 import { isSelfHistoryOverlayHash } from "./windows/selfHistoryOverlayWindow";
+import { isPostGameNotesHash, openPostGameNotesWindow } from "./windows/postGameNotesWindow";
 
 type Page = StartupPage | "profile" | "matches" | "ranked" | "advisor" | "rune";
 
@@ -34,6 +36,7 @@ const pages: Array<{ id: Page; labelKey: TranslationKey; icon: IconName }> = [
 export function App() {
   const participantProfileSelection = selectionFromParticipantProfileHash(window.location.hash);
   const isSelfHistoryOverlay = isSelfHistoryOverlayHash(window.location.hash);
+  const isPostGameNotes = isPostGameNotesHash(window.location.hash);
   const mode: AppWindowMode = participantProfileSelection ? "participant" : isSelfHistoryOverlay ? "overlay" : "main";
 
   useEffect(() => {
@@ -41,6 +44,11 @@ export function App() {
       void invoke("init_overlay_hotkey");
     }
   }, [mode]);
+
+  // Post-game notes window is a standalone root — no AppStateProvider wrapper needed here
+  if (isPostGameNotes) {
+    return <PostGameNotesWindowRoot />;
+  }
 
   return (
     <AppStateProvider mode={mode}>
@@ -98,6 +106,16 @@ export function AppShell() {
       void unlisten.then((fn) => fn());
     };
   }, [navigateTo]);
+
+  // Open post-game notes window when game ends
+  useEffect(() => {
+    const unlisten = listen("post-game-notes-open", () => {
+      void openPostGameNotesWindow();
+    });
+    return () => {
+      void unlisten.then((fn) => fn());
+    };
+  }, []);
 
   return (
     <div className="flex h-screen min-h-0 bg-zinc-100 dark:bg-zinc-950 text-zinc-950 dark:text-zinc-50">
