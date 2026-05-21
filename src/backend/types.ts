@@ -46,8 +46,10 @@ export type AppSettings = {
   autoAcceptEnabled: boolean;
   autoPickEnabled: boolean;
   autoPickChampionId: number | null;
+  autoPickDelaySeconds: number;
   autoBanEnabled: boolean;
   autoBanChampionId: number | null;
+  autoBanDelaySeconds: number;
   updatedAt: string;
 };
 
@@ -59,8 +61,36 @@ export type SaveSettingsInput = {
   autoAcceptEnabled: boolean;
   autoPickEnabled: boolean;
   autoPickChampionId: number | null;
+  autoPickDelaySeconds: number;
   autoBanEnabled: boolean;
   autoBanChampionId: number | null;
+  autoBanDelaySeconds: number;
+};
+
+export type RunePage = {
+  primaryStyleId: number;
+  subStyleId: number;
+  selectedPerkIds: number[];
+};
+
+export type RuneRecommendation = {
+  position: string;
+  pickCount: number;
+  page: RunePage;
+};
+
+export type ChampionRuneConfig = {
+  championId: number;
+  page: RunePage;
+  savedAt: string;
+};
+
+export type RunePageSnapshot = {
+  championId: number;
+  championName: string;
+  recommendations: RuneRecommendation[];
+  savedConfig: ChampionRuneConfig | null;
+  autoApplied: boolean;
 };
 
 export type ActivityEntry = {

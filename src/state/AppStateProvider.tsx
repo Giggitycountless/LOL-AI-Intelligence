@@ -267,8 +267,10 @@ export function AppStateProvider({ children, mode = "main" }: { children: ReactN
         autoAcceptEnabled: current.autoAcceptEnabled,
         autoPickEnabled: current.autoPickEnabled,
         autoPickChampionId: current.autoPickChampionId,
+        autoPickDelaySeconds: current.autoPickDelaySeconds,
         autoBanEnabled: current.autoBanEnabled,
         autoBanChampionId: current.autoBanChampionId,
+        autoBanDelaySeconds: current.autoBanDelaySeconds,
       });
     },
     [saveSettingsAction, snapshot?.settings, snapshot?.settingsDefaults],

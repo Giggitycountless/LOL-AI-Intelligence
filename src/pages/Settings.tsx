@@ -29,8 +29,10 @@ export function Settings() {
     autoAcceptEnabled: true,
     autoPickEnabled: false,
     autoPickChampionId: null,
+    autoPickDelaySeconds: 0,
     autoBanEnabled: false,
     autoBanChampionId: null,
+    autoBanDelaySeconds: 0,
   });
   const [champions, setChampions] = useState<LeagueChampionSummary[]>([]);
   const [isLoadingChampions, setIsLoadingChampions] = useState(false);
@@ -55,8 +57,10 @@ export function Settings() {
         autoAcceptEnabled: persisted.autoAcceptEnabled,
         autoPickEnabled: persisted.autoPickEnabled,
         autoPickChampionId: persisted.autoPickChampionId,
+        autoPickDelaySeconds: persisted.autoPickDelaySeconds,
         autoBanEnabled: persisted.autoBanEnabled,
         autoBanChampionId: persisted.autoBanChampionId,
+        autoBanDelaySeconds: persisted.autoBanDelaySeconds,
       });
     }
   }, [persisted]);
@@ -101,8 +105,10 @@ export function Settings() {
         draft.autoAcceptEnabled !== persisted.autoAcceptEnabled ||
         draft.autoPickEnabled !== persisted.autoPickEnabled ||
         draft.autoPickChampionId !== persisted.autoPickChampionId ||
+        draft.autoPickDelaySeconds !== persisted.autoPickDelaySeconds ||
         draft.autoBanEnabled !== persisted.autoBanEnabled ||
-        draft.autoBanChampionId !== persisted.autoBanChampionId),
+        draft.autoBanChampionId !== persisted.autoBanChampionId ||
+        draft.autoBanDelaySeconds !== persisted.autoBanDelaySeconds),
   );
   const canSave = hasUnsavedChanges && !validationMessage && !isSaving;
 
@@ -294,6 +300,12 @@ export function Settings() {
                     autoPickChampionId: championId,
                   }))
                 }
+                onAutoPickDelayChange={(seconds) =>
+                  setDraft((current) => ({
+                    ...current,
+                    autoPickDelaySeconds: seconds,
+                  }))
+                }
                 onAutoBanEnabledChange={(enabled) =>
                   setDraft((current) => ({
                     ...current,
@@ -304,6 +316,12 @@ export function Settings() {
                   setDraft((current) => ({
                     ...current,
                     autoBanChampionId: championId,
+                  }))
+                }
+                onAutoBanDelayChange={(seconds) =>
+                  setDraft((current) => ({
+                    ...current,
+                    autoBanDelaySeconds: seconds,
                   }))
                 }
                 t={t}
@@ -328,7 +346,9 @@ export function Settings() {
               <SettingRow label={t("settings.activityLimit")} value={persisted ? String(persisted.activityLimit) : t("common.loading")} />
               <SettingRow label={t("settings.autoAcceptShort")} value={persisted ? (persisted.autoAcceptEnabled ? t("common.on") : t("common.off")) : t("common.loading")} />
               <SettingRow label={t("settings.autoPickShort")} value={persisted ? automationSummary(persisted.autoPickEnabled, persisted.autoPickChampionId, champions, t) : t("common.loading")} />
+              <SettingRow label={t("settings.pickDelay")} value={persisted ? `${persisted.autoPickDelaySeconds.toFixed(1)}${t("settings.delaySeconds")}` : t("common.loading")} />
               <SettingRow label={t("settings.autoBanShort")} value={persisted ? automationSummary(persisted.autoBanEnabled, persisted.autoBanChampionId, champions, t) : t("common.loading")} />
+              <SettingRow label={t("settings.banDelay")} value={persisted ? `${persisted.autoBanDelaySeconds.toFixed(1)}${t("settings.delaySeconds")}` : t("common.loading")} />
               <SettingRow label={t("dashboard.updated")} value={persisted?.updatedAt ?? t("common.loading")} />
             </dl>
           </div>
@@ -420,8 +440,10 @@ function RoomAutomationPanel({
   onAutoAcceptChange,
   onAutoPickEnabledChange,
   onAutoPickChampionChange,
+  onAutoPickDelayChange,
   onAutoBanEnabledChange,
   onAutoBanChampionChange,
+  onAutoBanDelayChange,
   t,
 }: {
   draft: SaveSettingsInput;
@@ -433,8 +455,10 @@ function RoomAutomationPanel({
   onAutoAcceptChange: (enabled: boolean) => void;
   onAutoPickEnabledChange: (enabled: boolean) => void;
   onAutoPickChampionChange: (championId: number | null) => void;
+  onAutoPickDelayChange: (seconds: number) => void;
   onAutoBanEnabledChange: (enabled: boolean) => void;
   onAutoBanChampionChange: (championId: number | null) => void;
+  onAutoBanDelayChange: (seconds: number) => void;
   t: Translator;
 }) {
   const statusItems = [
@@ -491,24 +515,30 @@ function RoomAutomationPanel({
       <div className="grid gap-3 xl:grid-cols-2">
         <AutomationChampionPicker
           label={t("settings.autoPick")}
+          delayLabel={t("settings.pickDelay")}
           enabled={draft.autoPickEnabled}
           championId={draft.autoPickChampionId}
+          delaySeconds={draft.autoPickDelaySeconds}
           champions={champions}
           isLoading={isLoadingChampions}
           championsError={championsError}
           onEnabledChange={onAutoPickEnabledChange}
           onChampionChange={onAutoPickChampionChange}
+          onDelayChange={onAutoPickDelayChange}
           t={t}
         />
         <AutomationChampionPicker
           label={t("settings.autoBan")}
+          delayLabel={t("settings.banDelay")}
           enabled={draft.autoBanEnabled}
           championId={draft.autoBanChampionId}
+          delaySeconds={draft.autoBanDelaySeconds}
           champions={champions}
           isLoading={isLoadingChampions}
           championsError={championsError}
           onEnabledChange={onAutoBanEnabledChange}
           onChampionChange={onAutoBanChampionChange}
+          onDelayChange={onAutoBanDelayChange}
           t={t}
         />
       </div>
@@ -574,23 +604,29 @@ function ToggleSwitch({
 
 function AutomationChampionPicker({
   label,
+  delayLabel,
   enabled,
   championId,
+  delaySeconds,
   champions,
   isLoading,
   championsError,
   onEnabledChange,
   onChampionChange,
+  onDelayChange,
   t,
 }: {
   label: string;
+  delayLabel: string;
   enabled: boolean;
   championId: number | null;
+  delaySeconds: number;
   champions: LeagueChampionSummary[];
   isLoading: boolean;
   championsError: string | null;
   onEnabledChange: (enabled: boolean) => void;
   onChampionChange: (championId: number | null) => void;
+  onDelayChange: (seconds: number) => void;
   t: Translator;
 }) {
   const listId = useId();
@@ -741,6 +777,28 @@ function AutomationChampionPicker({
           </div>
         )}
       </div>
+
+      {enabled && (
+        <div className="grid gap-2">
+          <div className="flex items-center justify-between">
+            <label className="text-xs font-medium uppercase text-zinc-500">{delayLabel}</label>
+            <span className="text-sm font-semibold text-zinc-950">{delaySeconds.toFixed(1)}{t("settings.delaySeconds")}</span>
+          </div>
+          <input
+            type="range"
+            min={0}
+            max={5}
+            step={0.5}
+            value={delaySeconds}
+            onChange={(event) => onDelayChange(Number(event.target.value))}
+            className="w-full accent-rose-700"
+          />
+          <div className="flex justify-between text-xs text-zinc-400">
+            <span>0{t("settings.delaySeconds")}</span>
+            <span>5{t("settings.delaySeconds")}</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
