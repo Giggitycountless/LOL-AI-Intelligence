@@ -13,9 +13,13 @@ use std::{
 
 use reqwest::blocking::Client;
 use serde::Deserialize;
+use domain::{RunePage, RuneRecommendation};
+use application::RuneRecommendationProvider;
 
 const TENCENT_BASE: &str = "https://game.gtimg.cn/images/lol/act/img/js/hero";
+const RUNE_BASE: &str = "https://lol.qq.com/act/lbp/common/guides/champDetail";
 const CACHE_TTL: Duration = Duration::from_secs(48 * 3600);
+const RUNE_CACHE_TTL: Duration = Duration::from_secs(6 * 3600);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(20);
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(8);
 
@@ -91,7 +95,9 @@ struct RawSpell {
 pub struct TencentLolClient {
     http: Client,
     cache: Arc<Mutex<HashMap<i64, (Instant, TencentChampionData)>>>,
+    rune_cache: Arc<Mutex<HashMap<i64, (Instant, Vec<RuneRecommendation>)>>>,
     base_url: String,
+    rune_base_url: String,
 }
 
 impl Default for TencentLolClient {
@@ -110,7 +116,9 @@ impl TencentLolClient {
         Self {
             http,
             cache: Arc::new(Mutex::new(HashMap::new())),
+            rune_cache: Arc::new(Mutex::new(HashMap::new())),
             base_url: TENCENT_BASE.to_string(),
+            rune_base_url: RUNE_BASE.to_string(),
         }
     }
 
@@ -211,6 +219,245 @@ impl TencentLolClient {
             self.fetch_champion_data(id, None);
         });
     }
+
+    /// Fetch rune recommendations for a champion from the Tencent QQ guide API.
+    /// Returns recommendations sorted by pick count descending. Returns an empty
+    /// Vec on network or parse failure (callers should surface "unavailable" UI).
+    pub fn fetch_champion_rune_recommendations(&self, champion_id: i64) -> Vec<RuneRecommendation> {
+        {
+            let cache = self.rune_cache.lock().unwrap_or_else(|p| p.into_inner());
+            if let Some((fetched_at, recs)) = cache.get(&champion_id) {
+                if fetched_at.elapsed() < RUNE_CACHE_TTL {
+                    return recs.clone();
+                }
+            }
+        }
+
+        let url = format!("{}/champDetail_{champion_id}.js", self.rune_base_url);
+        let text = match self.http.get(&url).send().and_then(|r| r.text()) {
+            Ok(t) => t,
+            Err(e) => {
+                crate::log_lcu_adapter_event(&format!(
+                    "tencent-rune fetch failed champion_id={champion_id} error={e}"
+                ));
+                return Vec::new();
+            }
+        };
+
+        let recs = parse_rune_js(&text, champion_id);
+        self.rune_cache
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .insert(champion_id, (Instant::now(), recs.clone()));
+        recs
+    }
+}
+
+// ---------------------------------------------------------------------------
+// RuneRecommendationProvider impl
+// ---------------------------------------------------------------------------
+
+impl RuneRecommendationProvider for TencentLolClient {
+    fn fetch_rune_recommendations(&self, champion_id: i64) -> Vec<RuneRecommendation> {
+        self.fetch_champion_rune_recommendations(champion_id)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Rune recommendation parsing
+// ---------------------------------------------------------------------------
+
+/// Rune tree style ID lookup.  Maps individual perk IDs to their parent style.
+/// Stat shards (5xxx) and unknown IDs return None.
+fn rune_style_id(perk_id: i64) -> Option<i64> {
+    const PRECISION: &[i64] = &[
+        8005, 8008, 8021, 8010, 9101, 9111, 8009, 9104, 9105, 9103, 8014, 8017, 8299,
+        8306, // Lethal Tempo (moved)
+    ];
+    const DOMINATION: &[i64] = &[
+        8112, 8124, 8128, 9923, 8126, 8139, 8143, 8136, 8120, 8138, 8135, 8134, 8105, 8106,
+    ];
+    const SORCERY: &[i64] = &[
+        8214, 8229, 8230, 8224, 8226, 8275, 8210, 8234, 8233, 8237, 8232, 8236,
+    ];
+    const INSPIRATION: &[i64] = &[
+        8351, 8360, 8369, 8306, 8304, 8313, 8321, 8316, 8345, 8347, 8410, 8352, 8303,
+    ];
+    const RESOLVE: &[i64] = &[
+        8437, 8439, 8465, 8446, 8463, 8401, 8429, 8444, 8473, 8451, 8453, 8242,
+    ];
+
+    if PRECISION.contains(&perk_id) {
+        return Some(8000);
+    }
+    if DOMINATION.contains(&perk_id) {
+        return Some(8100);
+    }
+    if SORCERY.contains(&perk_id) {
+        return Some(8200);
+    }
+    if INSPIRATION.contains(&perk_id) {
+        return Some(8300);
+    }
+    if RESOLVE.contains(&perk_id) {
+        return Some(8400);
+    }
+    None
+}
+
+/// Extract `primaryStyleId` and `subStyleId` from a list of perk IDs.
+fn derive_style_ids(perk_ids: &[i64]) -> Option<(i64, i64)> {
+    let mut primary: Option<i64> = None;
+    let mut secondary: Option<i64> = None;
+
+    for &perk_id in perk_ids {
+        let style = match rune_style_id(perk_id) {
+            Some(s) => s,
+            None => continue,
+        };
+        if primary.is_none() {
+            primary = Some(style);
+        } else if secondary.is_none() && Some(style) != primary {
+            secondary = Some(style);
+            break;
+        }
+    }
+
+    match (primary, secondary) {
+        (Some(p), Some(s)) => Some((p, s)),
+        _ => None,
+    }
+}
+
+/// Raw champion-lane entry from `list.championLane`.
+#[derive(Deserialize)]
+struct RawRuneLane {
+    lane: String,
+    hold3: String,
+    perkdetail: String,
+}
+
+/// Raw perk entry inside `perkdetail` (two-level nested JSON object).
+/// The outer keys are arbitrary string indices; inner values are these structs.
+#[derive(Deserialize)]
+struct RawPerkEntry {
+    perk: String,
+    #[serde(default)]
+    igamecnt: i64,
+}
+
+fn parse_rune_js(js_text: &str, champion_id: i64) -> Vec<RuneRecommendation> {
+    // The JS file content is like: `window.xxx = {"list": {...}}` or just the JSON.
+    // Extract from first `{` to last `}`.
+    let start = match js_text.find('{') {
+        Some(i) => i,
+        None => {
+            crate::log_lcu_adapter_event(&format!(
+                "tencent-rune parse: no JSON found champion_id={champion_id}"
+            ));
+            return Vec::new();
+        }
+    };
+    let end = match js_text.rfind('}') {
+        Some(i) => i + 1,
+        None => return Vec::new(),
+    };
+    let json_str = &js_text[start..end];
+
+    let root: serde_json::Value = match serde_json::from_str(json_str) {
+        Ok(v) => v,
+        Err(e) => {
+            crate::log_lcu_adapter_event(&format!(
+                "tencent-rune parse: JSON error champion_id={champion_id} error={e}"
+            ));
+            return Vec::new();
+        }
+    };
+
+    let champion_lane = match root
+        .get("list")
+        .and_then(|l| l.get("championLane"))
+        .and_then(|cl| cl.as_object())
+    {
+        Some(obj) => obj.clone(),
+        None => {
+            crate::log_lcu_adapter_event(&format!(
+                "tencent-rune parse: missing championLane champion_id={champion_id}"
+            ));
+            return Vec::new();
+        }
+    };
+
+    let mut all_recs: Vec<RuneRecommendation> = Vec::new();
+
+    for (_key, lane_value) in &champion_lane {
+        let lane_entry: RawRuneLane = match serde_json::from_value(lane_value.clone()) {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+
+        if lane_entry.hold3.is_empty() || lane_entry.perkdetail.is_empty() {
+            continue;
+        }
+
+        let position = normalize_position(&lane_entry.lane);
+        let perkdetail: serde_json::Value = match serde_json::from_str(&lane_entry.perkdetail) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+
+        // perkdetail is a map of maps; flatten both levels into a list of entries
+        let mut entries: Vec<(i64, Vec<i64>)> = Vec::new(); // (igamecnt, perk_ids)
+        if let Some(outer) = perkdetail.as_object() {
+            for inner_val in outer.values() {
+                if let Some(inner) = inner_val.as_object() {
+                    for entry_val in inner.values() {
+                        if let Ok(entry) = serde_json::from_value::<RawPerkEntry>(entry_val.clone()) {
+                            let perk_ids: Vec<i64> = entry
+                                .perk
+                                .split('&')
+                                .filter_map(|s| s.trim().parse::<i64>().ok())
+                                .map(|id| if id == 0 { 5001 } else { id })
+                                .take(9)
+                                .collect();
+                            if perk_ids.len() >= 6 {
+                                entries.push((entry.igamecnt, perk_ids));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Sort by igamecnt desc, take top 2 per lane
+        entries.sort_by(|a, b| b.0.cmp(&a.0));
+        for (igamecnt, perk_ids) in entries.into_iter().take(2) {
+            let Some((primary_style_id, sub_style_id)) = derive_style_ids(&perk_ids) else {
+                continue;
+            };
+            all_recs.push(RuneRecommendation {
+                position: position.clone(),
+                pick_count: igamecnt,
+                page: RunePage {
+                    primary_style_id,
+                    sub_style_id,
+                    selected_perk_ids: perk_ids,
+                },
+            });
+        }
+    }
+
+    // Sort all recommendations by pick count desc
+    all_recs.sort_by(|a, b| b.pick_count.cmp(&a.pick_count));
+    all_recs
+}
+
+fn normalize_position(lane: &str) -> String {
+    match lane.to_lowercase().as_str() {
+        "mid" => "middle".to_string(),
+        "bot" => "bottom".to_string(),
+        other => other.to_string(),
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -239,7 +486,9 @@ impl TencentLolClient {
         Self {
             http,
             cache: Arc::new(Mutex::new(cache)),
+            rune_cache: Arc::new(Mutex::new(HashMap::new())),
             base_url: base_url.to_string(),
+            rune_base_url: "http://127.0.0.1:1".to_string(),
         }
     }
 }
