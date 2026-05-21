@@ -27,6 +27,13 @@ mod community_dragon;
 mod constants;
 mod tencent_lol_api;
 pub use tencent_lol_api::TencentLolClient;
+pub use application::RuneRecommendationProvider;
+
+impl application::RuneRecommendationProvider for LocalLeagueClient {
+    fn fetch_rune_recommendations(&self, champion_id: i64) -> Vec<domain::RuneRecommendation> {
+        self.tencent.fetch_champion_rune_recommendations(champion_id)
+    }
+}
 use constants::*;
 
 pub mod data_providers;
@@ -569,6 +576,46 @@ impl LocalLeagueClient {
         ))
     }
 
+    fn apply_lcu_rune_page(
+        &self,
+        page: &domain::RunePage,
+        champion_name: &str,
+    ) -> Result<(), LeagueClientReadError> {
+        let session = match self.open_session() {
+            SessionOpenResult::Ready(session) => session,
+            SessionOpenResult::Status(status) => return Err(read_error_from_status(status)),
+        };
+
+        let pages: Vec<LcuRunePage> = session
+            .get_json("/lol-perks/v1/pages")
+            .map_err(read_error_from_request)?;
+
+        let deletable = pages.iter().find(|p| p.is_deletable && !p.is_temporary);
+        let Some(page_to_delete) = deletable else {
+            return Err(LeagueClientReadError::Integration(
+                "No deletable rune page found".to_string(),
+            ));
+        };
+
+        if let Some(id) = page_to_delete.id {
+            session
+                .delete_empty(format!("/lol-perks/v1/pages/{id}").as_str())
+                .map_err(read_error_from_request)?;
+        }
+
+        let create = LcuRunePageCreate {
+            name: format!("{champion_name} — LoL Assistant"),
+            primary_style_id: page.primary_style_id,
+            sub_style_id: page.sub_style_id,
+            selected_perk_ids: page.selected_perk_ids.clone(),
+        };
+
+        // LCU expects the page wrapped in an array
+        session
+            .post_json("/lol-perks/v1/pages", &[create])
+            .map_err(read_error_from_request)
+    }
+
     fn read_gameflow_session(
         &self,
         session: &LcuSession,
@@ -1026,6 +1073,14 @@ impl LeagueClientReader for LocalLeagueClient {
         session
             .post_empty("/lol-matchmaking/v1/ready-check/accept")
             .map_err(read_error_from_request)
+    }
+
+    fn apply_rune_page(
+        &self,
+        page: &domain::RunePage,
+        champion_name: &str,
+    ) -> Result<(), LeagueClientReadError> {
+        self.apply_lcu_rune_page(page, champion_name)
     }
 
     fn apply_champ_select_preferences(

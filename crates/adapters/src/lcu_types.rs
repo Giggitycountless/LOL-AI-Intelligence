@@ -73,6 +73,7 @@ pub(crate) struct LcuGameflowChampionSelection {
 pub(crate) struct LcuChampSelectAction {
     pub(crate) id: Option<i64>,
     pub(crate) actor_cell_id: Option<i64>,
+    pub(crate) champion_id: Option<i64>,
     pub(crate) completed: Option<bool>,
     pub(crate) is_ally_action: Option<bool>,
     #[serde(rename = "type")]
@@ -340,6 +341,27 @@ impl LcuParticipantStats {
             .filter(|value| *value > 0)
             .collect()
     }
+}
+
+// ── LCU Perks types ───────────────────────────────────────────────────────
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct LcuRunePage {
+    pub(crate) id: Option<i64>,
+    #[serde(default)]
+    pub(crate) is_deletable: bool,
+    #[serde(default)]
+    pub(crate) is_temporary: bool,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct LcuRunePageCreate {
+    pub(crate) name: String,
+    pub(crate) primary_style_id: i64,
+    pub(crate) sub_style_id: i64,
+    pub(crate) selected_perk_ids: Vec<i64>,
 }
 
 // ── tests ─────────────────────────────────────────────────────────────────
