@@ -32,6 +32,15 @@ A dedicated sidebar tab showing raw stats (recent KDA, win rate, match history) 
 ### Advisor Page
 Reserved for AI-powered analysis. Future implementation will send player data to an external AI API and display AI-generated recommendations. Currently shows static sample data marked as TODO.
 
+### In-Game Overlay
+A separate Tauri window (`SelfHistoryOverlay`) that appears only during the `InProgress` game phase. Displays the ten-player roster with historical stats collected during the preceding Champ-Select phase. Primary use: in-game scouting — identifying which allies need extra support and which enemies are exploitable based on their recent performance.
+
+### Player Card
+The per-player display unit inside the `In-Game Overlay`. One card per participant (5 ally cards, 5 enemy cards). Carries: champion portrait, rank (solo/duo and flex), a composite `Scout Score`, and a recent match strip showing the last six games with per-game K/D/A, KDA, and average KDA.
+
+### Scout Score
+A composite number derived from a player's recent match volume, win count, and average KDA. Used to rank players visually within the `In-Game Overlay` so the local player can quickly identify the weakest enemies and teammates needing support. Not meaningful as a standalone number — only useful for relative comparison across the ten players in the same match.
+
 ### LCU Supplement
 The League Client Update API provides **runtime metadata** (champion icon, current ability level, summoner spell state, game-flow phase, etc.).
 

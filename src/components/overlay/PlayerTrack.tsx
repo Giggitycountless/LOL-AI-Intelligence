@@ -29,12 +29,12 @@ export const PlayerTrack = memo(function PlayerTrack({
   return (
     <article
       className={[
-        "flex min-w-0 flex-col rounded-md border bg-zinc-50 p-1.5",
+        "flex min-w-0 flex-col rounded-md border bg-zinc-50 p-2",
         player.isEmpty ? "border-zinc-200 opacity-75" : tone === "ally" ? "border-emerald-200" : "border-rose-200",
       ].join(" ")}
       onClick={(event) => event.stopPropagation()}
     >
-      <div className="grid h-16 grid-cols-[4rem_minmax(0,1fr)] gap-1.5">
+      <div className="grid h-16 grid-cols-[4rem_minmax(0,1fr)] gap-2">
         <ChampionPortrait
           championId={player.championId}
           displayName={player.displayName}
@@ -44,13 +44,13 @@ export const PlayerTrack = memo(function PlayerTrack({
           t={t}
           tone={tone}
         />
-        <div className="grid min-w-0 grid-rows-2 gap-1">
+        <div className="grid min-w-0 grid-rows-2 gap-1.5">
           <RankPill label="S" title={t("overlay.rankUnavailable")} value={player.soloRank} />
           <RankPill label="F" title={t("overlay.rankUnavailable")} value={player.flexRank} />
         </div>
       </div>
 
-      <div className="relative mt-2 rounded-md border border-zinc-200 bg-white px-2 py-1.5">
+      <div className="relative mt-2.5 rounded-md border border-zinc-200 bg-white px-2 py-1.5">
         <div className="flex items-center justify-between gap-2">
           <span className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">{t("overlay.score")}</span>
           <span className="truncate text-sm font-semibold tabular-nums text-zinc-950">{player.score ?? "--"}</span>
@@ -75,7 +75,7 @@ export const PlayerTrack = memo(function PlayerTrack({
       </div>
 
       {!player.isEmpty && (player.advisorTags.length > 0 || player.advisorSummary) && (
-        <div className="mt-1.5 min-h-10 rounded-md border border-zinc-200 bg-white px-1.5 py-1">
+        <div className="mt-2 min-h-10 rounded-md border border-zinc-200 bg-white px-1.5 py-1.5">
           {player.advisorTags.length > 0 && (
             <div className="flex flex-wrap gap-1">
               {player.advisorTags.slice(0, 3).map((tag) => (
@@ -96,13 +96,19 @@ export const PlayerTrack = memo(function PlayerTrack({
         </div>
       )}
 
-      <div className="mt-2 flex items-center justify-between px-1 text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
-        <span>{t("overlay.recentSix")}</span>
-        <span className="truncate text-right tabular-nums">
-          {player.gameCount > 0 ? `${player.winCount}/${player.gameCount}` : recentStatsStatusMessage(player.recentStatsStatus, t)}
-        </span>
+      <div className="mt-3 flex items-center justify-between px-0.5 text-[11px] font-semibold tabular-nums text-zinc-500">
+        {player.gameCount > 0 ? (
+          <>
+            <span className="uppercase tracking-wide">{player.winCount}W / {player.gameCount}G</span>
+            {player.averageKda !== null && (
+              <span>KDA {player.averageKda.toFixed(1)}</span>
+            )}
+          </>
+        ) : (
+          <span className="uppercase tracking-wide">{recentStatsStatusMessage(player.recentStatsStatus, t)}</span>
+        )}
       </div>
-      <div className="mt-1 grid gap-1">
+      <div className="mt-1.5 grid gap-1.5">
         {player.rows.map((row) => (
           <MatchRow key={row.id} row={row} />
         ))}
@@ -191,7 +197,7 @@ function MatchRow({ row }: { row: { id: string; imageUrl: string | undefined; ma
   return (
     <div
       className={[
-        "grid h-8 grid-cols-[2rem_minmax(0,1fr)_2.4rem] items-center gap-1.5 rounded border px-1",
+        "grid h-9 grid-cols-[2rem_minmax(0,1fr)_2.4rem] items-center gap-1.5 rounded border px-1.5",
         match ? resultClass(match.result) : "border-zinc-200 bg-zinc-50 text-zinc-400",
       ].join(" ")}
     >

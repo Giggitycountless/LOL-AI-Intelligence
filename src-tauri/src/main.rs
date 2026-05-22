@@ -269,11 +269,16 @@ fn delete_champion_rune_config(
     platform::delete_champion_rune_config(state.inner(), input)
 }
 
-/// Called from the frontend after the window loads (mirrors Frank's init_keyboard command).
-/// Spawns a blocking thread for rdev so the hook is registered after Tauri's message
-/// loop is fully running — same timing as Frank's approach.
+static HOTKEY_LISTENER_STARTED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// Called from the frontend after the window loads.
+/// Guards against multiple calls — only one rdev listener is ever started per process.
 #[tauri::command]
 fn init_overlay_hotkey(app: tauri::AppHandle) {
+    if HOTKEY_LISTENER_STARTED.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        return;
+    }
     std::thread::spawn(move || {
         listen_for_overlay_hotkey(app);
     });
@@ -281,9 +286,21 @@ fn init_overlay_hotkey(app: tauri::AppHandle) {
 
 fn listen_for_overlay_hotkey(app: tauri::AppHandle) {
     use rdev::{listen, Event, EventType, Key};
+    use std::sync::mpsc;
+
+    // WH_KEYBOARD_LL callbacks must return within ~300 ms or Windows removes the hook.
+    // All window work is dispatched to a dedicated thread via a bounded channel so the
+    // rdev callback returns immediately.  Capacity 1 drops rapid duplicate presses.
+    let (tx, rx) = mpsc::sync_channel::<()>(1);
+
+    let app_for_toggle = app.clone();
+    std::thread::spawn(move || {
+        for () in rx {
+            toggle_overlay(&app_for_toggle);
+        }
+    });
 
     let mut shift_down = false;
-
     if let Err(e) = listen(move |event: Event| {
         match event.event_type {
             EventType::KeyPress(Key::ShiftLeft | Key::ShiftRight) => {
@@ -292,10 +309,10 @@ fn listen_for_overlay_hotkey(app: tauri::AppHandle) {
             EventType::KeyRelease(Key::ShiftLeft | Key::ShiftRight) => {
                 shift_down = false;
             }
-            // Trigger on KeyRelease, not KeyPress — prevents key-repeat from
-            // toggling the overlay twice (show then immediately hide).
+            // KeyRelease avoids key-repeat firing multiple times.
+            // try_send: if a toggle is already queued, drop the extra press.
             EventType::KeyRelease(Key::Tab) if shift_down => {
-                toggle_overlay(&app);
+                let _ = tx.try_send(());
             }
             _ => {}
         }

@@ -24,6 +24,7 @@ export type MatchRowView = {
 
 export type PlayerView = {
   id: string;
+  averageKda: number | null;
   badge: string;
   championId: number | null | undefined;
   championUrl: string | undefined;
@@ -103,6 +104,7 @@ export function playerView(
 
   return {
     id: player ? `${tone}-${player.summonerId}` : `${tone}-empty-${index}`,
+    averageKda: stats?.averageKda ?? null,
     badge: playerBadge(winCount, gameCount, tone),
     championId: player?.championId,
     championUrl: player?.championId ? imageUrls[player.championId] : undefined,
