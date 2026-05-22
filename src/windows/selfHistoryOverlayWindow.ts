@@ -36,7 +36,6 @@ async function openSelfHistoryOverlayWindowOnce() {
 
     if (existing) {
       await existing.show();
-      await existing.setFocus();
       return true;
     }
 
@@ -44,7 +43,7 @@ async function openSelfHistoryOverlayWindowOnce() {
       alwaysOnTop: true,
       center: true,
       decorations: false,
-      focus: true,
+      focus: false,
       height: 800,
       minHeight: 700,
       minWidth: 1200,

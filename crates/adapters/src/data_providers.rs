@@ -741,9 +741,21 @@ const LOLPS_TIERLIST_URL: &str = "https://lol.ps/api/statistics/tierlist.json";
 const LOLPS_TIMEOUT: Duration = Duration::from_secs(12);
 const LOLPS_USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36";
 
+// lol.ps only stores data for the CURRENT patch version — all other version
+// numbers return {"data":[]}. Binary search over a monotone range is wrong here.
+// Instead we use frank's maintained notice JSON as the fast-path to get the
+// exact current version integer, then probe a small neighborhood in case the
+// patch just rolled over, and fall back to a parallel broad scan.
+const FRANK_NOTICE_URL: &str =
+    "https://frank-notice-1302853015.cos.ap-chongqing.myqcloud.com/frankRust.json";
+const LOLPS_VERSION_ANCHOR: u32 = 146; // last known good; used when notice is unreachable
+const LOLPS_VERSION_SCAN_MIN: u32 = 80;
+const LOLPS_VERSION_SCAN_MAX: u32 = 260;
+
 #[derive(Debug, Clone)]
 pub struct LolPsKrProvider {
     http_client: Client,
+    version_cache: std::sync::Arc<std::sync::Mutex<Option<u32>>>,
 }
 
 impl LolPsKrProvider {
@@ -753,7 +765,10 @@ impl LolPsKrProvider {
             .connect_timeout(LOLPS_TIMEOUT)
             .build()
             .unwrap_or_default();
-        Self { http_client }
+        Self {
+            http_client,
+            version_cache: std::sync::Arc::new(std::sync::Mutex::new(None)),
+        }
     }
 
     fn lolps_get(&self, url: &str) -> Option<String> {
@@ -777,23 +792,64 @@ impl LolPsKrProvider {
             .unwrap_or(false)
     }
 
-    // Binary search for the highest lol.ps internal version number that has data.
-    // lol.ps uses a sequential integer (not a patch string) for version.
+    // Fetch the current lol.ps version integer from frank's notice JSON.
+    fn fetch_frank_notice_version(&self) -> Option<u32> {
+        let body = self.http_client
+            .get(FRANK_NOTICE_URL)
+            .header("User-Agent", LOLPS_USER_AGENT)
+            .send()
+            .ok()?
+            .text()
+            .ok()?;
+        serde_json::from_str::<serde_json::Value>(&body)
+            .ok()?
+            .get("rankVers")?
+            .as_str()?
+            .parse::<u32>()
+            .ok()
+    }
+
+    // Find the lol.ps version that has data for the given lane/tier.
+    // lol.ps only stores data for the CURRENT patch — not historical patches.
+    //
+    // Strategy (in order):
+    //   1. Use the in-memory cached version as anchor (skip frank notice on repeat calls).
+    //   2. Fall back to frank's notice JSON for the anchor when cache is empty.
+    //   3. Probe anchor ± small neighborhood (handles patch roll-overs).
+    //   4. Broad parallel scan as last resort (frank notice unreachable + cache cold).
+    //
+    // Typical call costs:
+    //   First call in session : 1 frank notice + ≤14 probes (usually 1 hit)
+    //   Repeat calls          : ≤14 probes from cached anchor (usually 1 hit, no frank request)
+    //   After patch roll-over : cached version returns empty → re-runs steps 2-4
     fn find_current_version(&self, lane_str: &str, tier: u32) -> Option<u32> {
-        let mut lo: u32 = 1;
-        let mut hi: u32 = 500;
-        let mut best: Option<u32> = None;
-        while lo <= hi {
-            let mid = lo + (hi - lo) / 2;
-            if self.version_has_data(mid, lane_str, tier) {
-                best = Some(mid);
-                lo = mid + 1;
-            } else {
-                if mid == 0 { break; }
-                hi = mid - 1;
+        let cached = self.version_cache.lock().ok().and_then(|g| *g);
+        let anchor = cached
+            .or_else(|| self.fetch_frank_notice_version())
+            .unwrap_or(LOLPS_VERSION_ANCHOR);
+
+        // Probe anchor and a small neighborhood (±3 back, +10 forward).
+        let lo = anchor.saturating_sub(3);
+        let hi = anchor.saturating_add(10);
+        if let Some(v) = (lo..=hi).rev().find(|&v| self.version_has_data(v, lane_str, tier)) {
+            if let Ok(mut g) = self.version_cache.lock() {
+                *g = Some(v);
             }
+            return Some(v);
         }
-        best
+
+        // Broad fallback: parallel scan so wall time stays acceptable.
+        use rayon::prelude::*;
+        let versions: Vec<u32> = (LOLPS_VERSION_SCAN_MIN..=LOLPS_VERSION_SCAN_MAX)
+            .rev()
+            .collect();
+        let found = versions
+            .into_par_iter()
+            .find_first(|&v| self.version_has_data(v, lane_str, tier));
+        if let (Some(v), Ok(mut g)) = (found, self.version_cache.lock()) {
+            *g = Some(v);
+        }
+        found
     }
 }
 

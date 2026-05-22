@@ -325,7 +325,6 @@ fn toggle_overlay(app: &tauri::AppHandle) {
                 Ok(true) => { let _ = window.hide(); }
                 Ok(false) | Err(_) => {
                     let _ = window.show();
-                    let _ = window.set_focus();
                 }
             }
         }
