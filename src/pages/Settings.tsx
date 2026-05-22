@@ -118,7 +118,10 @@ export function Settings() {
         draft.autoPickDelaySeconds !== persisted.autoPickDelaySeconds ||
         draft.autoBanEnabled !== persisted.autoBanEnabled ||
         draft.autoBanChampionId !== persisted.autoBanChampionId ||
-        draft.autoBanDelaySeconds !== persisted.autoBanDelaySeconds),
+        draft.autoBanDelaySeconds !== persisted.autoBanDelaySeconds ||
+        (draft.aiBaseUrl || null) !== (persisted.aiBaseUrl || null) ||
+        (draft.aiApiKey || null) !== (persisted.aiApiKey || null) ||
+        (draft.aiModel || null) !== (persisted.aiModel || null)),
   );
   const canSave = hasUnsavedChanges && !validationMessage && !isSaving;
 
