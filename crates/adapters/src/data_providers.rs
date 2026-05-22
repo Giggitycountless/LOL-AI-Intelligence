@@ -738,8 +738,8 @@ impl application::RankedChampionDataProvider for TencentRankedChampionProvider {
 // ── lol.ps KR ranked champion stats provider ─────────────────────────────────
 
 const LOLPS_TIERLIST_URL: &str = "https://lol.ps/api/statistics/tierlist.json";
-const DDRAGON_VERSIONS_URL: &str = "https://ddragon.leagueoflegends.com/api/versions.json";
 const LOLPS_TIMEOUT: Duration = Duration::from_secs(12);
+const LOLPS_USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36";
 
 #[derive(Debug, Clone)]
 pub struct LolPsKrProvider {
@@ -756,17 +756,44 @@ impl LolPsKrProvider {
         Self { http_client }
     }
 
-    fn fetch_patch_version(&self) -> Option<String> {
-        let body = self.http_client
-            .get(DDRAGON_VERSIONS_URL)
-            .send().ok()?
-            .text().ok()?;
-        let versions: Vec<String> = serde_json::from_str(&body).ok()?;
-        let latest = versions.into_iter().next()?;
-        let mut parts = latest.splitn(3, '.');
-        let major = parts.next()?;
-        let minor = parts.next()?;
-        Some(format!("{major}.{minor}"))
+    fn lolps_get(&self, url: &str) -> Option<String> {
+        self.http_client
+            .get(url)
+            .header("Referer", "https://lol.ps/")
+            .header("Origin", "https://lol.ps")
+            .header("User-Agent", LOLPS_USER_AGENT)
+            .send()
+            .ok()?
+            .text()
+            .ok()
+    }
+
+    fn version_has_data(&self, version: u32, lane_str: &str, tier: u32) -> bool {
+        let url = format!("{LOLPS_TIERLIST_URL}?region=0&version={version}&tier={tier}&lane={lane_str}");
+        let Some(body) = self.lolps_get(&url) else { return false };
+        serde_json::from_str::<serde_json::Value>(&body)
+            .ok()
+            .and_then(|v| v.get("data").and_then(|d| d.as_array()).map(|a| !a.is_empty()))
+            .unwrap_or(false)
+    }
+
+    // Binary search for the highest lol.ps internal version number that has data.
+    // lol.ps uses a sequential integer (not a patch string) for version.
+    fn find_current_version(&self, lane_str: &str, tier: u32) -> Option<u32> {
+        let mut lo: u32 = 1;
+        let mut hi: u32 = 500;
+        let mut best: Option<u32> = None;
+        while lo <= hi {
+            let mid = lo + (hi - lo) / 2;
+            if self.version_has_data(mid, lane_str, tier) {
+                best = Some(mid);
+                lo = mid + 1;
+            } else {
+                if mid == 0 { break; }
+                hi = mid - 1;
+            }
+        }
+        best
     }
 }
 
@@ -777,17 +804,19 @@ impl Default for LolPsKrProvider {
 }
 
 #[derive(Deserialize)]
-struct LolPsTierlistResponse {
-    data: Vec<LolPsChampionEntry>,
+#[serde(rename_all = "camelCase")]
+struct LolPsChampionEntry {
+    champion_id: i64,
+    win_rate: String,
+    pick_rate: String,
+    ban_rate: String,
+    champion_info: Option<LolPsChampionInfo>,
 }
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct LolPsChampionEntry {
-    champion_id: i64,
-    win_rate: f64,
-    pick_rate: f64,
-    ban_rate: f64,
+struct LolPsChampionInfo {
+    name_us: Option<String>,
 }
 
 fn lolps_lane_str(lane: domain::RankedChampionLane) -> &'static str {
@@ -814,51 +843,51 @@ impl application::RankedChampionDataProvider for LolPsKrProvider {
         &self,
         input: application::RankedChampionRefreshInput,
     ) -> Result<domain::RankedChampionDataSnapshot, application::RankedChampionDataError> {
-        let version = input
-            .patch_version
-            .or_else(|| self.fetch_patch_version())
-            .ok_or_else(|| {
-                application::RankedChampionDataError::Unavailable(
-                    "Could not determine current patch version for lol.ps".to_string(),
-                )
-            })?;
-
         let lane = input.lane.clone().unwrap_or(domain::RankedChampionLane::Top);
         let lane_str = lolps_lane_str(lane.clone());
         let tier = input.tier;
 
-        let url = format!(
-            "{LOLPS_TIERLIST_URL}?region=0&version={version}&tier={tier}&lane={lane_str}"
-        );
+        let version = self.find_current_version(lane_str, tier).ok_or_else(|| {
+            application::RankedChampionDataError::Unavailable(
+                "lol.ps: could not find a version with data".to_string(),
+            )
+        })?;
 
-        let body = self
-            .http_client
-            .get(&url)
-            .send()
-            .map_err(|e| {
-                application::RankedChampionDataError::Unavailable(format!(
-                    "lol.ps request failed: {e}"
-                ))
-            })?
-            .text()
-            .map_err(|e| {
-                application::RankedChampionDataError::Unavailable(format!(
-                    "lol.ps response could not be read: {e}"
-                ))
+        let url = format!("{LOLPS_TIERLIST_URL}?region=0&version={version}&tier={tier}&lane={lane_str}");
+        let body = self.lolps_get(&url).ok_or_else(|| {
+            application::RankedChampionDataError::Unavailable(
+                "lol.ps request failed".to_string(),
+            )
+        })?;
+
+        let root: serde_json::Value = serde_json::from_str(&body).map_err(|e| {
+            application::RankedChampionDataError::InvalidData(format!(
+                "lol.ps response JSON is invalid: {e}"
+            ))
+        })?;
+
+        let entries_value = root
+            .get("data")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .ok_or_else(|| {
+                application::RankedChampionDataError::InvalidData(
+                    "lol.ps response missing 'data' array".to_string(),
+                )
             })?;
 
-        let response: LolPsTierlistResponse =
-            serde_json::from_str(&body).map_err(|e| {
-                application::RankedChampionDataError::InvalidData(format!(
-                    "lol.ps response JSON is invalid: {e}"
-                ))
-            })?;
-
-        if response.data.is_empty() {
+        if entries_value.is_empty() {
             return Err(application::RankedChampionDataError::Unavailable(
-                "lol.ps returned no data for the selected lane/tier/version".to_string(),
+                "lol.ps returned no data for the selected lane/tier".to_string(),
             ));
         }
+
+        let raw_entries: Vec<LolPsChampionEntry> =
+            serde_json::from_value(serde_json::Value::Array(entries_value)).map_err(|e| {
+                application::RankedChampionDataError::InvalidData(format!(
+                    "lol.ps champion entries could not be parsed: {e}"
+                ))
+            })?;
 
         let hints_by_id: std::collections::HashMap<i64, &str> = input
             .champion_hints
@@ -866,17 +895,17 @@ impl application::RankedChampionDataProvider for LolPsKrProvider {
             .map(|h| (h.id, h.name.as_str()))
             .collect();
 
-        let records = response
-            .data
+        let records = raw_entries
             .into_iter()
             .filter_map(|entry| {
-                let win = round_to_tenth(entry.win_rate);
-                let pick = round_to_tenth(entry.pick_rate);
-                let ban = round_to_tenth(entry.ban_rate);
+                let win = round_to_tenth(entry.win_rate.parse::<f64>().ok()?);
+                let pick = round_to_tenth(entry.pick_rate.parse::<f64>().ok()?);
+                let ban = round_to_tenth(entry.ban_rate.parse::<f64>().ok()?);
                 let overall = ranked_overall_score(win, pick, ban);
-                let name = hints_by_id
-                    .get(&entry.champion_id)
-                    .map(|s| s.to_string())
+                let name = entry.champion_info
+                    .and_then(|i| i.name_us)
+                    .filter(|n| !n.is_empty())
+                    .or_else(|| hints_by_id.get(&entry.champion_id).map(|s| s.to_string()))
                     .unwrap_or_else(|| format!("Champion {}", entry.champion_id));
                 Some(domain::RankedChampionStat {
                     champion_id: entry.champion_id,
@@ -897,7 +926,7 @@ impl application::RankedChampionDataProvider for LolPsKrProvider {
 
         Ok(domain::RankedChampionDataSnapshot {
             source: "lol.ps-kr".to_string(),
-            patch: Some(version),
+            patch: Some(version.to_string()),
             region: Some("KR".to_string()),
             queue: Some("RANKED_SOLO_5X5".to_string()),
             tier: Some(lolps_tier_label(tier).to_string()),

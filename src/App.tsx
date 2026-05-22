@@ -22,6 +22,8 @@ import { isPostGameNotesHash, openPostGameNotesWindow } from "./windows/postGame
 
 type Page = StartupPage | "profile" | "matches" | "ranked" | "advisor" | "rune";
 
+const PERSISTENT_PAGES = new Set<Page>(["matches", "ranked", "activity"]);
+
 const pages: Array<{ id: Page; labelKey: TranslationKey; icon: IconName }> = [
   { id: "dashboard", labelKey: "nav.dashboard", icon: "dashboard" },
   { id: "profile", labelKey: "nav.profile", icon: "profile" },
@@ -66,6 +68,7 @@ export function App() {
 export function AppShell() {
   const { snapshot, feedback, clearFeedback, isLoading, refresh, effectiveLanguage, setLanguagePreference, t } = useAppCore();
   const [activePage, setActivePage] = useState<Page>("dashboard");
+  const [mountedPages, setMountedPages] = useState<Set<Page>>(() => new Set(["dashboard"]));
   const didApplyStartupPage = useRef(false);
   const didUserNavigate = useRef(false);
   const compactMode = snapshot?.settings.compactMode ?? false;
@@ -87,6 +90,9 @@ export function AppShell() {
 
     startTransition(() => {
       setActivePage(page);
+      if (PERSISTENT_PAGES.has(page)) {
+        setMountedPages((prev) => prev.has(page) ? prev : new Set([...prev, page]));
+      }
     });
   }, []);
 
@@ -182,8 +188,8 @@ export function AppShell() {
             className={[
               "flex items-center justify-between gap-4 border-b px-8 py-3 text-sm font-medium",
               feedback.kind === "success"
-                ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-                : "border-amber-200 bg-amber-50 text-amber-800",
+                ? "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
+                : "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-300",
             ].join(" ")}
           >
             <span>{feedback.message}</span>
@@ -211,11 +217,11 @@ export function AppShell() {
         )}
         {activePage === "dashboard" && <Dashboard />}
         {activePage === "profile" && <Profile />}
-        {activePage === "matches" && <Matches />}
+        {mountedPages.has("matches") && <div className={activePage === "matches" ? "" : "hidden"}><Matches /></div>}
         {activePage === "advisor" && <Advisor />}
-        {activePage === "ranked" && <RankedChampions />}
+        {mountedPages.has("ranked") && <div className={activePage === "ranked" ? "" : "hidden"}><RankedChampions /></div>}
         {activePage === "rune" && <Rune />}
-        {activePage === "activity" && <Activity />}
+        {mountedPages.has("activity") && <div className={activePage === "activity" ? "" : "hidden"}><Activity /></div>}
         {activePage === "settings" && <Settings />}
       </div>
     </div>

@@ -35,7 +35,7 @@ export function Advisor() {
 
   return (
     <main className="min-h-0 flex-1 overflow-auto px-8 py-7">
-      <div className="mx-auto flex w-full max-w-7xl flex-col gap-7">
+      <div className="mx-auto flex w-full max-w-6xl flex-col gap-7">
         <header className="flex flex-wrap items-end justify-between gap-4">
           <div>
             <p className="text-sm font-medium uppercase tracking-wide text-rose-700">{t("advisor.eyebrow")}</p>

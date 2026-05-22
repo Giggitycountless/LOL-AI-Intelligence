@@ -486,6 +486,7 @@ export type LeagueGameAsset = {
 
 export type PlayerNoteSummary = {
   hasNote: boolean;
+  note: string | null;
   tags: string[];
 };
 

@@ -137,12 +137,12 @@ function ParticipantNoteCard({
   t,
 }: {
   participant: PostMatchParticipant;
-  savedNote: { hasNote: boolean; tags: string[] };
+  savedNote: { hasNote: boolean; note: string | null; tags: string[] };
   onSave: (note: string, tags: string[]) => void;
   onClear: () => void;
   t: (key: TranslationKey) => string;
 }) {
-  const [note, setNote] = useState("");
+  const [note, setNote] = useState(savedNote.note ?? "");
   const [tagInput, setTagInput] = useState("");
   const [tags, setTags] = useState<string[]>(savedNote.tags);
   const [isExpanded, setIsExpanded] = useState(false);
@@ -192,7 +192,7 @@ function ParticipantNoteCard({
             isExpanded ? "text-rose-700" : hasContent ? "text-emerald-700" : "text-zinc-400 dark:text-zinc-500",
           ].join(" ")}
         >
-          {isExpanded ? t("common.save" as TranslationKey) : hasContent ? "★ Note" : "+ Note"}
+          {isExpanded ? "✕" : hasContent ? "★ Note" : "+ Note"}
         </button>
       </div>
 

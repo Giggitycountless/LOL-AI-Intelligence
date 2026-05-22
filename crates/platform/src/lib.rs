@@ -3359,6 +3359,7 @@ mod tests {
                     spells: vec![4, 14],
                     note_summary: PlayerNoteSummary {
                         has_note: true,
+                        note: Some("Strong early game, roams well".to_string()),
                         tags: vec!["carry".to_string()],
                     },
                 }],

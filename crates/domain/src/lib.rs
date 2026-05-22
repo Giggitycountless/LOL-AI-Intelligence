@@ -257,6 +257,7 @@ pub struct ClearActivityResult {
 #[serde(rename_all = "camelCase")]
 pub struct PlayerNoteSummary {
     pub has_note: bool,
+    pub note: Option<String>,
     pub tags: Vec<String>,
 }
 

@@ -353,8 +353,10 @@ export function AppStateProvider({ children, mode = "main" }: { children: ReactN
   const savePlayerNoteAction = useCallback(async (input: SavePlayerNoteInput) => {
     try {
       const note = await savePlayerNoteCommand(input);
-      await loadPostMatchDetailAction(input.gameId);
-      await loadParticipantProfileAction({ gameId: input.gameId, participantId: input.participantId, recentLimit: 6 });
+      await Promise.all([
+        loadPostMatchDetailAction(input.gameId),
+        loadParticipantProfileAction({ gameId: input.gameId, participantId: input.participantId, recentLimit: 6 }),
+      ]);
       setFeedback({ kind: "success", message: t("feedback.playerNoteSaved") });
       return note;
     } catch (caught: unknown) {
@@ -366,8 +368,10 @@ export function AppStateProvider({ children, mode = "main" }: { children: ReactN
   const clearPlayerNoteAction = useCallback(async (gameId: number, participantId: number) => {
     try {
       await clearPlayerNoteCommand({ gameId, participantId });
-      await loadPostMatchDetailAction(gameId);
-      await loadParticipantProfileAction({ gameId, participantId, recentLimit: 6 });
+      await Promise.all([
+        loadPostMatchDetailAction(gameId),
+        loadParticipantProfileAction({ gameId, participantId, recentLimit: 6 }),
+      ]);
       setFeedback({ kind: "success", message: t("feedback.playerNoteCleared") });
       return true;
     } catch (caught: unknown) {

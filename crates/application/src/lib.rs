@@ -833,6 +833,12 @@ pub fn refresh_ranked_champion_stats(
     let mut snapshot = match provider.fetch_ranked_champion_snapshot(input) {
         Ok(snapshot) => snapshot,
         Err(error) => {
+            let error_message = match &error {
+                RankedChampionDataError::Unavailable(msg)
+                | RankedChampionDataError::InvalidData(msg) => msg.clone(),
+            };
+            eprintln!("[ranked] refresh failed: {error_message}");
+
             let cached_snapshot = store
                 .latest_ranked_champion_snapshot()
                 .map_err(ApplicationError::Storage)?;
@@ -850,10 +856,9 @@ pub fn refresh_ranked_champion_stats(
                         stats_input,
                         true,
                         RankedChampionDataStatus::StaleCache,
-                        Some(
-                            "Remote ranked champion data could not be refreshed; showing cached data"
-                                .to_string(),
-                        ),
+                        Some(format!(
+                            "Remote ranked champion data could not be refreshed: {error_message}"
+                        )),
                     ))
                 },
             );
@@ -1207,6 +1212,7 @@ pub fn player_note_summary(
     let Some(player_puuid) = player_puuid else {
         return Ok(PlayerNoteSummary {
             has_note: false,
+            note: None,
             tags: Vec::new(),
         });
     };
@@ -1216,6 +1222,7 @@ pub fn player_note_summary(
 
     Ok(PlayerNoteSummary {
         has_note: note.as_ref().is_some_and(|value| value.note.is_some()),
+        note: note.as_ref().and_then(|value| value.note.clone()),
         tags: note.map(|value| value.tags).unwrap_or_default(),
     })
 }
