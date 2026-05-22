@@ -151,6 +151,47 @@ impl SqliteStore {
         Ok(deleted > 0)
     }
 
+    pub fn get_ai_analysis(&self, scope: &str) -> StorageResult<Option<domain::AiAnalysisCache>> {
+        let connection = Connection::open(&self.database_path)?;
+        configure_connection(&connection)?;
+        connection
+            .query_row(
+                "SELECT scope, result_text, game_count_at_analysis, analyzed_at
+                 FROM ai_analysis_cache WHERE scope = ?1",
+                [scope],
+                |row| {
+                    Ok(domain::AiAnalysisCache {
+                        scope: row.get(0)?,
+                        result_text: row.get(1)?,
+                        game_count_at_analysis: row.get(2)?,
+                        analyzed_at: row.get(3)?,
+                    })
+                },
+            )
+            .optional()
+            .map_err(StorageError::from)
+    }
+
+    pub fn save_ai_analysis(
+        &self,
+        scope: &str,
+        result_text: &str,
+        game_count: i64,
+    ) -> StorageResult<()> {
+        let connection = Connection::open(&self.database_path)?;
+        configure_connection(&connection)?;
+        connection.execute(
+            "INSERT INTO ai_analysis_cache (scope, result_text, game_count_at_analysis, analyzed_at)
+             VALUES (?1, ?2, ?3, CURRENT_TIMESTAMP)
+             ON CONFLICT(scope) DO UPDATE SET
+               result_text = excluded.result_text,
+               game_count_at_analysis = excluded.game_count_at_analysis,
+               analyzed_at = excluded.analyzed_at",
+            rusqlite::params![scope, result_text, game_count],
+        )?;
+        Ok(())
+    }
+
     pub fn clear_activity_entries(&self) -> StorageResult<i64> {
         let connection = Connection::open(&self.database_path)?;
         configure_connection(&connection)?;
@@ -341,6 +382,11 @@ fn run_migrations(connection: &mut Connection) -> StorageResult<()> {
             description: "theme_preference",
             sql: MIGRATION_0010,
         },
+        Migration {
+            version: 11,
+            description: "ai_config",
+            sql: MIGRATION_0011,
+        },
     ] {
         let migration_is_applied = transaction
             .query_row(
@@ -387,7 +433,7 @@ fn read_settings(connection: &Connection) -> StorageResult<AppSettings> {
             "SELECT startup_page, language, theme, compact_mode, activity_limit,
                 auto_accept_enabled, auto_pick_enabled, auto_pick_champion_id,
                 auto_pick_delay_seconds, auto_ban_enabled, auto_ban_champion_id,
-                auto_ban_delay_seconds, updated_at
+                auto_ban_delay_seconds, ai_base_url, ai_api_key, ai_model, updated_at
             FROM app_settings
             WHERE id = 1",
             [],
@@ -409,7 +455,10 @@ fn read_settings(connection: &Connection) -> StorageResult<AppSettings> {
                     row.get::<_, i64>(9)?,
                     row.get::<_, Option<i64>>(10)?,
                     row.get::<_, f64>(11)?,
-                    row.get::<_, String>(12)?,
+                    row.get::<_, Option<String>>(12)?,
+                    row.get::<_, Option<String>>(13)?,
+                    row.get::<_, Option<String>>(14)?,
+                    row.get::<_, String>(15)?,
                 ))
             },
         )
@@ -428,6 +477,9 @@ fn read_settings(connection: &Connection) -> StorageResult<AppSettings> {
                 auto_ban_enabled,
                 auto_ban_champion_id,
                 auto_ban_delay_seconds,
+                ai_base_url,
+                ai_api_key,
+                ai_model,
                 updated_at,
             )| {
                 let startup_page = StartupPage::parse(startup_page.as_str())
@@ -450,6 +502,9 @@ fn read_settings(connection: &Connection) -> StorageResult<AppSettings> {
                     auto_ban_enabled: int_to_bool(auto_ban_enabled),
                     auto_ban_champion_id,
                     auto_ban_delay_seconds,
+                    ai_base_url,
+                    ai_api_key,
+                    ai_model,
                     updated_at,
                 })
             },
@@ -471,6 +526,9 @@ fn write_settings(connection: &Connection, settings: &SettingsValues) -> Storage
             auto_ban_enabled = ?10,
             auto_ban_champion_id = ?11,
             auto_ban_delay_seconds = ?12,
+            ai_base_url = ?13,
+            ai_api_key = ?14,
+            ai_model = ?15,
             updated_at = CURRENT_TIMESTAMP
         WHERE id = 1",
         (
@@ -486,6 +544,9 @@ fn write_settings(connection: &Connection, settings: &SettingsValues) -> Storage
             bool_to_int(settings.auto_ban_enabled),
             settings.auto_ban_champion_id,
             settings.auto_ban_delay_seconds,
+            settings.ai_base_url.as_deref(),
+            settings.ai_api_key.as_deref(),
+            settings.ai_model.as_deref(),
         ),
     )?;
 
@@ -1066,6 +1127,15 @@ impl application::AppStore for SqliteStore {
         SqliteStore::delete_champion_rune_config(self, champion_id)
             .map_err(|error| error.to_string())
     }
+
+    fn get_ai_analysis(&self, scope: &str) -> Result<Option<domain::AiAnalysisCache>, String> {
+        SqliteStore::get_ai_analysis(self, scope).map_err(|error| error.to_string())
+    }
+
+    fn save_ai_analysis(&self, scope: &str, result_text: &str, game_count: i64) -> Result<(), String> {
+        SqliteStore::save_ai_analysis(self, scope, result_text, game_count)
+            .map_err(|error| error.to_string())
+    }
 }
 
 #[cfg(test)]
@@ -1083,10 +1153,10 @@ mod tests {
         let store = SqliteStore::initialize(&data_dir).expect("storage initializes");
 
         assert!(store.database_path().exists());
-        assert_eq!(store.health().expect("storage health").schema_version, 10);
+        assert_eq!(store.health().expect("storage health").schema_version, 11);
         assert_eq!(store.get_settings().expect("settings").activity_limit, 100);
         assert_eq!(store.get_settings().expect("settings").language, AppLanguagePreference::System);
-        assert_eq!(migration_count(store.database_path()), 10);
+        assert_eq!(migration_count(store.database_path()), 11);
 
         let _ = fs::remove_dir_all(data_dir);
     }
@@ -1099,8 +1169,8 @@ mod tests {
         let second = SqliteStore::initialize(&data_dir).expect("second initialization");
 
         assert_eq!(first.database_path(), second.database_path());
-        assert_eq!(second.health().expect("storage health").schema_version, 10);
-        assert_eq!(migration_count(store.database_path()), 10);
+        assert_eq!(second.health().expect("storage health").schema_version, 11);
+        assert_eq!(migration_count(second.database_path()), 11);
 
         let _ = fs::remove_dir_all(data_dir);
     }
@@ -1134,7 +1204,7 @@ mod tests {
 
         let store = SqliteStore::initialize(&data_dir).expect("upgrade database");
 
-        assert_eq!(store.health().expect("storage health").schema_version, 10);
+        assert_eq!(store.health().expect("storage health").schema_version, 11);
         assert_eq!(
             store.get_settings().expect("settings").startup_page,
             StartupPage::Dashboard
@@ -1143,7 +1213,7 @@ mod tests {
             store.get_settings().expect("settings").language,
             AppLanguagePreference::System
         );
-        assert_eq!(migration_count(store.database_path()), 10);
+        assert_eq!(migration_count(store.database_path()), 11);
 
         let _ = fs::remove_dir_all(data_dir);
     }
@@ -1167,6 +1237,9 @@ mod tests {
                 auto_ban_enabled: true,
                 auto_ban_champion_id: Some(122),
                 auto_ban_delay_seconds: 0.5,
+                ai_base_url: None,
+                ai_api_key: None,
+                ai_model: None,
             })
             .expect("settings saved");
 
@@ -1268,6 +1341,9 @@ mod tests {
                     auto_ban_enabled: false,
                     auto_ban_champion_id: None,
                     auto_ban_delay_seconds: 0.0,
+                    ai_base_url: None,
+                    ai_api_key: None,
+                    ai_model: None,
                 },
                 &[LocalActivityEntry {
                     kind: ActivityKind::Note,

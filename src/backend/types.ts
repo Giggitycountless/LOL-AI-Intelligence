@@ -52,7 +52,23 @@ export type AppSettings = {
   autoBanEnabled: boolean;
   autoBanChampionId: number | null;
   autoBanDelaySeconds: number;
+  aiBaseUrl: string | null;
+  aiApiKey: string | null;
+  aiModel: string | null;
   updatedAt: string;
+};
+
+export type AiConfig = {
+  baseUrl: string | null;
+  apiKey: string | null;
+  model: string | null;
+};
+
+export type AiAnalysisCache = {
+  scope: string;
+  resultText: string;
+  gameCountAtAnalysis: number;
+  analyzedAt: string;
 };
 
 export type SaveSettingsInput = {
@@ -68,6 +84,9 @@ export type SaveSettingsInput = {
   autoBanEnabled: boolean;
   autoBanChampionId: number | null;
   autoBanDelaySeconds: number;
+  aiBaseUrl: string | null;
+  aiApiKey: string | null;
+  aiModel: string | null;
 };
 
 export type RunePage = {

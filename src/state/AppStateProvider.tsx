@@ -272,6 +272,9 @@ export function AppStateProvider({ children, mode = "main" }: { children: ReactN
         autoBanEnabled: current.autoBanEnabled,
         autoBanChampionId: current.autoBanChampionId,
         autoBanDelaySeconds: current.autoBanDelaySeconds,
+        aiBaseUrl: (current as import("../backend/types").AppSettings).aiBaseUrl ?? null,
+        aiApiKey: (current as import("../backend/types").AppSettings).aiApiKey ?? null,
+        aiModel: (current as import("../backend/types").AppSettings).aiModel ?? null,
       });
     },
     [saveSettingsAction, snapshot?.settings, snapshot?.settingsDefaults],

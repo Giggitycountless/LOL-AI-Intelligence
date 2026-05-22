@@ -30,7 +30,16 @@ A per-action (pick and ban are independent) timer, 0–5 seconds in 0.5-second i
 A dedicated sidebar tab showing raw stats (recent KDA, win rate, match history) for all 10 players during champ select. Data-only — no recommendations. Distinct from the Advisor page.
 
 ### Advisor Page
-Reserved for AI-powered analysis. Future implementation will send player data to an external AI API and display AI-generated recommendations. Currently shows static sample data marked as TODO.
+An on-demand AI analysis page. The user triggers analysis manually; the app sends the player's recent match data to an external AI API and streams back a structured report. The prior champion-guide content (static sample data) has been removed entirely.
+
+### Player Analysis
+The AI-generated output produced by the `Advisor Page`. Structure: a concise block of three named sections (strengths, weaknesses, one improvement focus) followed by a detailed free-text analysis paragraph. Language follows the app's current `effectiveLanguage`. Results are cached in SQLite and re-used until the player has played 5 or more new games since the last analysis, at which point a prompt appears suggesting a refresh.
+
+### Analysis Scope
+The filter applied before sending data to the AI. Defaults to **All** (all recent games regardless of position). The user can narrow to a single position (Top / Jungle / Mid / Bot / Support) to get role-specific advice. The 50-game window is applied after the scope filter.
+
+### AI Provider Config
+Three user-supplied values stored in SQLite: `base_url`, `api_key`, and `model`. Configured once in the Settings page. The app uses the OpenAI-compatible chat-completions format, so any provider that implements that interface (OpenAI, DeepSeek, Qwen, Moonshot, etc.) works without code changes.
 
 ### In-Game Overlay
 A separate Tauri window (`SelfHistoryOverlay`) that appears only during the `InProgress` game phase. Displays the ten-player roster with historical stats collected during the preceding Champ-Select phase. Primary use: in-game scouting — identifying which allies need extra support and which enemies are exploitable based on their recent performance.

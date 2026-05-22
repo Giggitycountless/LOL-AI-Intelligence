@@ -24,6 +24,9 @@ fn save_settings_does_not_log_activity_when_values_are_unchanged() {
             auto_ban_enabled: false,
             auto_ban_champion_id: None,
             auto_ban_delay_seconds: 0.0,
+            ai_base_url: None,
+            ai_api_key: None,
+            ai_model: None,
         },
     )
     .expect("settings save succeeds");
@@ -51,6 +54,9 @@ fn save_settings_logs_activity_when_values_change() {
             auto_ban_enabled: true,
             auto_ban_champion_id: Some(122),
             auto_ban_delay_seconds: 0.5,
+            ai_base_url: None,
+            ai_api_key: None,
+            ai_model: None,
         },
     )
     .expect("settings save succeeds");
@@ -1074,6 +1080,9 @@ impl AppStore for FakeStore {
             auto_ban_enabled: settings.auto_ban_enabled,
             auto_ban_champion_id: settings.auto_ban_champion_id,
             auto_ban_delay_seconds: settings.auto_ban_delay_seconds,
+            ai_base_url: settings.ai_base_url,
+            ai_api_key: settings.ai_api_key,
+            ai_model: settings.ai_model,
             updated_at: "2026-04-18 00:00:00".to_string(),
         };
 
@@ -1225,6 +1234,14 @@ impl AppStore for FakeStore {
     fn delete_champion_rune_config(&self, _champion_id: i64) -> Result<bool, String> {
         Ok(false)
     }
+
+    fn get_ai_analysis(&self, _scope: &str) -> Result<Option<domain::AiAnalysisCache>, String> {
+        Ok(None)
+    }
+
+    fn save_ai_analysis(&self, _scope: &str, _result_text: &str, _game_count: i64) -> Result<(), String> {
+        Ok(())
+    }
 }
 
 struct FakeRankedChampionProvider {
@@ -1280,6 +1297,9 @@ fn default_settings() -> AppSettings {
         auto_ban_enabled: false,
         auto_ban_champion_id: None,
         auto_ban_delay_seconds: 0.0,
+        ai_base_url: None,
+        ai_api_key: None,
+        ai_model: None,
         updated_at: "2026-04-18 00:00:00".to_string(),
     }
 }

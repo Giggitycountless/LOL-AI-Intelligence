@@ -79,6 +79,8 @@ pub trait AppStore {
         page: RunePage,
     ) -> Result<ChampionRuneConfig, String>;
     fn delete_champion_rune_config(&self, champion_id: i64) -> Result<bool, String>;
+    fn get_ai_analysis(&self, scope: &str) -> Result<Option<domain::AiAnalysisCache>, String>;
+    fn save_ai_analysis(&self, scope: &str, result_text: &str, game_count: i64) -> Result<(), String>;
 }
 
 pub trait LeagueClientReader {
@@ -233,6 +235,9 @@ pub struct SettingsInput {
     pub auto_ban_enabled: bool,
     pub auto_ban_champion_id: Option<i64>,
     pub auto_ban_delay_seconds: f64,
+    pub ai_base_url: Option<String>,
+    pub ai_api_key: Option<String>,
+    pub ai_model: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -517,6 +522,9 @@ pub fn settings_defaults() -> SettingsValues {
         auto_ban_enabled: false,
         auto_ban_champion_id: None,
         auto_ban_delay_seconds: 0.0,
+        ai_base_url: None,
+        ai_api_key: None,
+        ai_model: None,
     }
 }
 
@@ -1528,6 +1536,10 @@ fn validate_settings(input: SettingsInput) -> Result<SettingsValues, Application
     let theme = AppThemePreference::parse(input.theme.as_str())
         .ok_or_else(|| ApplicationError::Validation("Theme must be light or dark".into()))?;
 
+    let ai_base_url = normalize_optional_string(input.ai_base_url);
+    let ai_api_key = normalize_optional_string(input.ai_api_key);
+    let ai_model = normalize_optional_string(input.ai_model);
+
     let values = SettingsValues {
         startup_page,
         language,
@@ -1541,6 +1553,9 @@ fn validate_settings(input: SettingsInput) -> Result<SettingsValues, Application
         auto_ban_enabled: input.auto_ban_enabled,
         auto_ban_champion_id: input.auto_ban_champion_id,
         auto_ban_delay_seconds: normalize_delay_seconds(input.auto_ban_delay_seconds),
+        ai_base_url,
+        ai_api_key,
+        ai_model,
     };
 
     validate_settings_values(&values)?;
@@ -1576,6 +1591,13 @@ fn validate_optional_champion_id(
     }
 
     Ok(())
+}
+
+fn normalize_optional_string(value: Option<String>) -> Option<String> {
+    value.and_then(|s| {
+        let trimmed = s.trim().to_string();
+        if trimmed.is_empty() { None } else { Some(trimmed) }
+    })
 }
 
 fn normalize_delay_seconds(value: f64) -> f64 {

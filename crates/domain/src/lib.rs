@@ -46,6 +46,9 @@ pub struct AppSettings {
     pub auto_ban_enabled: bool,
     pub auto_ban_champion_id: Option<i64>,
     pub auto_ban_delay_seconds: f64,
+    pub ai_base_url: Option<String>,
+    pub ai_api_key: Option<String>,
+    pub ai_model: Option<String>,
     pub updated_at: String,
 }
 
@@ -73,6 +76,29 @@ pub struct SettingsValues {
     pub auto_ban_champion_id: Option<i64>,
     #[serde(default)]
     pub auto_ban_delay_seconds: f64,
+    #[serde(default)]
+    pub ai_base_url: Option<String>,
+    #[serde(default)]
+    pub ai_api_key: Option<String>,
+    #[serde(default)]
+    pub ai_model: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AiConfig {
+    pub base_url: Option<String>,
+    pub api_key: Option<String>,
+    pub model: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AiAnalysisCache {
+    pub scope: String,
+    pub result_text: String,
+    pub game_count_at_analysis: i64,
+    pub analyzed_at: String,
 }
 
 fn default_true() -> bool {
@@ -94,6 +120,17 @@ impl AppSettings {
             auto_ban_enabled: self.auto_ban_enabled,
             auto_ban_champion_id: self.auto_ban_champion_id,
             auto_ban_delay_seconds: self.auto_ban_delay_seconds,
+            ai_base_url: self.ai_base_url.clone(),
+            ai_api_key: self.ai_api_key.clone(),
+            ai_model: self.ai_model.clone(),
+        }
+    }
+
+    pub fn ai_config(&self) -> AiConfig {
+        AiConfig {
+            base_url: self.ai_base_url.clone(),
+            api_key: self.ai_api_key.clone(),
+            model: self.ai_model.clone(),
         }
     }
 }

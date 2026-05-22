@@ -34,6 +34,9 @@ export function Settings() {
     autoBanEnabled: false,
     autoBanChampionId: null,
     autoBanDelaySeconds: 0,
+    aiBaseUrl: null,
+    aiApiKey: null,
+    aiModel: null,
   });
   const [champions, setChampions] = useState<LeagueChampionSummary[]>([]);
   const [isLoadingChampions, setIsLoadingChampions] = useState(false);
@@ -45,6 +48,7 @@ export function Settings() {
   const [isExporting, setIsExporting] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [isClearing, setIsClearing] = useState(false);
+  const id = useId();
   const persisted = snapshot?.settings;
   const defaults = snapshot?.settingsDefaults;
 
@@ -63,6 +67,9 @@ export function Settings() {
         autoBanEnabled: persisted.autoBanEnabled,
         autoBanChampionId: persisted.autoBanChampionId,
         autoBanDelaySeconds: persisted.autoBanDelaySeconds,
+        aiBaseUrl: persisted.aiBaseUrl ?? null,
+        aiApiKey: persisted.aiApiKey ?? null,
+        aiModel: persisted.aiModel ?? null,
       });
     }
   }, [persisted]);
@@ -347,6 +354,32 @@ export function Settings() {
                 t={t}
               />
 
+              <fieldset className="grid gap-3 rounded-lg border border-zinc-200 p-4">
+                <legend className="px-1 text-sm font-semibold text-zinc-700">{t("settings.aiConfig")}</legend>
+                <AiConfigField
+                  id={`${id}-ai-base-url`}
+                  label={t("settings.aiBaseUrl")}
+                  placeholder="https://api.openai.com/v1"
+                  value={draft.aiBaseUrl ?? ""}
+                  onChange={(v) => setDraft((c) => ({ ...c, aiBaseUrl: v || null }))}
+                />
+                <AiConfigField
+                  id={`${id}-ai-api-key`}
+                  label={t("settings.aiApiKey")}
+                  placeholder="sk-..."
+                  type="password"
+                  value={draft.aiApiKey ?? ""}
+                  onChange={(v) => setDraft((c) => ({ ...c, aiApiKey: v || null }))}
+                />
+                <AiConfigField
+                  id={`${id}-ai-model`}
+                  label={t("settings.aiModel")}
+                  placeholder="gpt-4o"
+                  value={draft.aiModel ?? ""}
+                  onChange={(v) => setDraft((c) => ({ ...c, aiModel: v || null }))}
+                />
+              </fieldset>
+
               <button
                 type="submit"
                 disabled={!canSave}
@@ -439,6 +472,37 @@ export function Settings() {
 
       </div>
     </main>
+  );
+}
+
+function AiConfigField({
+  id,
+  label,
+  placeholder,
+  type = "text",
+  value,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  placeholder: string;
+  type?: "text" | "password";
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="grid gap-1" htmlFor={id}>
+      <span className="text-xs font-semibold text-zinc-600">{label}</span>
+      <input
+        id={id}
+        type={type}
+        placeholder={placeholder}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="h-9 rounded-md border border-zinc-300 bg-white px-3 text-sm text-zinc-950 outline-none focus:border-rose-700 focus:ring-2 focus:ring-rose-100 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-50"
+        autoComplete="off"
+      />
+    </label>
   );
 }
 

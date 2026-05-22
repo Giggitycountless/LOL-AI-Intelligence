@@ -165,3 +165,17 @@ export function deleteChampionRuneConfig(championId: number): Promise<boolean> {
     input: { championId },
   });
 }
+
+export function fetchAiConfig(): Promise<import("./types").AiConfig> {
+  return callBackend<import("./types").AiConfig>("get_ai_config");
+}
+
+export function fetchAiAnalysis(scope: string): Promise<import("./types").AiAnalysisCache | null> {
+  return callBackend<import("./types").AiAnalysisCache | null>("get_ai_analysis", { scope });
+}
+
+export function saveAiAnalysis(scope: string, resultText: string, gameCount: number): Promise<void> {
+  return callBackend<void>("save_ai_analysis", {
+    input: { scope, resultText, gameCount },
+  });
+}

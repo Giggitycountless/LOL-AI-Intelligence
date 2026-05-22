@@ -586,6 +586,20 @@ pub struct SettingsPayload {
     pub auto_ban_champion_id: Option<i64>,
     #[serde(default)]
     pub auto_ban_delay_seconds: f64,
+    #[serde(default)]
+    pub ai_base_url: Option<String>,
+    #[serde(default)]
+    pub ai_api_key: Option<String>,
+    #[serde(default)]
+    pub ai_model: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveAiAnalysisCommand {
+    pub scope: String,
+    pub result_text: String,
+    pub game_count: i64,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -1612,9 +1626,38 @@ pub fn save_settings(
             auto_ban_enabled: command.settings.auto_ban_enabled,
             auto_ban_champion_id: command.settings.auto_ban_champion_id,
             auto_ban_delay_seconds: command.settings.auto_ban_delay_seconds,
+            ai_base_url: command.settings.ai_base_url,
+            ai_api_key: command.settings.ai_api_key,
+            ai_model: command.settings.ai_model,
         },
     )
     .map_err(CommandError::from)
+}
+
+pub fn get_ai_config(state: &AppState) -> Result<domain::AiConfig, CommandError> {
+    application::get_settings(&state.store)
+        .map(|s| s.ai_config())
+        .map_err(CommandError::from)
+}
+
+pub fn save_ai_analysis(
+    state: &AppState,
+    command: SaveAiAnalysisCommand,
+) -> Result<(), CommandError> {
+    state
+        .store
+        .save_ai_analysis(&command.scope, &command.result_text, command.game_count)
+        .map_err(|e| CommandError { code: "storage", message: e.to_string() })
+}
+
+pub fn get_ai_analysis(
+    state: &AppState,
+    scope: &str,
+) -> Result<Option<domain::AiAnalysisCache>, CommandError> {
+    state
+        .store
+        .get_ai_analysis(scope)
+        .map_err(|e| CommandError { code: "storage", message: e.to_string() })
 }
 
 pub fn list_activity_entries(
