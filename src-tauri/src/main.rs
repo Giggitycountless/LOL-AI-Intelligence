@@ -275,6 +275,38 @@ static HOTKEY_LISTENER_STARTED: std::sync::atomic::AtomicBool =
 /// Called from the frontend after the window loads.
 /// Guards against multiple calls — only one rdev listener is ever started per process.
 #[tauri::command]
+fn run_ai_analysis(
+    app: tauri::AppHandle,
+    state: State<'_, platform::AppState>,
+    scope: String,
+) -> Result<(), platform::CommandError> {
+    platform::run_ai_analysis(&app, state.inner(), scope)
+}
+
+#[tauri::command]
+fn get_ai_config(
+    state: State<'_, platform::AppState>,
+) -> Result<domain::AiConfig, platform::CommandError> {
+    platform::get_ai_config(state.inner())
+}
+
+#[tauri::command]
+fn save_ai_analysis(
+    state: State<'_, platform::AppState>,
+    input: platform::SaveAiAnalysisCommand,
+) -> Result<(), platform::CommandError> {
+    platform::save_ai_analysis(state.inner(), input)
+}
+
+#[tauri::command]
+fn get_ai_analysis(
+    state: State<'_, platform::AppState>,
+    scope: String,
+) -> Result<Option<domain::AiAnalysisCache>, platform::CommandError> {
+    platform::get_ai_analysis(state.inner(), &scope)
+}
+
+#[tauri::command]
 fn init_overlay_hotkey(app: tauri::AppHandle) {
     if HOTKEY_LISTENER_STARTED.swap(true, std::sync::atomic::Ordering::SeqCst) {
         return;
@@ -391,6 +423,10 @@ fn main() {
             get_post_match_participant_profile,
             save_player_note,
             clear_player_note,
+            run_ai_analysis,
+            get_ai_config,
+            save_ai_analysis,
+            get_ai_analysis,
             init_overlay_hotkey,
             get_rune_recommendations,
             apply_rune_page,

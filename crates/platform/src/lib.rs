@@ -1640,6 +1640,192 @@ pub fn get_ai_config(state: &AppState) -> Result<domain::AiConfig, CommandError>
         .map_err(CommandError::from)
 }
 
+/// Spawn a background thread that streams AI analysis to the frontend via
+/// Tauri events:
+///   "ai-analysis-chunk"  — each streamed text fragment (String)
+///   "ai-analysis-done"   — full text saved to SQLite (String)
+///   "ai-analysis-error"  — error message (String)
+pub fn run_ai_analysis<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    state: &AppState,
+    scope: String,
+) -> Result<(), CommandError> {
+    let settings = application::get_settings(&state.store).map_err(CommandError::from)?;
+
+    let base_url = settings.ai_base_url.filter(|s| !s.is_empty())
+        .ok_or_else(|| CommandError { code: "config", message: "AI Base URL 未配置".into() })?;
+    let api_key = settings.ai_api_key.filter(|s| !s.is_empty())
+        .ok_or_else(|| CommandError { code: "config", message: "AI API Key 未配置".into() })?;
+    let model = settings.ai_model.filter(|s| !s.is_empty())
+        .ok_or_else(|| CommandError { code: "config", message: "AI 模型未配置".into() })?;
+    let language = settings.language;
+
+    let self_data = application::get_league_self_snapshot(
+        &state.league_client,
+        application::LeagueSelfSnapshotInput { match_limit: Some(50) },
+    )
+    .map_err(CommandError::from)?;
+
+    let game_count = self_data.recent_matches.len() as i64;
+    let prompt = build_ai_prompt(&self_data, &scope, language);
+    let store = state.store.clone();
+    let app_handle = app.clone();
+
+    std::thread::spawn(move || {
+        match stream_ai_chunks(&app_handle, &base_url, &api_key, &model, &prompt, &scope, &store, game_count) {
+            Ok(()) => {}
+            Err(e) => { let _ = app_handle.emit("ai-analysis-error", e); }
+        }
+    });
+
+    Ok(())
+}
+
+fn stream_ai_chunks<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    base_url: &str,
+    api_key: &str,
+    model: &str,
+    prompt: &str,
+    scope: &str,
+    store: &storage::SqliteStore,
+    game_count: i64,
+) -> Result<(), String> {
+    use std::io::{BufRead, BufReader};
+
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(180))
+        .build()
+        .map_err(|e| format!("HTTP 客户端初始化失败: {e}"))?;
+
+    let url = format!("{}/chat/completions", base_url.trim_end_matches('/'));
+    let body = serde_json::json!({
+        "model": model,
+        "stream": true,
+        "messages": [{ "role": "user", "content": prompt }]
+    });
+
+    let response = client
+        .post(&url)
+        .header("Authorization", format!("Bearer {api_key}"))
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .send()
+        .map_err(|e| format!("请求失败: {e}"))?;
+
+    if !response.status().is_success() {
+        let status = response.status().as_u16();
+        let body_text = response.text().unwrap_or_default();
+        let truncated: String = body_text.chars().take(300).collect();
+        return Err(format!("API 返回错误 {status}: {truncated}"));
+    }
+
+    let reader = BufReader::new(response);
+    let mut full_text = String::new();
+
+    for line_result in reader.lines() {
+        let line = line_result.map_err(|e| e.to_string())?;
+        let Some(data) = line.strip_prefix("data: ") else { continue };
+        if data.trim() == "[DONE]" { break; }
+        if let Ok(value) = serde_json::from_str::<serde_json::Value>(data) {
+            if let Some(content) = value["choices"][0]["delta"]["content"].as_str() {
+                full_text.push_str(content);
+                let _ = app.emit("ai-analysis-chunk", content.to_string());
+            }
+        }
+    }
+
+    store.save_ai_analysis(scope, &full_text, game_count)
+        .map_err(|e| e.to_string())?;
+    let _ = app.emit("ai-analysis-done", full_text);
+    Ok(())
+}
+
+fn build_ai_prompt(
+    snapshot: &domain::LeagueSelfSnapshot,
+    scope: &str,
+    language: domain::AppLanguagePreference,
+) -> String {
+    let lang_line = match language {
+        domain::AppLanguagePreference::En => "Please reply in English.",
+        _ => "请用中文回复。",
+    };
+
+    let matches = &snapshot.recent_matches;
+    let total = matches.len();
+    let wins = matches.iter().filter(|m| m.result == domain::MatchResult::Win).count();
+    let win_rate = if total > 0 {
+        format!("{:.1}", wins as f64 / total as f64 * 100.0)
+    } else { "N/A".into() };
+
+    let avg_kda = if total > 0 {
+        let sum: f64 = matches.iter().map(|m| m.kda.unwrap_or(0.0)).sum();
+        format!("{:.2}", sum / total as f64)
+    } else { "N/A".into() };
+
+    let mut champ_count: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
+    for m in matches { *champ_count.entry(m.champion_name.as_str()).or_default() += 1; }
+    let mut champ_vec: Vec<_> = champ_count.into_iter().collect();
+    champ_vec.sort_by(|a, b| b.1.cmp(&a.1));
+    let top_champs: String = champ_vec.iter().take(5)
+        .map(|(n, c)| format!("{n}({c}场)")).collect::<Vec<_>>().join(", ");
+
+    let ranked = snapshot.ranked_queues.iter()
+        .find(|q| q.queue == domain::RankedQueue::SoloDuo);
+    let rank_str = match ranked {
+        Some(r) if r.is_ranked => format!(
+            "{} {} {}LP（{}胜{}负）",
+            r.tier.as_deref().unwrap_or(""),
+            r.division.as_deref().unwrap_or(""),
+            r.league_points.unwrap_or(0),
+            r.wins, r.losses,
+        ),
+        _ => "未排名".into(),
+    };
+
+    let scope_label = match scope {
+        "top" => "上路", "jungle" => "打野", "middle" => "中路",
+        "bottom" => "下路", "support" => "辅助", _ => "全部",
+    };
+
+    let match_details: String = matches.iter().take(50).map(|m| {
+        let r = if m.result == domain::MatchResult::Win { "胜" } else { "败" };
+        format!("{} {} {}/{}/{}", m.champion_name, r, m.kills, m.deaths, m.assists)
+    }).collect::<Vec<_>>().join("\n");
+
+    format!(
+"{lang_line}
+
+你是一位英雄联盟教练，请根据以下玩家数据进行分析，给出简洁、实用的建议。
+
+## 玩家信息
+- 段位：{rank_str}
+- 分析范围：{scope_label}（近{total}场）
+- 胜率：{win_rate}%
+- 平均KDA：{avg_kda}
+- 常用英雄：{top_champs}
+
+## 近期对局明细
+{match_details}
+
+## 输出格式（请严格遵守）
+
+**优势**
+（2-3条，每条一行，具体说明做得好的方面）
+
+**弱点**
+（2-3条，每条一行，具体说明需要改进的问题）
+
+**本阶段改进重点**
+（1条最重要的改进建议，必须具体可执行）
+
+---
+
+**详细分析**
+（3-5段文字，深入分析表现规律、英雄池选择、与当前段位的差距等）"
+    )
+}
+
 pub fn save_ai_analysis(
     state: &AppState,
     command: SaveAiAnalysisCommand,
