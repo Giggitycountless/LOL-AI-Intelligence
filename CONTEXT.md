@@ -38,6 +38,15 @@ The AI-generated output produced by the `Advisor Page`. Structure: a concise blo
 ### Analysis Scope
 The filter applied before sending data to the AI. Defaults to **All** (all recent games regardless of position). The user can narrow to a single position (Top / Jungle / Mid / Bot / Support) to get role-specific advice. The 50-game window is applied after the scope filter.
 
+### Analysis Tone
+The persona the AI adopts when producing a `Player Analysis` or a `Match Recap`. Three options: **Objective** (default — neutral coach), **Rage** (毒舌喷子, harsh insults with data-grounded justification), **Flatter** (专业夸夸, surface-professional analysis that is actually pure flattery). The tone is independent of scope and applies the same way to multi-game and single-game analysis.
+
+### Match Recap
+The AI-generated single-game analysis produced by the **Match Recap window**, opened by clicking a row in the historical matches list. Always written from the local player's perspective (the "you" view), with the other nine participants' data included in the prompt as contextual reference — never as the primary subject. Each tone selection produces an independent cached result for the lifetime of the window; switching games discards the cache. Language follows the app's `effectiveLanguage`.
+
+### Match Recap Window
+A single-instance Tauri window (label reused across clicks, like `participant-profile`) that displays one historical match in full. Layout: **AI section on top** (title "赛后复盘" + three `Analysis Tone` tab buttons + streaming output), **detailed scoreboard below** (the existing `PostMatchAnalysis` component — both teams, comparison strip, builds). Clicking another match in the parent window updates this same window and aborts any in-flight AI stream. Replaces the previous inline-dropdown UX entirely.
+
 ### AI Provider Config
 Three user-supplied values stored in SQLite: `base_url`, `api_key`, and `model`. Configured once in the Settings page. The app uses the OpenAI-compatible chat-completions format, so any provider that implements that interface (OpenAI, DeepSeek, Qwen, Moonshot, etc.) works without code changes.
 
