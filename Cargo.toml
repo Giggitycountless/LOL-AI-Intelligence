@@ -29,8 +29,7 @@ sysinfo = { version = "0.38.4", default-features = false, features = ["system"] 
 tauri = "2.10.3"
 tauri-build = "2.5.6"
 rdev = "0.5"
-enigo = "0.3"
-windows = { version = "0.58", features = ["Win32_UI_WindowsAndMessaging", "Win32_Foundation"] }
+windows = { version = "0.58", features = ["Win32_UI_WindowsAndMessaging", "Win32_UI_Input_KeyboardAndMouse", "Win32_Foundation"] }
 rayon = "1.10"
 futures-util = "0.3.31"
 native-tls = "0.2.14"

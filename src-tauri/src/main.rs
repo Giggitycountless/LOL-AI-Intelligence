@@ -1,3 +1,7 @@
+// Release builds use the Windows subsystem (no console window pops up).
+// Debug builds keep the console so `eprintln!` / `println!` still show in dev.
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 use tauri::{Emitter, Manager, State};
 
 const SELF_HISTORY_OVERLAY_WINDOW_LABEL: &str = "self-history-overlay";
@@ -385,6 +389,10 @@ fn listen_for_overlay_hotkey(app: tauri::AppHandle) {
         // so stale flags from a previous session can't cause spurious toggles.
         let mut shift_down = false;
         let mut ctrl_down = false;
+        // "Tab was pressed while Shift was held" — latched at press time so the
+        // overlay still toggles even if the user releases Shift a few ms before Tab.
+        let mut tab_armed = false;
+        let mut number_armed: Option<i64> = None;
         let overlay_tx = overlay_tx.clone();
         let chat_tx = chat_tx.clone();
         let listen_result = listen(move |event: Event| {
@@ -401,14 +409,30 @@ fn listen_for_overlay_hotkey(app: tauri::AppHandle) {
                 EventType::KeyRelease(Key::ControlLeft | Key::ControlRight) => {
                     ctrl_down = false;
                 }
-                // KeyRelease avoids key-repeat firing multiple times.
-                // try_send: if a toggle is already queued, drop the extra press.
-                EventType::KeyRelease(Key::Tab) if shift_down && !ctrl_down => {
-                    let _ = overlay_tx.try_send(());
+                EventType::KeyPress(Key::Tab) => {
+                    if shift_down && !ctrl_down {
+                        tab_armed = true;
+                    }
                 }
-                EventType::KeyRelease(key) if ctrl_down && shift_down => {
-                    if let Some(slot) = number_key_to_slot(key) {
-                        let _ = chat_tx.try_send(slot);
+                EventType::KeyRelease(Key::Tab) => {
+                    if tab_armed {
+                        tab_armed = false;
+                        let _ = overlay_tx.try_send(());
+                    }
+                }
+                EventType::KeyPress(key) => {
+                    if ctrl_down && shift_down {
+                        if let Some(slot) = number_key_to_slot(key) {
+                            number_armed = Some(slot);
+                        }
+                    }
+                }
+                EventType::KeyRelease(key) => {
+                    if let Some(slot) = number_armed {
+                        if number_key_to_slot(key) == Some(slot) {
+                            number_armed = None;
+                            let _ = chat_tx.try_send(slot);
+                        }
                     }
                 }
                 _ => {}
@@ -498,21 +522,99 @@ fn is_league_game_foreground() -> bool {
     true
 }
 
+#[cfg(windows)]
 fn type_chat_message(message: &str) -> Result<(), String> {
-    use enigo::{Enigo, Key, Keyboard, Settings, Direction};
+    use std::time::Duration;
+    use windows::Win32::UI::Input::KeyboardAndMouse::VK_RETURN;
 
-    let mut enigo = Enigo::new(&Settings::default()).map_err(|e| e.to_string())?;
+    // The Ctrl+Shift+N hotkey fires on number-release, but the user is almost
+    // certainly still holding Ctrl/Shift physically. Synthesise key-up events
+    // for both so the Enter we send next isn't interpreted as Ctrl+Shift+Enter
+    // (which opens all-chat instead of team chat).
+    keyboard::release_modifiers()?;
+    std::thread::sleep(Duration::from_millis(20));
 
-    // Open team chat (Enter)
-    enigo.key(Key::Return, Direction::Click).map_err(|e| e.to_string())?;
-    // League needs a moment to register the chat box is open before accepting text
-    std::thread::sleep(std::time::Duration::from_millis(80));
-    // Type the message (Unicode-safe; works for Chinese)
-    enigo.text(message).map_err(|e| e.to_string())?;
-    std::thread::sleep(std::time::Duration::from_millis(30));
-    // Send
-    enigo.key(Key::Return, Direction::Click).map_err(|e| e.to_string())?;
+    // Open team chat. We deliberately do NOT send a final Enter to submit —
+    // the player reviews the prefilled message and presses Enter themselves.
+    // Lets them edit, cancel with Escape, or switch to all-chat with Shift+Enter.
+    keyboard::click_vk(VK_RETURN)?;
+    std::thread::sleep(Duration::from_millis(150));
+
+    // Type each UTF-16 code unit as its own (down, up) pair. Enigo's text()
+    // batches characters in ways League's in-game chat input silently drops;
+    // per-char SendInput with KEYEVENTF_UNICODE is what mki/lol_clipboard do
+    // and what actually lands in the chat box.
+    for code_unit in message.encode_utf16() {
+        keyboard::click_unicode(code_unit)?;
+        std::thread::sleep(Duration::from_millis(2));
+    }
     Ok(())
+}
+
+#[cfg(not(windows))]
+fn type_chat_message(_message: &str) -> Result<(), String> {
+    Err("chat preset typing is only supported on Windows".into())
+}
+
+#[cfg(windows)]
+mod keyboard {
+    use windows::Win32::UI::Input::KeyboardAndMouse::{
+        INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS, KEYEVENTF_KEYUP,
+        KEYEVENTF_UNICODE, MAPVK_VK_TO_VSC, MapVirtualKeyW, SendInput, VIRTUAL_KEY,
+        VK_CONTROL, VK_LCONTROL, VK_LSHIFT, VK_RCONTROL, VK_RSHIFT, VK_SHIFT,
+    };
+
+    pub(super) fn click_vk(vk: VIRTUAL_KEY) -> Result<(), String> {
+        // League reads input via DirectInput which looks at the hardware scan code,
+        // not the virtual key. Sending wScan=0 makes the game ignore the event even
+        // though Notepad-style apps would still process it.
+        let scan = vk_to_scan(vk);
+        send_inputs(&[
+            make_input(vk, scan, KEYBD_EVENT_FLAGS(0)),
+            make_input(vk, scan, KEYEVENTF_KEYUP),
+        ])
+    }
+
+    pub(super) fn click_unicode(code_unit: u16) -> Result<(), String> {
+        // Unicode path: wVk MUST be 0, wScan IS the UTF-16 code unit, no scancode lookup.
+        let up = KEYBD_EVENT_FLAGS(KEYEVENTF_UNICODE.0 | KEYEVENTF_KEYUP.0);
+        send_inputs(&[
+            make_input(VIRTUAL_KEY(0), code_unit, KEYEVENTF_UNICODE),
+            make_input(VIRTUAL_KEY(0), code_unit, up),
+        ])
+    }
+
+    pub(super) fn release_modifiers() -> Result<(), String> {
+        for vk in [VK_CONTROL, VK_LCONTROL, VK_RCONTROL, VK_SHIFT, VK_LSHIFT, VK_RSHIFT] {
+            let scan = vk_to_scan(vk);
+            send_inputs(&[make_input(vk, scan, KEYEVENTF_KEYUP)])?;
+        }
+        Ok(())
+    }
+
+    fn vk_to_scan(vk: VIRTUAL_KEY) -> u16 {
+        // MapVirtualKeyW returns 0 when no mapping exists; the receiver will then see
+        // wScan=0 and may ignore us, but for VK_RETURN / VK_CONTROL / VK_SHIFT this
+        // always succeeds.
+        unsafe { MapVirtualKeyW(vk.0 as u32, MAPVK_VK_TO_VSC) as u16 }
+    }
+
+    fn make_input(vk: VIRTUAL_KEY, scan: u16, flags: KEYBD_EVENT_FLAGS) -> INPUT {
+        INPUT {
+            r#type: INPUT_KEYBOARD,
+            Anonymous: INPUT_0 {
+                ki: KEYBDINPUT { wVk: vk, wScan: scan, dwFlags: flags, time: 0, dwExtraInfo: 0 },
+            },
+        }
+    }
+
+    fn send_inputs(inputs: &[INPUT]) -> Result<(), String> {
+        let sent = unsafe { SendInput(inputs, std::mem::size_of::<INPUT>() as i32) };
+        if sent as usize != inputs.len() {
+            return Err(format!("SendInput sent {}/{} events", sent, inputs.len()));
+        }
+        Ok(())
+    }
 }
 
 fn toggle_overlay(app: &tauri::AppHandle) {

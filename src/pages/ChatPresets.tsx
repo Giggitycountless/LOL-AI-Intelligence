@@ -109,10 +109,10 @@ export function ChatPresets() {
           <p className="text-sm font-medium uppercase tracking-wide text-rose-700">快捷喊话</p>
           <h1 className="mt-2 text-3xl font-semibold text-zinc-950 dark:text-zinc-50">聊天预设</h1>
           <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-            最多 9 条预设，分别绑定 <code className="rounded bg-zinc-200 dark:bg-zinc-700 px-1 text-xs">Ctrl+Shift+1</code> 到 <code className="rounded bg-zinc-200 dark:bg-zinc-700 px-1 text-xs">Ctrl+Shift+9</code>。游戏内按热键自动开聊天框、键入消息、回车发送。
+            最多 9 条预设，分别绑定 <code className="rounded bg-zinc-200 dark:bg-zinc-700 px-1 text-xs">Ctrl+Shift+1</code> 到 <code className="rounded bg-zinc-200 dark:bg-zinc-700 px-1 text-xs">Ctrl+Shift+9</code>。游戏内按热键自动打开聊天框并键入消息，<strong>由你自己按 Enter 发送</strong>（或 Esc 取消、Shift+Enter 改成全聊）。
           </p>
           <p className="mt-2 text-xs text-amber-700 dark:text-amber-400">
-            ⚠️ 仅在 League 游戏窗口前台时触发。要发到全频道在消息开头加 <code className="rounded bg-zinc-200 dark:bg-zinc-700 px-1">/all </code>。请勿用于刷屏或骚扰队友。
+            ⚠️ 仅在 League 游戏窗口前台时触发。请勿用于刷屏或骚扰队友。
           </p>
         </header>
 
