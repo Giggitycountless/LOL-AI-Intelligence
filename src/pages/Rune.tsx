@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState } from "react";
-import { listen } from "@tauri-apps/api/event";
 
 import {
   applyRunePage,
@@ -23,10 +22,9 @@ function styleLabel(styleId: number): string {
   return RUNE_STYLE_NAMES[styleId] ?? `Style ${styleId}`;
 }
 
-export function Rune() {
+export function Rune({ lockedChampionId }: { lockedChampionId: number | null }) {
   const { t } = useAppCore();
-  const [championId, setChampionId] = useState<number | null>(null);
-  const [championName, setChampionName] = useState<string>("");
+  const [championName] = useState<string>(lockedChampionId ? `Champion ${lockedChampionId}` : "");
   const [recommendations, setRecommendations] = useState<RuneRecommendation[]>([]);
   const [savedConfig, setSavedConfig] = useState<ChampionRuneConfig | null>(null);
   const [autoApplied, setAutoApplied] = useState(false);
@@ -34,10 +32,11 @@ export function Rune() {
   const [applyingIndex, setApplyingIndex] = useState<number | null>(null);
   const [appliedIndex, setAppliedIndex] = useState<number | null>(null);
 
-  const loadRuneData = useCallback(async (champId: number, champName: string) => {
+  const championId = lockedChampionId;
+
+  const loadRuneData = useCallback(async (champId: number) => {
     setIsLoading(true);
     setAppliedIndex(null);
-    setAutoApplied(false);
     try {
       const [recs, config] = await Promise.all([
         fetchRuneRecommendations(champId),
@@ -50,20 +49,17 @@ export function Rune() {
     }
   }, []);
 
-  // Listen for champion lock-in event from backend
+  // Load rune data whenever a champion is locked in (or page mounts with one already locked).
   useEffect(() => {
-    const unlisten = listen<number>("champion-locked-in", (event) => {
-      const champId = event.payload;
-      setChampionId(champId);
-      setChampionName(`Champion ${champId}`);
-      setAutoApplied(true);
-      void loadRuneData(champId, `Champion ${champId}`);
-    });
-
-    return () => {
-      void unlisten.then((fn) => fn());
-    };
-  }, [loadRuneData]);
+    if (championId === null) {
+      setRecommendations([]);
+      setSavedConfig(null);
+      setAutoApplied(false);
+      return;
+    }
+    setAutoApplied(true);
+    void loadRuneData(championId);
+  }, [championId, loadRuneData]);
 
   const handleApply = useCallback(async (rec: RuneRecommendation, index: number) => {
     if (!championId) return;
