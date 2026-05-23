@@ -12,3 +12,7 @@ domain.workspace = true
 platform.workspace = true
 tauri.workspace = true
 rdev.workspace = true
+enigo.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows.workspace = true
