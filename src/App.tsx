@@ -5,10 +5,12 @@ import { invoke } from "@tauri-apps/api/core";
 import { Activity } from "./pages/Activity";
 import { Dashboard } from "./pages/Dashboard";
 import { Matches } from "./pages/Matches";
+import { MatchRecap } from "./pages/MatchRecap";
 import { ParticipantProfileWindow } from "./pages/ParticipantProfileWindow";
 import { PostGameNotesWindowRoot } from "./pages/PostGameNotesWindow";
 import { Profile } from "./pages/Profile";
 import { Advisor } from "./pages/Advisor";
+import { ChatPresets } from "./pages/ChatPresets";
 import { RankedChampions } from "./pages/RankedChampions";
 import { Rune } from "./pages/Rune";
 import { SelfHistoryOverlay } from "./pages/SelfHistoryOverlay";
@@ -16,11 +18,12 @@ import { Settings } from "./pages/Settings";
 import { AppStateProvider, useAppCore, type AppWindowMode } from "./state/AppStateProvider";
 import type { StartupPage } from "./backend/types";
 import { oppositeLanguage, type TranslationKey } from "./i18n";
+import { selectionFromMatchRecapHash } from "./windows/matchRecapWindow";
 import { selectionFromParticipantProfileHash } from "./windows/participantProfileWindow";
 import { isSelfHistoryOverlayHash } from "./windows/selfHistoryOverlayWindow";
 import { isPostGameNotesHash, openPostGameNotesWindow } from "./windows/postGameNotesWindow";
 
-type Page = StartupPage | "profile" | "matches" | "ranked" | "advisor" | "rune";
+type Page = StartupPage | "profile" | "matches" | "ranked" | "advisor" | "rune" | "chat";
 
 const PERSISTENT_PAGES = new Set<Page>(["matches", "ranked", "activity"]);
 
@@ -31,15 +34,23 @@ const pages: Array<{ id: Page; labelKey: TranslationKey; icon: IconName }> = [
   { id: "advisor", labelKey: "nav.advisor", icon: "advisor" },
   { id: "ranked", labelKey: "nav.ranked", icon: "ranked" },
   { id: "rune", labelKey: "nav.rune", icon: "rune" },
+  { id: "chat", labelKey: "nav.chat", icon: "chat" },
   { id: "activity", labelKey: "nav.activity", icon: "activity" },
   { id: "settings", labelKey: "nav.settings", icon: "settings" },
 ];
 
 export function App() {
+  const matchRecapSelection = selectionFromMatchRecapHash(window.location.hash);
   const participantProfileSelection = selectionFromParticipantProfileHash(window.location.hash);
   const isSelfHistoryOverlay = isSelfHistoryOverlayHash(window.location.hash);
   const isPostGameNotes = isPostGameNotesHash(window.location.hash);
-  const mode: AppWindowMode = participantProfileSelection ? "participant" : isSelfHistoryOverlay ? "overlay" : "main";
+  const mode: AppWindowMode = matchRecapSelection
+    ? "match-recap"
+    : participantProfileSelection
+    ? "participant"
+    : isSelfHistoryOverlay
+    ? "overlay"
+    : "main";
 
   useEffect(() => {
     if (mode === "main") {
@@ -54,7 +65,9 @@ export function App() {
 
   return (
     <AppStateProvider mode={mode}>
-      {participantProfileSelection ? (
+      {matchRecapSelection ? (
+        <MatchRecap initialSelection={matchRecapSelection} />
+      ) : participantProfileSelection ? (
         <ParticipantProfileWindow initialSelection={participantProfileSelection} />
       ) : isSelfHistoryOverlay ? (
         <SelfHistoryOverlay />
@@ -103,9 +116,14 @@ export function AppShell() {
     }
   }, [navigateTo, snapshot]);
 
-  // Auto-navigate to rune page on champion lock-in
+  // Auto-navigate to rune page on champion lock-in.
+  // Store the locked champion id at app level so the Rune page can read it from props —
+  // event-based hand-off into a not-yet-mounted page races against the Rune page's own
+  // listener attaching after the event has already fired.
+  const [lockedChampionId, setLockedChampionId] = useState<number | null>(null);
   useEffect(() => {
-    const unlisten = listen("champion-locked-in", () => {
+    const unlisten = listen<number>("champion-locked-in", (event) => {
+      setLockedChampionId(event.payload);
       navigateTo("rune");
     });
     return () => {
@@ -220,7 +238,8 @@ export function AppShell() {
         {mountedPages.has("matches") && <div className={activePage === "matches" ? "" : "hidden"}><Matches /></div>}
         {activePage === "advisor" && <Advisor />}
         {mountedPages.has("ranked") && <div className={activePage === "ranked" ? "" : "hidden"}><RankedChampions /></div>}
-        {activePage === "rune" && <Rune />}
+        {activePage === "rune" && <Rune lockedChampionId={lockedChampionId} />}
+        {activePage === "chat" && <ChatPresets />}
         {mountedPages.has("activity") && <div className={activePage === "activity" ? "" : "hidden"}><Activity /></div>}
         {activePage === "settings" && <Settings />}
       </div>
@@ -228,7 +247,7 @@ export function AppShell() {
   );
 }
 
-type IconName = "dashboard" | "profile" | "matches" | "advisor" | "ranked" | "rune" | "activity" | "settings";
+type IconName = "dashboard" | "profile" | "matches" | "advisor" | "ranked" | "rune" | "chat" | "activity" | "settings";
 
 function Icon({ name }: { name: IconName }) {
   const paths: Record<IconName, string> = {
@@ -242,6 +261,7 @@ function Icon({ name }: { name: IconName }) {
     ranked:
       "M6 20V9h3v11H6Zm5 0V4h3v16h-3Zm5 0v-7h3v7h-3ZM4 20h17v2H4v-2Z",
     rune: "M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14H9V8h2v8zm4 0h-2V8h2v8z",
+    chat: "M4 4h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H8l-4 4V6a2 2 0 0 1 2-2Zm3 6v2h10v-2H7Zm0 4v2h7v-2H7Z",
     activity:
       "M5 4h14v2H5V4Zm0 4h9v2H5V8Zm0 4h14v2H5v-2Zm0 4h9v2H5v-2Zm12-8 4 4-4 4v-3h-5v-2h5V8Z",
     settings:

@@ -37,7 +37,7 @@ export type LeagueImageUrls = {
   gameAssets: Record<string, LeagueGameAssetView>;
 };
 
-export type AppWindowMode = "main" | "overlay" | "participant";
+export type AppWindowMode = "main" | "overlay" | "participant" | "match-recap";
 
 export type LeagueGameAssetView = Omit<LeagueGameAsset, "image"> & {
   imageUrl: string;
