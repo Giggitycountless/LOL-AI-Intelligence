@@ -194,15 +194,15 @@ export function Settings() {
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
         <header>
           <p className="text-sm font-medium uppercase tracking-wide text-rose-700">{t("settings.eyebrow")}</p>
-          <h1 className="mt-2 text-3xl font-semibold text-zinc-950">{t("settings.title")}</h1>
+          <h1 className="mt-2 text-3xl font-semibold text-zinc-950 dark:text-zinc-50">{t("settings.title")}</h1>
         </header>
 
         <section className="grid gap-4 lg:grid-cols-[0.95fr_1.05fr]">
-          <form className="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm" onSubmit={handleSubmit}>
+          <form className="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-5 shadow-sm" onSubmit={handleSubmit}>
             <div className="flex items-start justify-between gap-4">
               <div>
-                <h2 className="text-base font-semibold text-zinc-950">{t("settings.applicationState")}</h2>
-                <p className="mt-1 text-sm text-zinc-500">
+                <h2 className="text-base font-semibold text-zinc-950 dark:text-zinc-50">{t("settings.applicationState")}</h2>
+                <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
                   {hasUnsavedChanges ? t("settings.unsaved") : t("settings.saved")}
                 </p>
               </div>
@@ -210,7 +210,7 @@ export function Settings() {
                 type="button"
                 disabled={!defaults}
                 onClick={() => defaults && setDraft(defaults)}
-                className="inline-flex h-9 items-center justify-center rounded-md border border-zinc-300 px-3 text-sm font-semibold text-zinc-700 transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:text-zinc-400"
+                className="inline-flex h-9 items-center justify-center rounded-md border border-zinc-300 dark:border-zinc-600 px-3 text-sm font-semibold text-zinc-700 dark:text-zinc-300 transition hover:bg-zinc-50 dark:hover:bg-zinc-800 disabled:cursor-not-allowed disabled:text-zinc-400 dark:disabled:text-zinc-500"
               >
                 {t("settings.reset")}
               </button>
@@ -218,7 +218,7 @@ export function Settings() {
 
             <div className="mt-5 grid gap-4">
               <label className="grid gap-2">
-                <span className="text-sm font-medium text-zinc-700">{t("settings.startupPage")}</span>
+                <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{t("settings.startupPage")}</span>
                 <select
                   value={draft.startupPage}
                   onChange={(event) =>
@@ -227,7 +227,7 @@ export function Settings() {
                       startupPage: event.target.value as StartupPage,
                     }))
                   }
-                  className="h-10 rounded-md border border-zinc-300 bg-white px-3 text-sm text-zinc-950 outline-none focus:border-rose-700 focus:ring-2 focus:ring-rose-100"
+                  className="h-10 rounded-md border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-900 px-3 text-sm text-zinc-950 dark:text-zinc-50 outline-none focus:border-rose-700 focus:ring-2 focus:ring-rose-100 dark:focus:ring-rose-900"
                 >
                   <option value="dashboard">{t("nav.dashboard")}</option>
                   <option value="activity">{t("nav.activity")}</option>
@@ -236,7 +236,7 @@ export function Settings() {
               </label>
 
               <label className="grid gap-2">
-                <span className="text-sm font-medium text-zinc-700">{t("settings.language")}</span>
+                <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{t("settings.language")}</span>
                 <select
                   value={draft.language}
                   onChange={(event) =>
@@ -245,7 +245,7 @@ export function Settings() {
                       language: event.target.value as AppLanguagePreference,
                     }))
                   }
-                  className="h-10 rounded-md border border-zinc-300 bg-white px-3 text-sm text-zinc-950 outline-none focus:border-rose-700 focus:ring-2 focus:ring-rose-100"
+                  className="h-10 rounded-md border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-900 px-3 text-sm text-zinc-950 dark:text-zinc-50 outline-none focus:border-rose-700 focus:ring-2 focus:ring-rose-100 dark:focus:ring-rose-900"
                 >
                   <option value="system">{t("settings.languageSystem")}</option>
                   <option value="zh">{t("settings.languageZh")}</option>
@@ -263,7 +263,7 @@ export function Settings() {
                       theme: event.target.value as AppThemePreference,
                     }))
                   }
-                  className="h-10 rounded-md border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 px-3 text-sm text-zinc-950 dark:text-zinc-50 outline-none focus:border-rose-700 focus:ring-2 focus:ring-rose-100"
+                  className="h-10 rounded-md border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-900 dark:bg-zinc-800 px-3 text-sm text-zinc-950 dark:text-zinc-50 outline-none focus:border-rose-700 focus:ring-2 focus:ring-rose-100 dark:focus:ring-rose-900"
                 >
                   <option value="light">{t("settings.themeLight")}</option>
                   <option value="dark">{t("settings.themeDark")}</option>
@@ -286,7 +286,7 @@ export function Settings() {
               </label>
 
               <label className="grid gap-2">
-                <span className="text-sm font-medium text-zinc-700">{t("settings.activityLimit")}</span>
+                <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{t("settings.activityLimit")}</span>
                 <input
                   type="number"
                   min={MIN_ACTIVITY_LIMIT}
@@ -298,10 +298,10 @@ export function Settings() {
                       activityLimit: Number(event.target.value),
                     }))
                   }
-                  className="h-10 rounded-md border border-zinc-300 bg-white px-3 text-sm text-zinc-950 outline-none focus:border-rose-700 focus:ring-2 focus:ring-rose-100"
+                  className="h-10 rounded-md border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-900 px-3 text-sm text-zinc-950 dark:text-zinc-50 outline-none focus:border-rose-700 focus:ring-2 focus:ring-rose-100 dark:focus:ring-rose-900"
                 />
                 {activityValidationMessage && (
-                  <span className="text-sm font-medium text-amber-700">{activityValidationMessage}</span>
+                  <span className="text-sm font-medium text-amber-700 dark:text-amber-400">{activityValidationMessage}</span>
                 )}
               </label>
 
@@ -357,8 +357,8 @@ export function Settings() {
                 t={t}
               />
 
-              <fieldset className="grid gap-3 rounded-lg border border-zinc-200 p-4">
-                <legend className="px-1 text-sm font-semibold text-zinc-700">{t("settings.aiConfig")}</legend>
+              <fieldset className="grid gap-3 rounded-lg border border-zinc-200 dark:border-zinc-700 p-4">
+                <legend className="px-1 text-sm font-semibold text-zinc-700 dark:text-zinc-300">{t("settings.aiConfig")}</legend>
                 <AiConfigField
                   id={`${id}-ai-base-url`}
                   label={t("settings.aiBaseUrl")}
@@ -386,15 +386,15 @@ export function Settings() {
               <button
                 type="submit"
                 disabled={!canSave}
-                className="inline-flex h-10 items-center justify-center rounded-md bg-rose-700 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-rose-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
+                className="inline-flex h-10 items-center justify-center rounded-md bg-rose-700 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-rose-800 disabled:cursor-not-allowed disabled:bg-zinc-300 dark:disabled:bg-zinc-700"
               >
                 {isSaving ? t("common.saving") : t("settings.saveSettings")}
               </button>
             </div>
           </form>
 
-          <div className="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm">
-            <h2 className="text-base font-semibold text-zinc-950">{t("settings.currentValues")}</h2>
+          <div className="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-5 shadow-sm">
+            <h2 className="text-base font-semibold text-zinc-950 dark:text-zinc-50">{t("settings.currentValues")}</h2>
             <dl className="mt-5 grid gap-4">
               <SettingRow label={t("settings.startupPage")} value={persisted ? startupPageLabel(persisted.startupPage, t) : t("common.loading")} />
               <SettingRow label={t("settings.language")} value={persisted ? languageLabel(persisted.language, t) : t("common.loading")} />
@@ -412,14 +412,14 @@ export function Settings() {
         </section>
 
         <section className="grid gap-4 lg:grid-cols-2">
-          <div className="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm">
-            <h2 className="text-base font-semibold text-zinc-950">{t("settings.exportLocalData")}</h2>
+          <div className="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-5 shadow-sm">
+            <h2 className="text-base font-semibold text-zinc-950 dark:text-zinc-50">{t("settings.exportLocalData")}</h2>
             <div className="mt-5 grid gap-4">
               <button
                 type="button"
                 onClick={handleExport}
                 disabled={isExporting}
-                className="inline-flex h-10 items-center justify-center rounded-md bg-zinc-950 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
+                className="inline-flex h-10 items-center justify-center rounded-md bg-zinc-950 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-300 dark:disabled:bg-zinc-700"
               >
                 {isExporting ? t("common.exporting") : t("settings.exportJson")}
               </button>
@@ -427,30 +427,30 @@ export function Settings() {
                 value={exportJson}
                 onChange={(event) => setExportJson(event.target.value)}
                 rows={9}
-                className="resize-none rounded-md border border-zinc-300 bg-zinc-50 px-3 py-2 font-mono text-xs text-zinc-800 outline-none focus:border-rose-700 focus:ring-2 focus:ring-rose-100"
+                className="resize-none rounded-md border border-zinc-300 dark:border-zinc-600 bg-zinc-50 dark:bg-zinc-800 px-3 py-2 font-mono text-xs text-zinc-800 dark:text-zinc-200 outline-none focus:border-rose-700 focus:ring-2 focus:ring-rose-100 dark:focus:ring-rose-900"
               />
             </div>
           </div>
 
-          <div className="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm">
-            <h2 className="text-base font-semibold text-zinc-950">{t("settings.importAndClear")}</h2>
+          <div className="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-5 shadow-sm">
+            <h2 className="text-base font-semibold text-zinc-950 dark:text-zinc-50">{t("settings.importAndClear")}</h2>
             <div className="mt-5 grid gap-4">
               <textarea
                 value={importJson}
                 onChange={(event) => setImportJson(event.target.value)}
                 rows={7}
-                className="resize-none rounded-md border border-zinc-300 bg-white px-3 py-2 font-mono text-xs text-zinc-800 outline-none focus:border-rose-700 focus:ring-2 focus:ring-rose-100"
+                className="resize-none rounded-md border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-900 px-3 py-2 font-mono text-xs text-zinc-800 dark:text-zinc-200 outline-none focus:border-rose-700 focus:ring-2 focus:ring-rose-100 dark:focus:ring-rose-900"
               />
               <button
                 type="button"
                 onClick={handleImport}
                 disabled={isImporting || importJson.trim().length === 0}
-                className="inline-flex h-10 items-center justify-center rounded-md bg-rose-700 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-rose-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
+                className="inline-flex h-10 items-center justify-center rounded-md bg-rose-700 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-rose-800 disabled:cursor-not-allowed disabled:bg-zinc-300 dark:disabled:bg-zinc-700"
               >
                 {isImporting ? t("common.importing") : t("settings.importJson")}
               </button>
 
-              <div className="rounded-md border border-amber-200 bg-amber-50 p-4">
+              <div className="rounded-md border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950 p-4">
                 <label className="flex items-center gap-3 text-sm font-medium text-amber-900">
                   <input
                     type="checkbox"
@@ -464,7 +464,7 @@ export function Settings() {
                   type="button"
                   onClick={handleClearActivity}
                   disabled={!confirmClear || isClearing}
-                  className="mt-4 inline-flex h-10 items-center justify-center rounded-md bg-amber-700 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-amber-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
+                  className="mt-4 inline-flex h-10 items-center justify-center rounded-md bg-amber-700 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-amber-800 disabled:cursor-not-allowed disabled:bg-zinc-300 dark:disabled:bg-zinc-700"
                 >
                   {isClearing ? t("common.clear") : t("settings.clearActivity")}
                 </button>
@@ -495,14 +495,14 @@ function AiConfigField({
 }) {
   return (
     <label className="grid gap-1" htmlFor={id}>
-      <span className="text-xs font-semibold text-zinc-600">{label}</span>
+      <span className="text-xs font-semibold text-zinc-600 dark:text-zinc-400">{label}</span>
       <input
         id={id}
         type={type}
         placeholder={placeholder}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="h-9 rounded-md border border-zinc-300 bg-white px-3 text-sm text-zinc-950 outline-none focus:border-rose-700 focus:ring-2 focus:ring-rose-100 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-50"
+        className="h-9 rounded-md border border-zinc-300 bg-white px-3 text-sm text-zinc-950 outline-none focus:border-rose-700 focus:ring-2 focus:ring-rose-100 dark:focus:ring-rose-900 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-50"
         autoComplete="off"
       />
     </label>
@@ -511,9 +511,9 @@ function AiConfigField({
 
 function SettingRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-center justify-between gap-4 rounded-md border border-zinc-200 bg-zinc-50 px-4 py-3">
-      <dt className="text-sm font-medium text-zinc-600">{label}</dt>
-      <dd className="text-sm font-semibold capitalize text-zinc-950">{value}</dd>
+    <div className="flex items-center justify-between gap-4 rounded-md border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-4 py-3">
+      <dt className="text-sm font-medium text-zinc-600 dark:text-zinc-400">{label}</dt>
+      <dd className="text-sm font-semibold capitalize text-zinc-950 dark:text-zinc-50">{value}</dd>
     </div>
   );
 }
@@ -573,10 +573,10 @@ function RoomAutomationPanel({
   ];
 
   return (
-    <section className="grid gap-4 rounded-md border border-zinc-200 bg-zinc-50 p-4">
+    <section className="grid gap-4 rounded-md border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <h3 className="text-sm font-semibold text-zinc-950">{t("settings.lobbyAutomation")}</h3>
+          <h3 className="text-sm font-semibold text-zinc-950 dark:text-zinc-50">{t("settings.lobbyAutomation")}</h3>
         </div>
         <div className="grid w-full gap-2 sm:w-auto sm:grid-cols-4">
           {statusItems.map((item) => (
@@ -587,8 +587,8 @@ function RoomAutomationPanel({
                 item.active ? "border-rose-200 bg-white" : "border-zinc-200 bg-zinc-100",
               ].join(" ")}
             >
-              <div className="text-xs font-medium text-zinc-500">{item.label}</div>
-              <div className="truncate text-sm font-semibold text-zinc-950">{item.value}</div>
+              <div className="text-xs font-medium text-zinc-500 dark:text-zinc-400">{item.label}</div>
+              <div className="truncate text-sm font-semibold text-zinc-950 dark:text-zinc-50">{item.value}</div>
             </div>
           ))}
         </div>
@@ -632,7 +632,7 @@ function RoomAutomationPanel({
       </div>
 
       {validationMessage && (
-        <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800">
+        <div className="rounded-md border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950 px-3 py-2 text-sm font-medium text-amber-800 dark:text-amber-300">
           {validationMessage}
         </div>
       )}
@@ -650,7 +650,7 @@ function AutomationToggleRow({
   onEnabledChange: (enabled: boolean) => void;
 }) {
   return (
-    <div className="flex items-center justify-between gap-4 rounded-md border border-zinc-200 bg-white px-3 py-3">
+    <div className="flex items-center justify-between gap-4 rounded-md border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-3">
       <div className="min-w-0">
         <div className="text-sm font-semibold text-zinc-900">{label}</div>
       </div>
@@ -772,7 +772,7 @@ function AutomationChampionPicker({
   }
 
   return (
-    <div className="grid gap-3 rounded-md border border-zinc-200 bg-white px-3 py-3">
+    <div className="grid gap-3 rounded-md border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-3">
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <div className="text-sm font-semibold text-zinc-900">{label}</div>
@@ -781,7 +781,7 @@ function AutomationChampionPicker({
       </div>
 
       <div className="relative grid gap-2">
-        <label className="text-xs font-medium uppercase text-zinc-500">{t("settings.searchChampion")}</label>
+        <label className="text-xs font-medium uppercase text-zinc-500 dark:text-zinc-400">{t("settings.searchChampion")}</label>
         <input
           aria-controls={listId}
           aria-expanded={enabled && isOpen && !isSearchDisabled}
@@ -815,7 +815,7 @@ function AutomationChampionPicker({
               onChampionChange(null);
               setIsOpen(true);
             }}
-            className="absolute right-2 top-7 inline-flex h-6 items-center rounded border border-zinc-200 bg-zinc-50 px-2 text-xs font-semibold text-zinc-600 transition hover:bg-zinc-100"
+            className="absolute right-2 top-7 inline-flex h-6 items-center rounded border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-2 text-xs font-semibold text-zinc-600 dark:text-zinc-400 transition hover:bg-zinc-100 dark:hover:bg-zinc-700"
           >
             {t("settings.clearChampion")}
           </button>
@@ -823,7 +823,7 @@ function AutomationChampionPicker({
 
         {enabled && isOpen && !isSearchDisabled && (
           <div
-            className="absolute left-0 right-0 top-full z-20 mt-1 max-h-56 overflow-y-auto rounded-md border border-zinc-200 bg-white p-1 shadow-lg"
+            className="absolute left-0 right-0 top-full z-20 mt-1 max-h-56 overflow-y-auto rounded-md border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-1 shadow-lg"
             id={listId}
             role="listbox"
           >
@@ -846,21 +846,21 @@ function AutomationChampionPicker({
                   ].join(" ")}
                 >
                   <span className="truncate font-medium">{champion.championName}</span>
-                  <span className="text-xs font-semibold text-zinc-400">{champion.championId}</span>
+                  <span className="text-xs font-semibold text-zinc-400 dark:text-zinc-500">{champion.championId}</span>
                 </button>
               ))
             ) : (
-              <div className="px-2 py-3 text-sm text-zinc-500">{t("settings.noChampionMatches")}</div>
+              <div className="px-2 py-3 text-sm text-zinc-500 dark:text-zinc-400">{t("settings.noChampionMatches")}</div>
             )}
           </div>
         )}
 
         {enabled && !isLoading && champions.length === 0 && (
-          <div className="text-sm text-amber-700">{championsError ?? t("settings.championSearchUnavailable")}</div>
+          <div className="text-sm text-amber-700 dark:text-amber-400">{championsError ?? t("settings.championSearchUnavailable")}</div>
         )}
-        {enabled && !championId && <div className="text-sm text-zinc-500">{t("settings.noChampion")}</div>}
+        {enabled && !championId && <div className="text-sm text-zinc-500 dark:text-zinc-400">{t("settings.noChampion")}</div>}
         {enabled && selectedChampion && (
-          <div className="rounded-md border border-emerald-100 bg-emerald-50 px-2 py-1.5 text-sm font-medium text-emerald-700">
+          <div className="rounded-md border border-emerald-100 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950 px-2 py-1.5 text-sm font-medium text-emerald-700 dark:text-emerald-300">
             {t("settings.selectedChampion")}: {selectedChampion.championName}
           </div>
         )}
@@ -869,8 +869,8 @@ function AutomationChampionPicker({
       {enabled && (
         <div className="grid gap-2">
           <div className="flex items-center justify-between">
-            <label className="text-xs font-medium uppercase text-zinc-500">{delayLabel}</label>
-            <span className="text-sm font-semibold text-zinc-950">{delaySeconds.toFixed(1)}{t("settings.delaySeconds")}</span>
+            <label className="text-xs font-medium uppercase text-zinc-500 dark:text-zinc-400">{delayLabel}</label>
+            <span className="text-sm font-semibold text-zinc-950 dark:text-zinc-50">{delaySeconds.toFixed(1)}{t("settings.delaySeconds")}</span>
           </div>
           <input
             type="range"
@@ -881,7 +881,7 @@ function AutomationChampionPicker({
             onChange={(event) => onDelayChange(Number(event.target.value))}
             className="w-full accent-rose-700"
           />
-          <div className="flex justify-between text-xs text-zinc-400">
+          <div className="flex justify-between text-xs text-zinc-400 dark:text-zinc-500">
             <span>0{t("settings.delaySeconds")}</span>
             <span>5{t("settings.delaySeconds")}</span>
           </div>
