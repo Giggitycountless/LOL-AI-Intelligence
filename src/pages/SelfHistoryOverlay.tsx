@@ -1,4 +1,3 @@
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import { memo, useCallback, useEffect, useMemo, useState, type MouseEvent, type ReactNode } from "react";
 
 import type {
@@ -11,7 +10,7 @@ import type { LeagueChampionAbilityView, LeagueChampionDetailsView } from "../st
 import { useAdvisor, useAppCore, useChampSelect, useLeagueAssets } from "../state/AppStateProvider";
 import { canOpenSelfHistoryOverlayWindow, destroySelfHistoryOverlayWindow } from "../windows/selfHistoryOverlayWindow";
 import { type T } from "../utils/formatting";
-import { RefreshIcon, HideIcon } from "../components/overlay/Icons";
+import { RefreshIcon } from "../components/overlay/Icons";
 import { PlayerTrack } from "../components/overlay/PlayerTrack";
 import { ChampionDetailsPanel } from "../components/overlay/ChampionDetailsPanel";
 import {
@@ -179,26 +178,26 @@ export function SelfHistoryOverlay() {
       setRefreshFailed(false);
       setInitialSnapshotStatus("loading");
       setIsRefreshingChampSelect(true);
-      const [didRefresh] = await Promise.all([
+
+      // Run all three in parallel; treat the refresh as successful if either the champ-select
+      // snapshot OR the advisor snapshot came back with data. (During In-Progress phase the
+      // champ-select session is gone but advisor still serves cached recent stats — that is
+      // still a useful refresh from the user's perspective.)
+      const results = await Promise.allSettled([
         refreshChampSelectSnapshot(),
         refreshChampSelectAdvisorSnapshot(),
         refreshLiveOverlaySnapshot(),
       ]);
+      const champSelectOk = results[0].status === "fulfilled" && results[0].value === true;
+      const advisorOk = results[1].status === "fulfilled" && results[1].value === true;
+      const anyOk = champSelectOk || advisorOk;
+
       setIsRefreshingChampSelect(false);
-      setRefreshFailed(!didRefresh);
-      setInitialSnapshotStatus(didRefresh ? "ready" : "error");
+      setRefreshFailed(!anyOk);
+      setInitialSnapshotStatus(anyOk ? "ready" : "error");
     },
     [isRefreshingChampSelect, refreshChampSelectAdvisorSnapshot, refreshChampSelectSnapshot, refreshLiveOverlaySnapshot],
   );
-
-  const handleHideOverlay = useCallback(async (event: MouseEvent<HTMLButtonElement>) => {
-    event.stopPropagation();
-    try {
-      await getCurrentWindow().hide();
-    } catch {
-      console.warn("Self history overlay could not be hidden.");
-    }
-  }, []);
 
   if (!isOverlayAllowed) {
     return (
@@ -238,9 +237,6 @@ export function SelfHistoryOverlay() {
             title={t("overlay.refresh")}
           >
             <RefreshIcon isSpinning={isRefreshingChampSelect} />
-          </IconButton>
-          <IconButton ariaLabel={t("overlay.hide")} onClick={handleHideOverlay} title={t("overlay.hide")}>
-            <HideIcon />
           </IconButton>
         </div>
       </header>
