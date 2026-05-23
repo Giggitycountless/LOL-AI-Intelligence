@@ -1242,6 +1242,28 @@ impl AppStore for FakeStore {
     fn save_ai_analysis(&self, _scope: &str, _result_text: &str, _game_count: i64) -> Result<(), String> {
         Ok(())
     }
+
+    fn list_chat_presets(&self) -> Result<Vec<domain::ChatPreset>, String> {
+        Ok(Vec::new())
+    }
+
+    fn save_chat_preset(
+        &self,
+        slot: i64,
+        label: &str,
+        message: &str,
+    ) -> Result<domain::ChatPreset, String> {
+        Ok(domain::ChatPreset {
+            slot,
+            label: label.to_string(),
+            message: message.to_string(),
+            updated_at: "2026-01-01T00:00:00Z".to_string(),
+        })
+    }
+
+    fn delete_chat_preset(&self, _slot: i64) -> Result<bool, String> {
+        Ok(true)
+    }
 }
 
 struct FakeRankedChampionProvider {
@@ -1908,6 +1930,7 @@ fn sample_match(
         champion_id: Some(game_id),
         champion_name: champion_name.to_string(),
         queue_name: Some("Ranked Solo/Duo".to_string()),
+        lane: None,
         result: MatchResult::Win,
         kills,
         deaths,

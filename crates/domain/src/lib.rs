@@ -101,6 +101,15 @@ pub struct AiAnalysisCache {
     pub analyzed_at: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatPreset {
+    pub slot: i64,
+    pub label: String,
+    pub message: String,
+    pub updated_at: String,
+}
+
 fn default_true() -> bool {
     true
 }
@@ -881,6 +890,7 @@ pub struct RecentMatchSummary {
     pub champion_id: Option<i64>,
     pub champion_name: String,
     pub queue_name: Option<String>,
+    pub lane: Option<String>,
     pub result: MatchResult,
     pub kills: i64,
     pub deaths: i64,
@@ -924,6 +934,7 @@ pub struct PostMatchDetail {
     pub played_at: Option<String>,
     pub game_duration_seconds: Option<i64>,
     pub result: MatchResult,
+    pub self_participant_id: Option<i64>,
     pub teams: Vec<PostMatchTeam>,
     pub comparison: PostMatchComparison,
     pub warnings: Vec<LeagueDataWarning>,
@@ -958,7 +969,25 @@ pub struct PostMatchParticipant {
     pub cs: i64,
     pub gold_earned: i64,
     pub damage_to_champions: i64,
+    pub physical_damage_to_champions: i64,
+    pub magic_damage_to_champions: i64,
+    pub true_damage_to_champions: i64,
+    pub damage_to_objectives: i64,
+    pub damage_to_turrets: i64,
+    pub damage_taken: i64,
     pub vision_score: i64,
+    pub wards_placed: i64,
+    pub wards_killed: i64,
+    pub control_wards_bought: i64,
+    pub time_spent_dead_seconds: i64,
+    pub largest_killing_spree: i64,
+    pub largest_multi_kill: i64,
+    pub double_kills: i64,
+    pub triple_kills: i64,
+    pub quadra_kills: i64,
+    pub penta_kills: i64,
+    pub first_blood: bool,
+    pub first_tower: bool,
     pub items: Vec<i64>,
     pub runes: Vec<i64>,
     pub spells: Vec<i64>,

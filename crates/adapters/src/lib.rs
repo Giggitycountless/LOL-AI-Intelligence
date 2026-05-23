@@ -938,15 +938,19 @@ impl LeagueClientReader for LocalLeagueClient {
                 .iter()
                 .map(|m| (m, ChampSelectTeam::Ally))
                 .chain(champ_select.their_team.iter().map(|m| (m, ChampSelectTeam::Enemy)))
-                .filter_map(|(member, team)| {
-                    let puuid = member.puuid.as_ref().filter(|p| !p.trim().is_empty())?.clone();
-                    Some(ChampSelectSessionPlayer {
+                .map(|(member, team)| {
+                    let puuid = member
+                        .puuid
+                        .as_ref()
+                        .filter(|p| !p.trim().is_empty())
+                        .cloned();
+                    ChampSelectSessionPlayer {
                         summoner_id: member.summoner_id.filter(|&id| id > 0),
-                        puuid: Some(puuid),
+                        puuid,
                         display_name: member.display_name().unwrap_or_default(),
                         champion_id: member.champion_id.filter(|&id| id > 0),
                         team,
-                    })
+                    }
                 })
                 .collect(),
         })
@@ -1895,6 +1899,10 @@ fn map_recent_match(
         champion_id: participant.champion_id,
         champion_name: participant_champion_name(participant, champion_names),
         queue_name: game.queue_id.and_then(queue_name).map(str::to_string),
+        lane: participant
+            .timeline
+            .as_ref()
+            .and_then(|t| non_empty(t.lane.as_deref()).map(str::to_string)),
         result: match stats.win {
             Some(true) => MatchResult::Win,
             Some(false) => MatchResult::Loss,
@@ -1954,6 +1962,10 @@ fn recent_match_from_participant(
         champion_id: participant.champion_id,
         champion_name: participant_champion_name(participant, champion_names),
         queue_name: game.queue_id.and_then(queue_name).map(str::to_string),
+        lane: participant
+            .timeline
+            .as_ref()
+            .and_then(|t| non_empty(t.lane.as_deref()).map(str::to_string)),
         result: match stats.win {
             Some(true) => MatchResult::Win,
             Some(false) => MatchResult::Loss,
@@ -1976,13 +1988,14 @@ fn map_completed_match(
     summoner: &LcuSummoner,
     champion_names: &HashMap<i64, String>,
 ) -> Option<application::LeagueCompletedMatch> {
-    let self_result = game
+    let self_participant_id = game
         .participant_identities
         .iter()
         .find_map(|identity| match &identity.player {
             Some(player) if summoner.matches_player(player) => identity.participant_id,
             _ => None,
-        })
+        });
+    let self_result = self_participant_id
         .and_then(|participant_id| {
             game.participants
                 .iter()
@@ -2010,6 +2023,7 @@ fn map_completed_match(
             .or_else(|| value_to_string(game.game_creation)),
         game_duration_seconds: game.game_duration,
         result: self_result,
+        self_participant_id,
         participants,
     })
 }
@@ -2081,7 +2095,25 @@ fn map_completed_participant(
             + stats.neutral_minions_killed.unwrap_or_default(),
         gold_earned: stats.gold_earned.unwrap_or_default(),
         damage_to_champions: stats.total_damage_dealt_to_champions.unwrap_or_default(),
+        physical_damage_to_champions: stats.physical_damage_dealt_to_champions.unwrap_or_default(),
+        magic_damage_to_champions: stats.magic_damage_dealt_to_champions.unwrap_or_default(),
+        true_damage_to_champions: stats.true_damage_dealt_to_champions.unwrap_or_default(),
+        damage_to_objectives: stats.damage_dealt_to_objectives.unwrap_or_default(),
+        damage_to_turrets: stats.damage_dealt_to_turrets.unwrap_or_default(),
+        damage_taken: stats.total_damage_taken.unwrap_or_default(),
         vision_score: stats.vision_score.unwrap_or_default(),
+        wards_placed: stats.wards_placed.unwrap_or_default(),
+        wards_killed: stats.wards_killed.unwrap_or_default(),
+        control_wards_bought: stats.vision_wards_bought_in_game.unwrap_or_default(),
+        time_spent_dead_seconds: stats.total_time_spent_dead.unwrap_or_default(),
+        largest_killing_spree: stats.largest_killing_spree.unwrap_or_default(),
+        largest_multi_kill: stats.largest_multi_kill.unwrap_or_default(),
+        double_kills: stats.double_kills.unwrap_or_default(),
+        triple_kills: stats.triple_kills.unwrap_or_default(),
+        quadra_kills: stats.quadra_kills.unwrap_or_default(),
+        penta_kills: stats.penta_kills.unwrap_or_default(),
+        first_blood: stats.first_blood_kill.unwrap_or_default() || stats.first_blood_assist.unwrap_or_default(),
+        first_tower: stats.first_tower_kill.unwrap_or_default() || stats.first_tower_assist.unwrap_or_default(),
         items: stats.items(),
         runes: stats.runes(),
         spells: [participant.spell1_id, participant.spell2_id]

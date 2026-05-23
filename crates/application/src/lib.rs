@@ -81,6 +81,14 @@ pub trait AppStore {
     fn delete_champion_rune_config(&self, champion_id: i64) -> Result<bool, String>;
     fn get_ai_analysis(&self, scope: &str) -> Result<Option<domain::AiAnalysisCache>, String>;
     fn save_ai_analysis(&self, scope: &str, result_text: &str, game_count: i64) -> Result<(), String>;
+    fn list_chat_presets(&self) -> Result<Vec<domain::ChatPreset>, String>;
+    fn save_chat_preset(
+        &self,
+        slot: i64,
+        label: &str,
+        message: &str,
+    ) -> Result<domain::ChatPreset, String>;
+    fn delete_chat_preset(&self, slot: i64) -> Result<bool, String>;
 }
 
 pub trait LeagueClientReader {
@@ -418,6 +426,7 @@ pub struct LeagueCompletedMatch {
     pub played_at: Option<String>,
     pub game_duration_seconds: Option<i64>,
     pub result: MatchResult,
+    pub self_participant_id: Option<i64>,
     pub participants: Vec<LeagueCompletedParticipant>,
 }
 
@@ -440,7 +449,25 @@ pub struct LeagueCompletedParticipant {
     pub cs: i64,
     pub gold_earned: i64,
     pub damage_to_champions: i64,
+    pub physical_damage_to_champions: i64,
+    pub magic_damage_to_champions: i64,
+    pub true_damage_to_champions: i64,
+    pub damage_to_objectives: i64,
+    pub damage_to_turrets: i64,
+    pub damage_taken: i64,
     pub vision_score: i64,
+    pub wards_placed: i64,
+    pub wards_killed: i64,
+    pub control_wards_bought: i64,
+    pub time_spent_dead_seconds: i64,
+    pub largest_killing_spree: i64,
+    pub largest_multi_kill: i64,
+    pub double_kills: i64,
+    pub triple_kills: i64,
+    pub quadra_kills: i64,
+    pub penta_kills: i64,
+    pub first_blood: bool,
+    pub first_tower: bool,
     pub items: Vec<i64>,
     pub runes: Vec<i64>,
     pub spells: Vec<i64>,
@@ -1309,7 +1336,25 @@ fn post_match_detail_from_completed_match(
             cs: participant.cs,
             gold_earned: participant.gold_earned,
             damage_to_champions: participant.damage_to_champions,
+            physical_damage_to_champions: participant.physical_damage_to_champions,
+            magic_damage_to_champions: participant.magic_damage_to_champions,
+            true_damage_to_champions: participant.true_damage_to_champions,
+            damage_to_objectives: participant.damage_to_objectives,
+            damage_to_turrets: participant.damage_to_turrets,
+            damage_taken: participant.damage_taken,
             vision_score: participant.vision_score,
+            wards_placed: participant.wards_placed,
+            wards_killed: participant.wards_killed,
+            control_wards_bought: participant.control_wards_bought,
+            time_spent_dead_seconds: participant.time_spent_dead_seconds,
+            largest_killing_spree: participant.largest_killing_spree,
+            largest_multi_kill: participant.largest_multi_kill,
+            double_kills: participant.double_kills,
+            triple_kills: participant.triple_kills,
+            quadra_kills: participant.quadra_kills,
+            penta_kills: participant.penta_kills,
+            first_blood: participant.first_blood,
+            first_tower: participant.first_tower,
             items: participant.items,
             runes: participant.runes,
             spells: participant.spells,
@@ -1337,6 +1382,7 @@ fn post_match_detail_from_completed_match(
         played_at: completed_match.played_at,
         game_duration_seconds: completed_match.game_duration_seconds,
         result: completed_match.result,
+        self_participant_id: completed_match.self_participant_id,
         teams,
         comparison,
         warnings,

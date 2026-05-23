@@ -71,6 +71,13 @@ export type AiAnalysisCache = {
   analyzedAt: string;
 };
 
+export type ChatPreset = {
+  slot: number;
+  label: string;
+  message: string;
+  updatedAt: string;
+};
+
 export type SaveSettingsInput = {
   startupPage: StartupPage;
   language: AppLanguagePreference;
@@ -527,6 +534,7 @@ export type PostMatchDetail = {
   playedAt: string | null;
   gameDurationSeconds: number | null;
   result: MatchResult;
+  selfParticipantId: number | null;
   teams: PostMatchTeam[];
   comparison: PostMatchComparison;
   warnings: LeagueDataWarning[];
@@ -557,7 +565,25 @@ export type PostMatchParticipant = {
   cs: number;
   goldEarned: number;
   damageToChampions: number;
+  physicalDamageToChampions: number;
+  magicDamageToChampions: number;
+  trueDamageToChampions: number;
+  damageToObjectives: number;
+  damageToTurrets: number;
+  damageTaken: number;
   visionScore: number;
+  wardsPlaced: number;
+  wardsKilled: number;
+  controlWardsBought: number;
+  timeSpentDeadSeconds: number;
+  largestKillingSpree: number;
+  largestMultiKill: number;
+  doubleKills: number;
+  tripleKills: number;
+  quadraKills: number;
+  pentaKills: number;
+  firstBlood: boolean;
+  firstTower: boolean;
   items: number[];
   runes: number[];
   spells: number[];
