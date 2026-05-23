@@ -179,3 +179,15 @@ export function saveAiAnalysis(scope: string, resultText: string, gameCount: num
     input: { scope, resultText, gameCount },
   });
 }
+
+export function fetchChatPresets(): Promise<import("./types").ChatPreset[]> {
+  return callBackend<import("./types").ChatPreset[]>("list_chat_presets");
+}
+
+export function saveChatPreset(slot: number, label: string, message: string): Promise<import("./types").ChatPreset> {
+  return callBackend<import("./types").ChatPreset>("save_chat_preset", { slot, label, message });
+}
+
+export function deleteChatPreset(slot: number): Promise<boolean> {
+  return callBackend<boolean>("delete_chat_preset", { slot });
+}
