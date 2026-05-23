@@ -1649,6 +1649,7 @@ pub fn run_ai_analysis<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
     state: &AppState,
     scope: String,
+    tone: String,
 ) -> Result<(), CommandError> {
     let settings = application::get_settings(&state.store).map_err(CommandError::from)?;
 
@@ -1662,19 +1663,28 @@ pub fn run_ai_analysis<R: tauri::Runtime>(
 
     let self_data = application::get_league_self_snapshot(
         &state.league_client,
-        application::LeagueSelfSnapshotInput { match_limit: Some(50) },
+        application::LeagueSelfSnapshotInput { match_limit: Some(100) },
     )
     .map_err(CommandError::from)?;
 
     let game_count = self_data.recent_matches.len() as i64;
-    let prompt = build_ai_prompt(&self_data, &scope, language);
+    let prompt = build_ai_prompt(&self_data, &scope, &tone, language);
     let store = state.store.clone();
     let app_handle = app.clone();
 
+    let cache_key = scope.clone();
     std::thread::spawn(move || {
-        match stream_ai_chunks(&app_handle, &base_url, &api_key, &model, &prompt, &scope, &store, game_count) {
-            Ok(()) => {}
-            Err(e) => { let _ = app_handle.emit("ai-analysis-error", e); }
+        let result = stream_ai_chunks(
+            &app_handle,
+            &base_url,
+            &api_key,
+            &model,
+            &prompt,
+            "ai-analysis",
+            Some((&store, cache_key.as_str(), game_count)),
+        );
+        if let Err(e) = result {
+            let _ = app_handle.emit("ai-analysis-error", e);
         }
     });
 
@@ -1687,9 +1697,8 @@ fn stream_ai_chunks<R: tauri::Runtime>(
     api_key: &str,
     model: &str,
     prompt: &str,
-    scope: &str,
-    store: &storage::SqliteStore,
-    game_count: i64,
+    event_prefix: &str,
+    persist: Option<(&storage::SqliteStore, &str, i64)>,
 ) -> Result<(), String> {
     use std::io::{BufRead, BufReader};
 
@@ -1722,6 +1731,8 @@ fn stream_ai_chunks<R: tauri::Runtime>(
 
     let reader = BufReader::new(response);
     let mut full_text = String::new();
+    let chunk_event = format!("{event_prefix}-chunk");
+    let done_event = format!("{event_prefix}-done");
 
     for line_result in reader.lines() {
         let line = line_result.map_err(|e| e.to_string())?;
@@ -1730,20 +1741,23 @@ fn stream_ai_chunks<R: tauri::Runtime>(
         if let Ok(value) = serde_json::from_str::<serde_json::Value>(data) {
             if let Some(content) = value["choices"][0]["delta"]["content"].as_str() {
                 full_text.push_str(content);
-                let _ = app.emit("ai-analysis-chunk", content.to_string());
+                let _ = app.emit(chunk_event.as_str(), content.to_string());
             }
         }
     }
 
-    store.save_ai_analysis(scope, &full_text, game_count)
-        .map_err(|e| e.to_string())?;
-    let _ = app.emit("ai-analysis-done", full_text);
+    if let Some((store, scope_key, game_count)) = persist {
+        store.save_ai_analysis(scope_key, &full_text, game_count)
+            .map_err(|e| e.to_string())?;
+    }
+    let _ = app.emit(done_event.as_str(), full_text);
     Ok(())
 }
 
 fn build_ai_prompt(
     snapshot: &domain::LeagueSelfSnapshot,
     scope: &str,
+    tone: &str,
     language: domain::AppLanguagePreference,
 ) -> String {
     let lang_line = match language {
@@ -1751,20 +1765,48 @@ fn build_ai_prompt(
         _ => "请用中文回复。",
     };
 
-    let matches = &snapshot.recent_matches;
-    let total = matches.len();
-    let wins = matches.iter().filter(|m| m.result == domain::MatchResult::Win).count();
+    let persona = match tone {
+        "rage" => "你是一个极度暴躁、毒舌刻薄的英雄联盟喷子。用最难听的话、最侮辱性的类比、最直白的嘲讽把玩家的每一个问题骂得体无完肤。可以叫他「铁憨憨」「狗脑子」「一坨」之类的，但每一条批评都必须有具体数据支撑，不能乱喷，要喷得有理有据、入木三分。",
+        "flatter" => "你是一个表面上在做客观专业分析、实际上在无死角拍马屁的英雄联盟教练。用严肃的分析语气和专业术语，把玩家每一个数据包装成天才之举，把败局解读成「策略性失误但执行层面展现了超凡意识」，让玩家读完感觉自己被认可、被肯定，完全没意识到你在拍马屁。",
+        _ => "你是一位英雄联盟教练，请根据以下玩家数据进行分析，给出简洁、实用的建议。",
+    };
+
+    // LCU lane values for each scope
+    let lane_filter: Option<&str> = match scope {
+        "top"     => Some("TOP"),
+        "jungle"  => Some("JUNGLE"),
+        "middle"  => Some("MIDDLE"),
+        "bottom"  => Some("BOTTOM"),
+        "support" => Some("UTILITY"),
+        _         => None,
+    };
+
+    // Use only ranked matches for analysis, optionally filtered by lane
+    let ranked_matches: Vec<&domain::RecentMatchSummary> = snapshot.recent_matches.iter()
+        .filter(|m| matches!(
+            m.queue_name.as_deref(),
+            Some("Ranked Solo/Duo") | Some("Ranked Flex")
+        ))
+        .filter(|m| match lane_filter {
+            Some(lane) => m.lane.as_deref() == Some(lane),
+            None => true,
+        })
+        .take(50)
+        .collect();
+
+    let total = ranked_matches.len();
+    let wins = ranked_matches.iter().filter(|m| m.result == domain::MatchResult::Win).count();
     let win_rate = if total > 0 {
         format!("{:.1}", wins as f64 / total as f64 * 100.0)
     } else { "N/A".into() };
 
     let avg_kda = if total > 0 {
-        let sum: f64 = matches.iter().map(|m| m.kda.unwrap_or(0.0)).sum();
+        let sum: f64 = ranked_matches.iter().map(|m| m.kda.unwrap_or(0.0)).sum();
         format!("{:.2}", sum / total as f64)
     } else { "N/A".into() };
 
     let mut champ_count: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
-    for m in matches { *champ_count.entry(m.champion_name.as_str()).or_default() += 1; }
+    for m in &ranked_matches { *champ_count.entry(m.champion_name.as_str()).or_default() += 1; }
     let mut champ_vec: Vec<_> = champ_count.into_iter().collect();
     champ_vec.sort_by(|a, b| b.1.cmp(&a.1));
     let top_champs: String = champ_vec.iter().take(5)
@@ -1788,24 +1830,41 @@ fn build_ai_prompt(
         "bottom" => "下路", "support" => "辅助", _ => "全部",
     };
 
-    let match_details: String = matches.iter().take(50).map(|m| {
+    let match_details: String = ranked_matches.iter().map(|m| {
         let r = if m.result == domain::MatchResult::Win { "胜" } else { "败" };
-        format!("{} {} {}/{}/{}", m.champion_name, r, m.kills, m.deaths, m.assists)
+        let queue = m.queue_name.as_deref().unwrap_or("排位");
+        let lane_label = match m.lane.as_deref() {
+            Some("TOP")     => "上路",
+            Some("JUNGLE")  => "打野",
+            Some("MIDDLE")  => "中路",
+            Some("BOTTOM")  => "下路",
+            Some("UTILITY") => "辅助",
+            _               => "未知",
+        };
+        format!("{} {} {}/{}/{} [{} {}]", m.champion_name, r, m.kills, m.deaths, m.assists, queue, lane_label)
     }).collect::<Vec<_>>().join("\n");
+
+    if total == 0 {
+        return format!(
+"{lang_line}
+
+你是一位英雄联盟教练。当前玩家没有可用的排位对局记录（近100场内未找到排位赛）。请提示玩家先进行排位游戏，以便进行有意义的分析。段位：{rank_str}。"
+        );
+    }
 
     format!(
 "{lang_line}
 
-你是一位英雄联盟教练，请根据以下玩家数据进行分析，给出简洁、实用的建议。
+{persona}数据仅包含排位对局（单双排 + 灵活组排）。
 
 ## 玩家信息
 - 段位：{rank_str}
-- 分析范围：{scope_label}（近{total}场）
+- 分析范围：{scope_label}（近{total}场排位）
 - 胜率：{win_rate}%
 - 平均KDA：{avg_kda}
 - 常用英雄：{top_champs}
 
-## 近期对局明细
+## 近期排位对局明细
 {match_details}
 
 ## 输出格式（请严格遵守）
@@ -1826,6 +1885,216 @@ fn build_ai_prompt(
     )
 }
 
+/// Streams a single-game AI recap to the frontend via:
+///   "match-recap-chunk"  — each streamed text fragment (String)
+///   "match-recap-done"   — full text (String)
+///   "match-recap-error"  — error message (String)
+pub fn run_match_recap_analysis<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    state: &AppState,
+    game_id: i64,
+    tone: String,
+) -> Result<(), CommandError> {
+    let settings = application::get_settings(&state.store).map_err(CommandError::from)?;
+
+    let base_url = settings.ai_base_url.filter(|s| !s.is_empty())
+        .ok_or_else(|| CommandError { code: "config", message: "AI Base URL 未配置".into() })?;
+    let api_key = settings.ai_api_key.filter(|s| !s.is_empty())
+        .ok_or_else(|| CommandError { code: "config", message: "AI API Key 未配置".into() })?;
+    let model = settings.ai_model.filter(|s| !s.is_empty())
+        .ok_or_else(|| CommandError { code: "config", message: "AI 模型未配置".into() })?;
+    let language = settings.language;
+
+    let detail = application::get_post_match_detail(
+        &state.store,
+        &state.league_client,
+        application::PostMatchDetailInput { game_id },
+    )
+    .map_err(CommandError::from)?;
+
+    if detail.self_participant_id.is_none() {
+        return Err(CommandError {
+            code: "validation",
+            message: "无法在本局对局中识别当前玩家".into(),
+        });
+    }
+
+    let prompt = build_match_recap_prompt(&detail, &tone, language);
+    let app_handle = app.clone();
+
+    std::thread::spawn(move || {
+        let result = stream_ai_chunks(
+            &app_handle,
+            &base_url,
+            &api_key,
+            &model,
+            &prompt,
+            "match-recap",
+            None,
+        );
+        if let Err(e) = result {
+            let _ = app_handle.emit("match-recap-error", e);
+        }
+    });
+
+    Ok(())
+}
+
+fn build_match_recap_prompt(
+    detail: &domain::PostMatchDetail,
+    tone: &str,
+    language: domain::AppLanguagePreference,
+) -> String {
+    let lang_line = match language {
+        domain::AppLanguagePreference::En => "Please reply in English.",
+        _ => "请用中文回复。",
+    };
+
+    let persona = match tone {
+        "rage" => "你是一个极度暴躁、毒舌刻薄的英雄联盟喷子。用最难听的话、最侮辱性的类比、最直白的嘲讽把玩家这一局的所有失误骂得体无完肤。可以叫他「铁憨憨」「狗脑子」「一坨」之类的，但每一条批评都必须有具体数据支撑，不能乱喷，要喷得有理有据、入木三分。",
+        "flatter" => "你是一个表面上在做客观专业分析、实际上在无死角拍马屁的英雄联盟教练。用严肃的分析语气和专业术语，把玩家这一局每一个数据包装成天才之举，把失误解读成「策略性试探但执行层面展现了超凡意识」，让玩家读完感觉自己被认可、被肯定，完全没意识到你在拍马屁。",
+        _ => "你是一位英雄联盟教练，请根据以下单局对局数据进行客观分析，给出简洁、实用的复盘建议。",
+    };
+
+    let self_id = detail.self_participant_id.unwrap_or(-1);
+
+    let duration_seconds = detail.game_duration_seconds.unwrap_or(0).max(1);
+    let duration_minutes = duration_seconds as f64 / 60.0;
+
+    let result_label = match detail.result {
+        domain::MatchResult::Win => "胜利",
+        domain::MatchResult::Loss => "失败",
+        domain::MatchResult::Unknown => "未知",
+    };
+
+    let lane_label = |lane: Option<&str>| match lane {
+        Some("TOP")     => "上路",
+        Some("JUNGLE")  => "打野",
+        Some("MIDDLE")  => "中路",
+        Some("BOTTOM")  => "下路",
+        Some("UTILITY") => "辅助",
+        _               => "未知",
+    };
+
+    let mut self_block = String::new();
+    let mut ally_lines: Vec<String> = Vec::new();
+    let mut enemy_lines: Vec<String> = Vec::new();
+    let mut self_team_id: i64 = -1;
+
+    for team in &detail.teams {
+        for p in &team.participants {
+            if p.participant_id == self_id {
+                self_team_id = p.team_id;
+            }
+        }
+    }
+
+    for team in &detail.teams {
+        for p in &team.participants {
+            let is_self = p.participant_id == self_id;
+            let lane = lane_label(p.lane.as_deref());
+            let r = match p.result {
+                domain::MatchResult::Win => "胜",
+                domain::MatchResult::Loss => "败",
+                _ => "?",
+            };
+            let kda = p.kda.map(|v| format!("{v:.2}")).unwrap_or_else(|| "n/a".into());
+            let dpm = p.damage_to_champions as f64 / duration_minutes;
+            let cspm = p.cs as f64 / duration_minutes;
+            let gpm = p.gold_earned as f64 / duration_minutes;
+
+            let line = format!(
+"  - {marker}{champ}（{lane}）{r} {k}/{d}/{a} KDA={kda} | 伤害{dmg}({dpm:.0}/m) 物{phy}/魔{mag}/真{tru} | 对建筑{turret} 对野怪{obj} | 承伤{taken} | CS{cs}({cspm:.1}/m) 金{gold}({gpm:.0}/m) | 视野{vs}（眼{wp}/排{wk}/控{cw}） | 死亡时长{dead}s | 最长连杀{spree} 最大多杀{multi}（2={d2}/3={d3}/4={d4}/5={d5}） {fb}{ft}",
+                marker = if is_self { "【你】" } else { "" },
+                champ = p.champion_name,
+                lane = lane,
+                r = r,
+                k = p.kills, d = p.deaths, a = p.assists,
+                kda = kda,
+                dmg = p.damage_to_champions, dpm = dpm,
+                phy = p.physical_damage_to_champions,
+                mag = p.magic_damage_to_champions,
+                tru = p.true_damage_to_champions,
+                turret = p.damage_to_turrets,
+                obj = p.damage_to_objectives,
+                taken = p.damage_taken,
+                cs = p.cs, cspm = cspm,
+                gold = p.gold_earned, gpm = gpm,
+                vs = p.vision_score,
+                wp = p.wards_placed, wk = p.wards_killed, cw = p.control_wards_bought,
+                dead = p.time_spent_dead_seconds,
+                spree = p.largest_killing_spree, multi = p.largest_multi_kill,
+                d2 = p.double_kills, d3 = p.triple_kills, d4 = p.quadra_kills, d5 = p.penta_kills,
+                fb = if p.first_blood { "[一血]" } else { "" },
+                ft = if p.first_tower { "[首塔]" } else { "" },
+            );
+
+            if is_self {
+                self_block = line.clone();
+            }
+            if p.team_id == self_team_id {
+                ally_lines.push(line);
+            } else {
+                enemy_lines.push(line);
+            }
+        }
+    }
+
+    let team_totals_block: String = detail.teams.iter().map(|t| {
+        let side = if t.team_id == self_team_id { "我方" } else { "敌方" };
+        format!(
+            "  - {side}：{k}/{d}/{a} 总金{gold} 总伤害{dmg} 总视野{vs}",
+            k = t.totals.kills, d = t.totals.deaths, a = t.totals.assists,
+            gold = t.totals.gold_earned, dmg = t.totals.damage_to_champions, vs = t.totals.vision_score,
+        )
+    }).collect::<Vec<_>>().join("\n");
+
+    let queue = detail.queue_name.as_deref().unwrap_or("未知模式");
+    let allies = ally_lines.join("\n");
+    let enemies = enemy_lines.join("\n");
+
+    format!(
+"{lang_line}
+
+{persona}
+
+## 本局元信息
+- 模式：{queue}
+- 时长：{minutes:.1} 分钟
+- 你的结果：{result_label}
+
+## 你的数据（重点分析对象）
+{self_block}
+
+## 队伍总和
+{team_totals_block}
+
+## 我方全员
+{allies}
+
+## 敌方全员（作为对照参考，不是分析主角）
+{enemies}
+
+## 输出格式（请严格遵守）
+
+**这一局发生了什么**
+（1-2句话总结这局的关键节奏）
+
+**你做得好的地方**
+（2-3条，每条基于具体数据）
+
+**你的问题**
+（2-3条，每条指出具体数据并解释为什么是问题）
+
+**对位/团队对照**
+（1-2段：你和敌方对位、你和队友/敌方对位 carry 的差距，用数据说话）
+
+**这一局最该改的一点**
+（1条具体可执行的建议）",
+        minutes = duration_minutes,
+    )
+}
+
 pub fn save_ai_analysis(
     state: &AppState,
     command: SaveAiAnalysisCommand,
@@ -1843,6 +2112,52 @@ pub fn get_ai_analysis(
     state
         .store
         .get_ai_analysis(scope)
+        .map_err(|e| CommandError { code: "storage", message: e.to_string() })
+}
+
+pub fn list_chat_presets(state: &AppState) -> Result<Vec<domain::ChatPreset>, CommandError> {
+    state
+        .store
+        .list_chat_presets()
+        .map_err(|e| CommandError { code: "storage", message: e.to_string() })
+}
+
+pub fn save_chat_preset(
+    state: &AppState,
+    slot: i64,
+    label: String,
+    message: String,
+) -> Result<domain::ChatPreset, CommandError> {
+    if !(1..=9).contains(&slot) {
+        return Err(CommandError {
+            code: "validation",
+            message: "Slot 必须在 1..=9 之间".into(),
+        });
+    }
+    let trimmed_label = label.trim();
+    let trimmed_message = message.trim();
+    if trimmed_label.is_empty() || trimmed_message.is_empty() {
+        return Err(CommandError {
+            code: "validation",
+            message: "标签和消息不能为空".into(),
+        });
+    }
+    if trimmed_label.chars().count() > 40 || trimmed_message.chars().count() > 200 {
+        return Err(CommandError {
+            code: "validation",
+            message: "标签最多 40 字，消息最多 200 字".into(),
+        });
+    }
+    state
+        .store
+        .save_chat_preset(slot, trimmed_label, trimmed_message)
+        .map_err(|e| CommandError { code: "storage", message: e.to_string() })
+}
+
+pub fn delete_chat_preset(state: &AppState, slot: i64) -> Result<bool, CommandError> {
+    state
+        .store
+        .delete_chat_preset(slot)
         .map_err(|e| CommandError { code: "storage", message: e.to_string() })
 }
 
@@ -2658,6 +2973,7 @@ mod tests {
                 champion_id: Some(103),
                 champion_name: "Ahri".to_string(),
                 queue_name: Some("Ranked Solo/Duo".to_string()),
+                lane: None,
                 played_at: Some("2026-04-26 00:00:00".to_string()),
                 game_duration_seconds: Some(1800),
                 result: MatchResult::Win,
@@ -3315,6 +3631,7 @@ mod tests {
                 champion_id: Some(103),
                 champion_name: "Ahri".to_string(),
                 queue_name: Some("Ranked Solo/Duo".to_string()),
+                lane: Some("MIDDLE".to_string()),
                 result: MatchResult::Win,
                 kills: 7,
                 deaths: 1,
@@ -3468,6 +3785,7 @@ mod tests {
                     champion_id: Some(103),
                     champion_name: "Ahri".to_string(),
                     queue_name: Some("Ranked Solo/Duo".to_string()),
+                    lane: None,
                     result: MatchResult::Win,
                     kills: 4,
                     deaths: 2,
