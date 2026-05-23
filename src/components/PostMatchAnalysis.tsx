@@ -14,11 +14,13 @@ export function PostMatchAnalysis({
   gameAssets,
   onParticipantSelect,
   participantImages,
+  teamsLayoutClassName = "md:grid-cols-2",
 }: {
   detail: PostMatchDetail;
   gameAssets: Record<string, LeagueGameAssetView>;
   onParticipantSelect: (participantId: number) => void;
   participantImages: Record<number, string>;
+  teamsLayoutClassName?: string;
 }) {
   const { t } = useAppCore();
   const maxDamage = Math.max(
@@ -30,7 +32,7 @@ export function PostMatchAnalysis({
     <div className="grid gap-4">
       <ComparisonStrip comparison={detail.comparison} t={t} />
 
-      <div className="grid gap-3 md:grid-cols-2">
+      <div className={`grid gap-3 ${teamsLayoutClassName}`}>
         {detail.teams.map((team) => (
           <TeamBlock
             gameAssets={gameAssets}
