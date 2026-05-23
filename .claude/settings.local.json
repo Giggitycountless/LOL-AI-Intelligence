@@ -99,7 +99,8 @@
       "WebFetch(domain:www.wombocombo.gg)",
       "WebFetch(domain:www.npmjs.com)",
       "WebFetch(domain:medium.com)",
-      "Bash(npx vitest *)"
+      "Bash(npx vitest *)",
+      "Bash(grep -A50 \"^name = \\\\\"reqwest\\\\\"$\" Cargo.lock)"
     ]
   }
 }
