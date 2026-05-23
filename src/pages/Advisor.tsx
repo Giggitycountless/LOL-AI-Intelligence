@@ -4,9 +4,17 @@ import { invoke } from "@tauri-apps/api/core";
 
 import { useAppCore } from "../state/AppStateProvider";
 import { fetchAiAnalysis } from "../backend/leagueClient";
+import { isCommandError } from "../backend/commands";
 import type { AiAnalysisCache } from "../backend/types";
 
 type AnalysisScope = "all" | "top" | "jungle" | "middle" | "bottom" | "support";
+type AnalysisTone = "objective" | "rage" | "flatter";
+
+const tones: Array<{ id: AnalysisTone; label: string; className: string }> = [
+  { id: "objective", label: "客观分析", className: "border-zinc-300 dark:border-zinc-600 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 data-[active=true]:bg-zinc-950 data-[active=true]:text-white dark:data-[active=true]:bg-zinc-100 dark:data-[active=true]:text-zinc-900 data-[active=true]:border-zinc-950" },
+  { id: "rage",      label: "🤬 极端怒喷", className: "border-orange-300 dark:border-orange-700 text-orange-700 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-950 data-[active=true]:bg-orange-600 data-[active=true]:text-white data-[active=true]:border-orange-600" },
+  { id: "flatter",   label: "🌸 专业夸夸", className: "border-pink-300 dark:border-pink-700 text-pink-700 dark:text-pink-400 hover:bg-pink-50 dark:hover:bg-pink-950 data-[active=true]:bg-pink-500 data-[active=true]:text-white data-[active=true]:border-pink-500" },
+];
 
 const scopes: Array<{ id: AnalysisScope; label: string }> = [
   { id: "all", label: "全部" },
@@ -22,6 +30,7 @@ const NEW_GAME_THRESHOLD = 5;
 export function Advisor() {
   const { snapshot } = useAppCore();
   const [scope, setScope] = useState<AnalysisScope>("all");
+  const [tone, setTone] = useState<AnalysisTone>("objective");
   const [cached, setCached] = useState<AiAnalysisCache | null>(null);
   const [streaming, setStreaming] = useState("");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -48,7 +57,7 @@ export function Advisor() {
   useEffect(() => {
     if (!cached) return;
     void invoke<{ recentMatches: unknown[] }>("get_league_self_snapshot", {
-      input: { matchLimit: 50 },
+      input: { matchLimit: 100 },
     })
       .then((s) => setCurrentGameCount(s.recentMatches.length))
       .catch(() => null);
@@ -99,13 +108,21 @@ export function Advisor() {
 
       unlistenersRef.current = [chunkUnlisten, doneUnlisten, errorUnlisten];
 
-      await invoke("run_ai_analysis", { scope });
+      await invoke("run_ai_analysis", { scope, tone });
     } catch (err: unknown) {
-      setError(typeof err === "string" ? err : err instanceof Error ? err.message : "分析启动失败");
+      const message =
+        typeof err === "string"
+          ? err
+          : isCommandError(err)
+          ? err.message
+          : err instanceof Error
+          ? err.message
+          : "分析启动失败";
+      setError(message);
       setIsAnalyzing(false);
       stopListeners();
     }
-  }, [isAnalyzing, scope, stopListeners]);
+  }, [isAnalyzing, scope, tone, stopListeners]);
 
   useEffect(() => () => stopListeners(), [stopListeners]);
 
@@ -118,7 +135,7 @@ export function Advisor() {
           <p className="text-sm font-medium uppercase tracking-wide text-rose-700">AI 顾问</p>
           <h1 className="mt-2 text-3xl font-semibold text-zinc-950 dark:text-zinc-50">个人数据分析</h1>
           <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-            基于近50场对局，AI 分析你的优势、弱点和改进方向
+            基于近期排位对局（单双排 + 灵活组排），AI 分析你的优势、弱点和改进方向
           </p>
         </header>
 
@@ -143,6 +160,21 @@ export function Advisor() {
                 ].join(" ")}
               >
                 {s.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex gap-2">
+            {tones.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                disabled={isAnalyzing}
+                data-active={tone === t.id}
+                onClick={() => { if (!isAnalyzing) setTone(t.id); }}
+                className={`h-9 rounded-md border px-3 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${t.className}`}
+              >
+                {t.label}
               </button>
             ))}
           </div>
