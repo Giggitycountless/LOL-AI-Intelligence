@@ -12,3 +12,4 @@ pub(crate) const MIGRATION_0008: &str = include_str!("../migrations/0008_pick_ba
 pub(crate) const MIGRATION_0009: &str = include_str!("../migrations/0009_champion_rune_configs.sql");
 pub(crate) const MIGRATION_0010: &str = include_str!("../migrations/0010_theme_preference.sql");
 pub(crate) const MIGRATION_0011: &str = include_str!("../migrations/0011_ai_config.sql");
+pub(crate) const MIGRATION_0012: &str = include_str!("../migrations/0012_chat_presets.sql");

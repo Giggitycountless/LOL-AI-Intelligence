@@ -192,6 +192,67 @@ impl SqliteStore {
         Ok(())
     }
 
+    pub fn list_chat_presets(&self) -> StorageResult<Vec<domain::ChatPreset>> {
+        let connection = Connection::open(&self.database_path)?;
+        configure_connection(&connection)?;
+        let mut stmt = connection.prepare(
+            "SELECT slot, label, message, updated_at FROM chat_presets ORDER BY slot",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(domain::ChatPreset {
+                slot: row.get(0)?,
+                label: row.get(1)?,
+                message: row.get(2)?,
+                updated_at: row.get(3)?,
+            })
+        })?;
+        let mut presets = Vec::new();
+        for row in rows {
+            presets.push(row?);
+        }
+        Ok(presets)
+    }
+
+    pub fn save_chat_preset(
+        &self,
+        slot: i64,
+        label: &str,
+        message: &str,
+    ) -> StorageResult<domain::ChatPreset> {
+        let connection = Connection::open(&self.database_path)?;
+        configure_connection(&connection)?;
+        connection.execute(
+            "INSERT INTO chat_presets (slot, label, message, updated_at)
+             VALUES (?1, ?2, ?3, CURRENT_TIMESTAMP)
+             ON CONFLICT(slot) DO UPDATE SET
+               label = excluded.label,
+               message = excluded.message,
+               updated_at = excluded.updated_at",
+            rusqlite::params![slot, label, message],
+        )?;
+        let updated_at: String = connection.query_row(
+            "SELECT updated_at FROM chat_presets WHERE slot = ?1",
+            [slot],
+            |row| row.get(0),
+        )?;
+        Ok(domain::ChatPreset {
+            slot,
+            label: label.to_string(),
+            message: message.to_string(),
+            updated_at,
+        })
+    }
+
+    pub fn delete_chat_preset(&self, slot: i64) -> StorageResult<bool> {
+        let connection = Connection::open(&self.database_path)?;
+        configure_connection(&connection)?;
+        let deleted = connection.execute(
+            "DELETE FROM chat_presets WHERE slot = ?1",
+            [slot],
+        )?;
+        Ok(deleted > 0)
+    }
+
     pub fn clear_activity_entries(&self) -> StorageResult<i64> {
         let connection = Connection::open(&self.database_path)?;
         configure_connection(&connection)?;
@@ -386,6 +447,11 @@ fn run_migrations(connection: &mut Connection) -> StorageResult<()> {
             version: 11,
             description: "ai_config",
             sql: MIGRATION_0011,
+        },
+        Migration {
+            version: 12,
+            description: "chat_presets",
+            sql: MIGRATION_0012,
         },
     ] {
         let migration_is_applied = transaction
@@ -1135,6 +1201,24 @@ impl application::AppStore for SqliteStore {
     fn save_ai_analysis(&self, scope: &str, result_text: &str, game_count: i64) -> Result<(), String> {
         SqliteStore::save_ai_analysis(self, scope, result_text, game_count)
             .map_err(|error| error.to_string())
+    }
+
+    fn list_chat_presets(&self) -> Result<Vec<domain::ChatPreset>, String> {
+        SqliteStore::list_chat_presets(self).map_err(|error| error.to_string())
+    }
+
+    fn save_chat_preset(
+        &self,
+        slot: i64,
+        label: &str,
+        message: &str,
+    ) -> Result<domain::ChatPreset, String> {
+        SqliteStore::save_chat_preset(self, slot, label, message)
+            .map_err(|error| error.to_string())
+    }
+
+    fn delete_chat_preset(&self, slot: i64) -> Result<bool, String> {
+        SqliteStore::delete_chat_preset(self, slot).map_err(|error| error.to_string())
     }
 }
 
