@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Default desktop capability",
-  "windows": ["main", "participant-profile", "self-history-overlay"],
+  "windows": ["main", "participant-profile", "self-history-overlay", "match-recap"],
   "permissions": [
     "core:default",
     "core:webview:allow-create-webview-window",

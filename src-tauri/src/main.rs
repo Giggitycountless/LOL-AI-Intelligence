@@ -279,8 +279,44 @@ fn run_ai_analysis(
     app: tauri::AppHandle,
     state: State<'_, platform::AppState>,
     scope: String,
+    tone: String,
 ) -> Result<(), platform::CommandError> {
-    platform::run_ai_analysis(&app, state.inner(), scope)
+    platform::run_ai_analysis(&app, state.inner(), scope, tone)
+}
+
+#[tauri::command]
+fn run_match_recap_analysis(
+    app: tauri::AppHandle,
+    state: State<'_, platform::AppState>,
+    game_id: i64,
+    tone: String,
+) -> Result<(), platform::CommandError> {
+    platform::run_match_recap_analysis(&app, state.inner(), game_id, tone)
+}
+
+#[tauri::command]
+fn list_chat_presets(
+    state: State<'_, platform::AppState>,
+) -> Result<Vec<domain::ChatPreset>, platform::CommandError> {
+    platform::list_chat_presets(state.inner())
+}
+
+#[tauri::command]
+fn save_chat_preset(
+    state: State<'_, platform::AppState>,
+    slot: i64,
+    label: String,
+    message: String,
+) -> Result<domain::ChatPreset, platform::CommandError> {
+    platform::save_chat_preset(state.inner(), slot, label, message)
+}
+
+#[tauri::command]
+fn delete_chat_preset(
+    state: State<'_, platform::AppState>,
+    slot: i64,
+) -> Result<bool, platform::CommandError> {
+    platform::delete_chat_preset(state.inner(), slot)
 }
 
 #[tauri::command]
@@ -323,34 +359,160 @@ fn listen_for_overlay_hotkey(app: tauri::AppHandle) {
     // WH_KEYBOARD_LL callbacks must return within ~300 ms or Windows removes the hook.
     // All window work is dispatched to a dedicated thread via a bounded channel so the
     // rdev callback returns immediately.  Capacity 1 drops rapid duplicate presses.
-    let (tx, rx) = mpsc::sync_channel::<()>(1);
+    let (overlay_tx, overlay_rx) = mpsc::sync_channel::<()>(1);
+    let (chat_tx, chat_rx) = mpsc::sync_channel::<i64>(4);
 
     let app_for_toggle = app.clone();
     std::thread::spawn(move || {
-        for () in rx {
+        for () in overlay_rx {
             toggle_overlay(&app_for_toggle);
         }
     });
 
-    let mut shift_down = false;
-    if let Err(e) = listen(move |event: Event| {
-        match event.event_type {
-            EventType::KeyPress(Key::ShiftLeft | Key::ShiftRight) => {
-                shift_down = true;
-            }
-            EventType::KeyRelease(Key::ShiftLeft | Key::ShiftRight) => {
-                shift_down = false;
-            }
-            // KeyRelease avoids key-repeat firing multiple times.
-            // try_send: if a toggle is already queued, drop the extra press.
-            EventType::KeyRelease(Key::Tab) if shift_down => {
-                let _ = tx.try_send(());
-            }
-            _ => {}
+    let app_for_chat = app.clone();
+    std::thread::spawn(move || {
+        for slot in chat_rx {
+            dispatch_chat_preset(&app_for_chat, slot);
         }
-    }) {
-        eprintln!("[overlay-hotkey] rdev listen error: {e:?}");
+    });
+
+    // Windows may silently kill the low-level keyboard hook (e.g. when a callback
+    // exceeds its budget under load, or after sleep/resume). rdev::listen() returns
+    // Err in that case and never recovers on its own — so we wrap it in a restart
+    // loop. Each iteration re-installs a fresh hook.
+    loop {
+        // Modifier state is per-listener-lifetime: re-derive from scratch on every restart
+        // so stale flags from a previous session can't cause spurious toggles.
+        let mut shift_down = false;
+        let mut ctrl_down = false;
+        let overlay_tx = overlay_tx.clone();
+        let chat_tx = chat_tx.clone();
+        let listen_result = listen(move |event: Event| {
+            match event.event_type {
+                EventType::KeyPress(Key::ShiftLeft | Key::ShiftRight) => {
+                    shift_down = true;
+                }
+                EventType::KeyRelease(Key::ShiftLeft | Key::ShiftRight) => {
+                    shift_down = false;
+                }
+                EventType::KeyPress(Key::ControlLeft | Key::ControlRight) => {
+                    ctrl_down = true;
+                }
+                EventType::KeyRelease(Key::ControlLeft | Key::ControlRight) => {
+                    ctrl_down = false;
+                }
+                // KeyRelease avoids key-repeat firing multiple times.
+                // try_send: if a toggle is already queued, drop the extra press.
+                EventType::KeyRelease(Key::Tab) if shift_down && !ctrl_down => {
+                    let _ = overlay_tx.try_send(());
+                }
+                EventType::KeyRelease(key) if ctrl_down && shift_down => {
+                    if let Some(slot) = number_key_to_slot(key) {
+                        let _ = chat_tx.try_send(slot);
+                    }
+                }
+                _ => {}
+            }
+        });
+
+        match listen_result {
+            Ok(()) => {
+                eprintln!("[overlay-hotkey] rdev listener exited cleanly; not restarting.");
+                break;
+            }
+            Err(e) => {
+                eprintln!(
+                    "[overlay-hotkey] rdev listener died: {e:?}. Restarting in 1s."
+                );
+                std::thread::sleep(std::time::Duration::from_secs(1));
+            }
+        }
     }
+}
+
+fn number_key_to_slot(key: rdev::Key) -> Option<i64> {
+    use rdev::Key;
+    Some(match key {
+        Key::Num1 => 1,
+        Key::Num2 => 2,
+        Key::Num3 => 3,
+        Key::Num4 => 4,
+        Key::Num5 => 5,
+        Key::Num6 => 6,
+        Key::Num7 => 7,
+        Key::Num8 => 8,
+        Key::Num9 => 9,
+        _ => return None,
+    })
+}
+
+fn dispatch_chat_preset(app: &tauri::AppHandle, slot: i64) {
+    let Some(state) = app.try_state::<platform::AppState>() else {
+        return;
+    };
+    let preset = match platform::list_chat_presets(state.inner()) {
+        Ok(presets) => presets.into_iter().find(|p| p.slot == slot),
+        Err(e) => {
+            eprintln!("[chat-preset] failed to load presets: {e:?}");
+            return;
+        }
+    };
+    let Some(preset) = preset else {
+        // No preset bound to this slot — silently ignore.
+        return;
+    };
+
+    if !is_league_game_foreground() {
+        // Only inject keystrokes when the League game window is focused, to avoid
+        // typing chat presets into Discord/browser/IDE/etc.
+        return;
+    }
+
+    if let Err(e) = type_chat_message(&preset.message) {
+        eprintln!("[chat-preset] failed to type message: {e}");
+    }
+}
+
+#[cfg(windows)]
+fn is_league_game_foreground() -> bool {
+    use windows::Win32::UI::WindowsAndMessaging::{GetClassNameW, GetForegroundWindow};
+    unsafe {
+        let hwnd = GetForegroundWindow();
+        if hwnd.0.is_null() {
+            return false;
+        }
+        let mut buf = [0u16; 256];
+        let len = GetClassNameW(hwnd, &mut buf);
+        if len <= 0 {
+            return false;
+        }
+        let class_name = String::from_utf16_lossy(&buf[..len as usize]);
+        // League's in-game window uses class "RiotWindowClass"
+        class_name == "RiotWindowClass"
+    }
+}
+
+#[cfg(not(windows))]
+fn is_league_game_foreground() -> bool {
+    // Non-Windows builds (testing only): always allow.
+    true
+}
+
+fn type_chat_message(message: &str) -> Result<(), String> {
+    use enigo::{Enigo, Key, Keyboard, Settings, Direction};
+
+    let mut enigo = Enigo::new(&Settings::default()).map_err(|e| e.to_string())?;
+
+    // Open team chat (Enter)
+    enigo.key(Key::Return, Direction::Click).map_err(|e| e.to_string())?;
+    // League needs a moment to register the chat box is open before accepting text
+    std::thread::sleep(std::time::Duration::from_millis(80));
+    // Type the message (Unicode-safe; works for Chinese)
+    enigo.text(message).map_err(|e| e.to_string())?;
+    std::thread::sleep(std::time::Duration::from_millis(30));
+    // Send
+    enigo.key(Key::Return, Direction::Click).map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 fn toggle_overlay(app: &tauri::AppHandle) {
@@ -424,6 +586,10 @@ fn main() {
             save_player_note,
             clear_player_note,
             run_ai_analysis,
+            run_match_recap_analysis,
+            list_chat_presets,
+            save_chat_preset,
+            delete_chat_preset,
             get_ai_config,
             save_ai_analysis,
             get_ai_analysis,
