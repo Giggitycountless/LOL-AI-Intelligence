@@ -39,32 +39,34 @@ export const PlayerTrack = memo(function PlayerTrack({
           championId={player.championId}
           displayName={player.displayName}
           isSelected={isSelected}
+          masteryLevel={player.masteryLevel}
           onSelect={onChampionSelect}
           src={player.championUrl}
+          summonerLevel={player.summonerLevel}
           t={t}
           tone={tone}
         />
         <div className="grid min-w-0 grid-rows-2 gap-1.5">
-          <RankPill label="S" title={t("overlay.rankUnavailable")} value={player.soloRank} />
+          <RankPill label="S" title={t("overlay.rankUnavailable")} value={player.soloRank} prominent />
           <RankPill label="F" title={t("overlay.rankUnavailable")} value={player.flexRank} />
         </div>
       </div>
 
-      <div className="relative mt-2.5 rounded-md border border-zinc-200 bg-white px-2 py-1.5">
+      <div className="relative mt-2.5 rounded-md border border-zinc-200 bg-white px-2 py-2">
         <div className="flex items-center justify-between gap-2">
           <span className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">{t("overlay.score")}</span>
-          <span className="truncate text-sm font-semibold tabular-nums text-zinc-950">{player.score ?? "--"}</span>
+          <span className="truncate text-base font-bold tabular-nums text-zinc-950">{player.score ?? "--"}</span>
         </div>
-        <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-zinc-100">
+        <div className="mt-1.5 h-2.5 overflow-hidden rounded-full bg-zinc-100">
           <div
-            className={["h-full rounded-full", tone === "ally" ? "bg-emerald-600" : "bg-rose-700"].join(" ")}
+            className={["h-full rounded-full", tone === "ally" ? "bg-emerald-500" : "bg-rose-600"].join(" ")}
             style={{ width: `${scoreWidth(player.score)}%` }}
           />
         </div>
         {player.badge && (
           <span
             className={[
-              "absolute -right-px -top-2 flex h-5 min-w-7 items-center justify-center rounded-sm px-1 text-xs font-semibold text-white shadow-sm",
+              "absolute -right-px -top-2.5 flex h-5 min-w-7 items-center justify-center rounded-sm px-1 text-xs font-bold text-white shadow-sm",
               tone === "ally" ? "bg-emerald-700" : "bg-rose-700",
             ].join(" ")}
             title={`${player.winCount}/${player.gameCount}`}
@@ -75,12 +77,12 @@ export const PlayerTrack = memo(function PlayerTrack({
       </div>
 
       {!player.isEmpty && (player.advisorTags.length > 0 || player.advisorSummary) && (
-        <div className="mt-2 min-h-10 rounded-md border border-zinc-200 bg-white px-1.5 py-1.5">
+        <div className="mt-2 min-h-10 rounded-md border border-zinc-200 bg-white px-2 py-2">
           {player.advisorTags.length > 0 && (
             <div className="flex flex-wrap gap-1">
               {player.advisorTags.slice(0, 3).map((tag) => (
                 <span
-                  className={["rounded px-1.5 py-0.5 text-[10px] font-bold", advisorTagClass(tag.tone)].join(" ")}
+                  className={["rounded px-2 py-1 text-[11px] font-bold", advisorTagClass(tag.tone)].join(" ")}
                   key={`${player.id}-${tag.label}`}
                 >
                   {tag.label}
@@ -123,16 +125,20 @@ function ChampionPortrait({
   championId,
   displayName,
   isSelected,
+  masteryLevel,
   onSelect,
   src,
+  summonerLevel,
   t,
   tone,
 }: {
   championId: number | null | undefined;
   displayName: string;
   isSelected: boolean;
+  masteryLevel: number | null;
   onSelect: (event: MouseEvent, championId: number | null | undefined) => void;
   src: string | undefined;
+  summonerLevel: number | null;
   t: T;
   tone: TeamTone;
 }) {
@@ -147,20 +153,32 @@ function ChampionPortrait({
   ].join(" ");
 
   return (
-    <button
-      aria-label={championId ? `${t("overlay.viewAbilities")} ${displayName}` : t("overlay.unselected")}
-      className="h-16 w-16 rounded-md"
-      disabled={!championId}
-      onClick={(event) => onSelect(event, championId)}
-      title={displayName}
-      type="button"
-    >
-      {src ? (
-        <img alt="" className={baseClass} src={src} />
-      ) : (
-        <span className={`${baseClass} bg-zinc-100 text-sm font-semibold text-zinc-500`}>{initials(displayName)}</span>
+    <div className="relative h-16 w-16">
+      <button
+        aria-label={championId ? `${t("overlay.viewAbilities")} ${displayName}` : t("overlay.unselected")}
+        className="h-16 w-16 rounded-md"
+        disabled={!championId}
+        onClick={(event) => onSelect(event, championId)}
+        title={displayName}
+        type="button"
+      >
+        {src ? (
+          <img alt="" className={baseClass} src={src} />
+        ) : (
+          <span className={`${baseClass} bg-zinc-100 text-sm font-semibold text-zinc-500`}>{initials(displayName)}</span>
+        )}
+      </button>
+      {masteryLevel !== null && masteryLevel >= 5 && (
+        <span className="absolute -right-1 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded bg-amber-500 px-0.5 text-[9px] font-bold leading-none text-white shadow-sm">
+          M{masteryLevel}
+        </span>
       )}
-    </button>
+      {summonerLevel !== null && (
+        <span className="absolute bottom-0 left-0 right-0 flex items-center justify-center rounded-b-md bg-black/50 py-0.5 text-[9px] font-semibold leading-none text-white">
+          {summonerLevel}
+        </span>
+      )}
+    </div>
   );
 }
 
@@ -176,16 +194,17 @@ function SmallChampionIcon({ championName, src }: { championName: string; src: s
   );
 }
 
-function RankPill({ label, title, value }: { label: string; title: string; value: string | null }) {
+function RankPill({ label, prominent, title, value }: { label: string; prominent?: boolean; title: string; value: string | null }) {
   return (
     <div
       className={[
-        "flex min-w-0 items-center gap-1 rounded-md border px-1.5 text-[11px] font-semibold",
-        value ? "border-zinc-200 bg-white text-zinc-800" : "border-zinc-200 bg-zinc-50 text-zinc-400",
+        "flex min-w-0 items-center gap-1 rounded-md border px-1.5",
+        prominent ? "text-sm font-bold" : "text-[11px] font-semibold",
+        value ? "border-zinc-300 bg-white text-zinc-900" : "border-zinc-200 bg-zinc-50 text-zinc-400",
       ].join(" ")}
       title={value ?? title}
     >
-      <span className="shrink-0 text-zinc-500">{label}</span>
+      <span className={["shrink-0", prominent ? "text-zinc-400" : "text-zinc-500"].join(" ")}>{label}</span>
       <span className="truncate">{value ?? "--"}</span>
     </div>
   );
@@ -197,17 +216,21 @@ function MatchRow({ row }: { row: { id: string; imageUrl: string | undefined; ma
   return (
     <div
       className={[
-        "grid h-9 grid-cols-[2rem_minmax(0,1fr)_2.4rem] items-center gap-1.5 rounded border px-1.5",
+        "flex items-center gap-1.5 rounded border px-1.5 py-1",
         match ? resultClass(match.result) : "border-zinc-200 bg-zinc-50 text-zinc-400",
       ].join(" ")}
     >
       <SmallChampionIcon championName={match?.championName ?? "?"} src={row.imageUrl} />
-      <span className="truncate text-center text-xs font-semibold tabular-nums">
-        {match ? `${match.kills}/${match.deaths}/${match.assists}` : "--"}
-      </span>
-      <span className="truncate text-right text-[11px] font-semibold tabular-nums">
-        {match?.kda === null || match?.kda === undefined ? "--" : match.kda.toFixed(1)}
-      </span>
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-xs font-semibold tabular-nums leading-tight">
+          {match ? `${match.kills}/${match.deaths}/${match.assists}` : "--"}
+        </div>
+        {match && (
+          <div className="text-[10px] font-semibold tabular-nums leading-tight opacity-70">
+            {match.kda === null || match.kda === undefined ? "" : `KDA ${match.kda.toFixed(1)}`}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

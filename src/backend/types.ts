@@ -639,6 +639,8 @@ export type ChampSelectPlayer = {
   championName: string | null;
   team: ChampSelectTeam;
   rankedQueues: RankedQueueSummary[];
+  summonerLevel: number | null;
+  masteryLevel: number | null;
   recentStats: ParticipantRecentStats | null;
   recentStatsStatus: ChampSelectRecentStatsStatus;
 };

@@ -20,7 +20,7 @@ use domain::{
     ParticipantPublicProfile, ParticipantRecentStats, PlayerNoteSummary, PlayerNoteView,
     PostMatchComparison, PostMatchDetail, PostMatchParticipant, PostMatchTeam, PostMatchTeamTotals,
     RankedChampionDataSnapshot, RankedChampionDataStatus, RankedChampionLane, RankedChampionSort,
-    RankedChampionStat, RankedChampionStatsResponse, RecentChampionSummary, RecentMatchSummary,
+    RankedChampionStat, RankedChampionStatsResponse, RankedQueueSummary, RecentChampionSummary, RecentMatchSummary,
     RecentPerformanceSummary, RunePage, ServiceStatus, SettingsValues, StartupPage,
 };
 
@@ -126,6 +126,21 @@ pub trait LeagueClientReader {
     fn champ_select_session(&self) -> Result<ChampSelectSessionData, LeagueClientReadError>;
     fn summoners_by_ids(&self, ids: &[i64]) -> Vec<SummonerBatchEntry>;
     fn summoners_by_names(&self, names: &[String]) -> Vec<SummonerBatchEntry>;
+    fn participant_ranked_stats_batch(
+        &self,
+        puuids: &[String],
+    ) -> HashMap<String, Vec<RankedQueueSummary>> {
+        puuids
+            .iter()
+            .map(|puuid| (puuid.clone(), Vec::new()))
+            .collect()
+    }
+    fn champion_mastery_batch(
+        &self,
+        _entries: &[(i64, i64)],
+    ) -> HashMap<i64, Option<i64>> {
+        HashMap::new()
+    }
     fn champion_catalog(&self) -> Result<Vec<LeagueChampionSummary>, LeagueClientReadError>;
     fn champion_details(
         &self,
@@ -227,6 +242,7 @@ pub struct SummonerBatchEntry {
     pub summoner_id: i64,
     pub puuid: String,
     pub display_name: String,
+    pub summoner_level: Option<i64>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -2298,6 +2314,7 @@ pub fn get_champ_select_snapshot(
         display_name: String,
         champion_id: Option<i64>,
         team: domain::ChampSelectTeam,
+        summoner_level: Option<i64>,
     }
 
     let session = reader.champ_select_session()?;
@@ -2373,12 +2390,14 @@ pub fn get_champ_select_snapshot(
         if !normalized_name.is_empty() {
             seen_names.insert(normalized_name);
         }
+        let summoner_level = summoners_by_id.get(&summoner_id).and_then(|s| s.summoner_level);
         seeds.push(PlayerSeed {
             summoner_id,
             puuid,
             display_name,
             champion_id: player.champion_id,
             team: player.team.clone(),
+            summoner_level,
         });
     }
 
@@ -2405,12 +2424,14 @@ pub fn get_champ_select_snapshot(
         }
         seen_ids.insert(summoner_id);
         seen_names.insert(normalize_player_name(display_name.as_str()));
+        let summoner_level = summoner.and_then(|s| s.summoner_level);
         seeds.push(PlayerSeed {
             summoner_id,
             puuid,
             display_name,
             champion_id,
             team,
+            summoner_level,
         });
     }
 
@@ -2452,6 +2473,7 @@ pub fn get_champ_select_snapshot(
             .get(&normalized_name)
             .copied();
 
+        let summoner_level = summoner.and_then(|s| s.summoner_level);
         seen_names.insert(normalized_name);
         seeds.push(PlayerSeed {
             summoner_id,
@@ -2459,7 +2481,34 @@ pub fn get_champ_select_snapshot(
             display_name,
             champion_id,
             team,
+            summoner_level,
         });
+    }
+
+    // Enrich seeds with empty PUUIDs via the name-based summoner lookup.
+    // session.players can include enemy players with empty PUUIDs (common in
+    // the Tencent client), and since those players are already in seen_names,
+    // the name loop above skips them — leaving their PUUID empty even though
+    // summoners_by_name may already have a resolved PUUID for them.
+    for seed in &mut seeds {
+        let needs_puuid = seed.puuid.is_empty();
+        let needs_level = seed.summoner_level.is_none();
+        if !needs_puuid && !needs_level {
+            continue;
+        }
+        for key in summoner_name_lookup_keys(seed.display_name.as_str()) {
+            if let Some(summoner) = summoners_by_name.get(&key) {
+                if needs_puuid && !summoner.puuid.is_empty() {
+                    seed.puuid = summoner.puuid.clone();
+                }
+                if needs_level && summoner.summoner_level.is_some() {
+                    seed.summoner_level = summoner.summoner_level;
+                }
+                if !seed.puuid.is_empty() && seed.summoner_level.is_some() {
+                    break;
+                }
+            }
+        }
     }
 
     let player_count = seeds.len();
@@ -2501,6 +2550,42 @@ pub fn get_champ_select_snapshot(
         recent_stats_failed,
         recent_limit,
     });
+
+    // Ranked stats and mastery are only fetched on full builds (recent_limit > 0).
+    // Light builds (event-driven, limit=0) skip these to avoid firing 10-20 LCU
+    // requests on every champ-select event. The platform layer carries the data
+    // forward from the cache via merge_cached_player_data.
+    let ranked_by_puuid: HashMap<String, Vec<RankedQueueSummary>> = if recent_limit > 0 {
+        let mut ranked_puuids: Vec<String> = seeds
+            .iter()
+            .filter(|seed| !seed.puuid.is_empty())
+            .map(|seed| seed.puuid.clone())
+            .collect();
+        ranked_puuids.sort_unstable();
+        ranked_puuids.dedup();
+        if ranked_puuids.is_empty() {
+            HashMap::new()
+        } else {
+            reader.participant_ranked_stats_batch(&ranked_puuids)
+        }
+    } else {
+        HashMap::new()
+    };
+
+    let mastery_by_summoner_id: HashMap<i64, Option<i64>> = if recent_limit > 0 {
+        let mastery_entries: Vec<(i64, i64)> = seeds
+            .iter()
+            .filter_map(|seed| seed.champion_id.map(|cid| (seed.summoner_id, cid)))
+            .collect();
+        if mastery_entries.is_empty() {
+            HashMap::new()
+        } else {
+            reader.champion_mastery_batch(&mastery_entries)
+        }
+    } else {
+        HashMap::new()
+    };
+
     let players = seeds
         .into_iter()
         .map(|seed| {
@@ -2515,6 +2600,13 @@ pub fn get_champ_select_snapshot(
             } else {
                 ChampSelectRecentStatsStatus::Unavailable
             };
+            let ranked_queues = ranked_by_puuid
+                .get(seed.puuid.as_str())
+                .cloned()
+                .unwrap_or_default();
+            let mastery_level = mastery_by_summoner_id
+                .get(&seed.summoner_id)
+                .and_then(|v| *v);
 
             domain::ChampSelectPlayer {
                 summoner_id: seed.summoner_id,
@@ -2523,7 +2615,9 @@ pub fn get_champ_select_snapshot(
                 champion_id: seed.champion_id,
                 champion_name: None,
                 team: seed.team,
-                ranked_queues: Vec::new(),
+                ranked_queues,
+                summoner_level: seed.summoner_level,
+                mastery_level,
                 recent_stats,
                 recent_stats_status,
             }

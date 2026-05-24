@@ -312,11 +312,13 @@ fn champ_select_snapshot_batches_recent_stats() {
                 summoner_id: 1,
                 puuid: "puuid-1".to_string(),
                 display_name: "Player One".to_string(),
+                summoner_level: None,
             },
             SummonerBatchEntry {
                 summoner_id: 2,
                 puuid: "puuid-2".to_string(),
                 display_name: "Player Two".to_string(),
+                summoner_level: None,
             },
         ],
         Vec::new(),
@@ -355,11 +357,13 @@ fn champ_select_recent_stats_failure_keeps_other_players() {
                 summoner_id: 1,
                 puuid: "puuid-1".to_string(),
                 display_name: "Player One".to_string(),
+                summoner_level: None,
             },
             SummonerBatchEntry {
                 summoner_id: 2,
                 puuid: "puuid-2".to_string(),
                 display_name: "Player Two".to_string(),
+                summoner_level: None,
             },
         ],
         vec!["puuid-2".to_string()],
@@ -405,6 +409,7 @@ fn champ_select_snapshot_matches_bare_names_to_riot_id_display_names() {
         summoner_id: 10,
         puuid: "puuid-10".to_string(),
         display_name: "Player One#NA1".to_string(),
+        summoner_level: None,
     }];
 
     let snapshot = get_champ_select_snapshot(&reader, 6).expect("champ select snapshot reads");
@@ -567,7 +572,7 @@ fn ranked_champion_refresh_returns_stale_cache_when_remote_fails() {
     assert_eq!(response.source, "cached-json");
     assert_eq!(response.data_status, RankedChampionDataStatus::StaleCache);
     assert_eq!(response.records.len(), 1);
-    assert!(response.status_message.unwrap().contains("cached data"));
+    assert!(response.status_message.unwrap().contains("could not be refreshed"));
 }
 
 #[test]
@@ -656,11 +661,13 @@ fn champ_select_advisor_snapshot_adds_tags_and_matchup_advice() {
                 summoner_id: 1,
                 puuid: "puuid-1".to_string(),
                 display_name: "Ally".to_string(),
+                summoner_level: None,
             },
             SummonerBatchEntry {
                 summoner_id: 2,
                 puuid: "puuid-2".to_string(),
                 display_name: "Enemy".to_string(),
+                summoner_level: None,
             },
         ],
         Vec::new(),
@@ -1948,6 +1955,7 @@ fn sample_completed_match() -> LeagueCompletedMatch {
         played_at: Some("2026-04-19T12:00:00Z".to_string()),
         game_duration_seconds: Some(1880),
         result: MatchResult::Win,
+        self_participant_id: Some(1),
         participants: vec![
             LeagueCompletedParticipant {
                 participant_id: 1,
@@ -1967,7 +1975,25 @@ fn sample_completed_match() -> LeagueCompletedMatch {
                 cs: 210,
                 gold_earned: 12_000,
                 damage_to_champions: 22_000,
+                physical_damage_to_champions: 0,
+                magic_damage_to_champions: 22_000,
+                true_damage_to_champions: 0,
+                damage_to_objectives: 5_000,
+                damage_to_turrets: 3_000,
+                damage_taken: 18_000,
                 vision_score: 18,
+                wards_placed: 4,
+                wards_killed: 2,
+                control_wards_bought: 3,
+                time_spent_dead_seconds: 30,
+                largest_killing_spree: 4,
+                largest_multi_kill: 2,
+                double_kills: 2,
+                triple_kills: 0,
+                quadra_kills: 0,
+                penta_kills: 0,
+                first_blood: true,
+                first_tower: false,
                 items: vec![1056, 3020],
                 runes: vec![8112],
                 spells: vec![4, 14],
@@ -1990,7 +2016,25 @@ fn sample_completed_match() -> LeagueCompletedMatch {
                 cs: 180,
                 gold_earned: 10_000,
                 damage_to_champions: 25_000,
+                physical_damage_to_champions: 25_000,
+                magic_damage_to_champions: 0,
+                true_damage_to_champions: 0,
+                damage_to_objectives: 4_000,
+                damage_to_turrets: 2_000,
+                damage_taken: 22_000,
                 vision_score: 12,
+                wards_placed: 3,
+                wards_killed: 1,
+                control_wards_bought: 2,
+                time_spent_dead_seconds: 120,
+                largest_killing_spree: 3,
+                largest_multi_kill: 1,
+                double_kills: 1,
+                triple_kills: 0,
+                quadra_kills: 0,
+                penta_kills: 0,
+                first_blood: false,
+                first_tower: false,
                 items: vec![1055, 3047],
                 runes: vec![8010],
                 spells: vec![4, 12],

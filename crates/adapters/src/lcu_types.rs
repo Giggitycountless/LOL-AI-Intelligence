@@ -107,6 +107,22 @@ pub(crate) struct LcuSummonerBatch {
     pub(crate) display_name: Option<String>,
     pub(crate) game_name: Option<String>,
     pub(crate) tag_line: Option<String>,
+    pub(crate) summoner_level: Option<i64>,
+}
+
+/// Response from `/lol-ranked/v2/ranked-stats/{puuid}`.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct LcuPlayerRankedStats {
+    #[serde(default)]
+    pub(crate) queues: Vec<LcuRankedQueue>,
+}
+
+/// Response from `/lol-collections/v1/inventories/{summonerId}/champion-mastery/{championId}`.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct LcuChampionMasteryEntry {
+    pub(crate) champion_level: Option<i64>,
 }
 
 // ── Match history / participant types ──

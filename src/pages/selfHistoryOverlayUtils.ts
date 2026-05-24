@@ -34,9 +34,11 @@ export type PlayerView = {
   advisorTags: AdvisorPlayerTag[];
   advisorSummary: string | null;
   isEmpty: boolean;
+  masteryLevel: number | null;
   rows: MatchRowView[];
   score: number | null;
   soloRank: string | null;
+  summonerLevel: number | null;
   recentStatsStatus: ChampSelectRecentStatsStatus;
   winCount: number;
 };
@@ -114,9 +116,11 @@ export function playerView(
     advisorTags: advisorPlayer?.tags ?? [],
     advisorSummary: advisorSummaryText(advisorPlayer),
     isEmpty: !player,
+    masteryLevel: player?.masteryLevel ?? null,
     rows,
     score: playerScore(player),
     soloRank: rankValue(soloRank, effectiveLanguage, t),
+    summonerLevel: player?.summonerLevel ?? null,
     recentStatsStatus: player?.recentStatsStatus ?? "notRequested",
     winCount,
   };

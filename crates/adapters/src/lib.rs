@@ -60,8 +60,11 @@ pub(crate) fn log_lcu_adapter_event(message: &str) {
 
 
 fn map_ranked_queues(stats: LcuRankedStats) -> Vec<RankedQueueSummary> {
-    stats
-        .queues
+    map_lcu_queues(stats.queues)
+}
+
+fn map_lcu_queues(queues: Vec<LcuRankedQueue>) -> Vec<RankedQueueSummary> {
+    queues
         .into_iter()
         .filter_map(|queue| {
             let queue_type = queue.queue_type.as_deref()?;
@@ -868,6 +871,57 @@ impl LeagueClientReader for LocalLeagueClient {
         limit: i64,
     ) -> HashMap<String, Result<ParticipantRecentStats, LeagueClientReadError>> {
         self.read_participant_recent_stats_batch(player_puuids, limit)
+    }
+
+    fn participant_ranked_stats_batch(
+        &self,
+        puuids: &[String],
+    ) -> HashMap<String, Vec<RankedQueueSummary>> {
+        if puuids.is_empty() {
+            return HashMap::new();
+        }
+        let session = match self.open_session() {
+            SessionOpenResult::Ready(session) => session,
+            SessionOpenResult::Status(_) => return HashMap::new(),
+        };
+        puuids
+            .par_iter()
+            .filter(|puuid| is_safe_lcu_path_id(puuid))
+            .map(|puuid| {
+                let queues = session
+                    .get_json::<LcuPlayerRankedStats>(
+                        format!("/lol-ranked/v2/ranked-stats/{puuid}").as_str(),
+                    )
+                    .map(|stats| map_lcu_queues(stats.queues))
+                    .unwrap_or_default();
+                (puuid.clone(), queues)
+            })
+            .collect()
+    }
+
+    fn champion_mastery_batch(
+        &self,
+        entries: &[(i64, i64)],
+    ) -> HashMap<i64, Option<i64>> {
+        if entries.is_empty() {
+            return HashMap::new();
+        }
+        let session = match self.open_session() {
+            SessionOpenResult::Ready(session) => session,
+            SessionOpenResult::Status(_) => return HashMap::new(),
+        };
+        entries
+            .par_iter()
+            .map(|(summoner_id, champion_id)| {
+                let mastery_level = session
+                    .get_json::<LcuChampionMasteryEntry>(
+                        format!("/lol-collections/v1/inventories/{summoner_id}/champion-mastery/{champion_id}").as_str(),
+                    )
+                    .ok()
+                    .and_then(|entry| entry.champion_level);
+                (*summoner_id, mastery_level)
+            })
+            .collect()
     }
 
     fn champ_select_session(&self) -> Result<ChampSelectSessionData, LeagueClientReadError> {
@@ -1831,6 +1885,7 @@ fn map_summoner_batch_entry(summoner: LcuSummonerBatch) -> Option<SummonerBatchE
         summoner_id,
         puuid,
         display_name,
+        summoner_level: summoner.summoner_level,
     })
 }
 

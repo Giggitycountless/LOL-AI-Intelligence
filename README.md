@@ -1,217 +1,140 @@
 # LoL Desktop Assistant
 
-A Windows-first desktop assistant for League of Legends, built as a clean-room Tauri application.
+> 基于 Tauri 的英雄联盟桌面助手 · AI 教练 / 聊天预设 / 战绩复盘 / 自动接受 · 全本地数据
 
-The app currently focuses on local League Client workflows:
+![GitHub release](https://img.shields.io/github/v/release/Giggitycountless/LOL-Desktop-Assistant)
+![License](https://img.shields.io/github/license/Giggitycountless/LOL-Desktop-Assistant)
+![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-blue)
 
-- application health, settings, activity log, import/export tools
-- read-only local League Client status and self account snapshot
-- current summoner profile, ranked summary, profile icon, and champion icons
-- recent self match list
-- completed-match analysis with participant tables, scores, damage bars, items, runes, and summoner spells
-- standalone participant profile window for completed matches
-- champion-select history overlay with local recent-match context
-- opt-in lobby automation for ready checks and configured champ-select pick/ban preferences
-- local player notes and tags
+---
 
-## Safety Boundaries
+## 📥 下载安装
 
-This project intentionally keeps League Client integration narrow:
+**[👉 最新版本下载 (Releases)](https://github.com/Giggitycountless/LOL-Desktop-Assistant/releases/latest)**
 
-- Localhost League Client access only.
-- Frontend code never reads the lockfile and never calls LCU directly.
-- Lockfile port, password, authorization headers, raw LCU URLs, and PUUIDs must not be exposed to React, DOM, logs, exports, or UI state.
-- No remote Riot API integration.
-- Automation is limited to user-configured ready-check acceptance and champ-select pick/ban preferences.
-- No queue actions, matchmaking control, gameplay automation, or remote bots.
-- League Client snapshots are not persisted as product data.
+下载 `LoL Desktop Assistant_x.y.z_x64-setup.exe` 双击安装。**Windows 10 / 11 x64** only。
 
-Local SQLite data is for app-owned state such as settings, activity entries, and user-created notes/tags.
+> 聊天预设功能需要**以管理员身份运行**（UIPI 限制），其他功能正常用户权限即可。
 
-## Tech Stack
+---
 
-- Rust
-- Tauri 2
-- React 19
-- TypeScript 5.9
-- Vite 8
-- Tailwind CSS 4
-- SQLite via `rusqlite` with bundled SQLite
+## ✨ 功能
 
-## Requirements
+### 🤖 AI 教练
+- **数据分析**：基于近 100 场排位（单双排 + 灵活组排），AI 分析强弱项与改进方向，支持按位置筛选（上 / 打野 / 中 / 下 / 辅）
+- **赛后复盘**：单局深度分析，包含双方阵容、伤害构成、视野、经济等全维度数据对比
+- **三种风格**：客观分析 / 极端怒喷 / 专业夸夸（可切换）
+- 兼容任何 **OpenAI 格式 API**：OpenAI、DeepSeek、通义千问、Moonshot 等
 
-Windows development prerequisites:
+### 💬 聊天预设
+- 9 条预设消息绑定 `Ctrl+Shift+1` ~ `Ctrl+Shift+9`
+- 游戏内按热键自动打开聊天框并键入消息（**支持中文**）
+- 由你按 `Enter` 发送（可编辑、可 `Esc` 取消、`Shift+Enter` 改全聊）
 
-- Node.js and npm
+### 🛎️ 自动化
+- 自动接受对局（可配延迟）
+- 按位置自动选英雄 / Ban
+- 锁英雄时自动套用 Tencent 推荐符文页
+
+### 👁️ 游戏内悬浮窗
+- 进对局自动显示十人战绩面板（KDA、近期胜率、Scout Score）
+- `Shift+Tab` 切换显示 / 隐藏
+
+### 📊 战绩
+- 自己近期对局列表 + 详细计分板 + AI 复盘窗口
+
+---
+
+## 🔒 数据与隐私
+
+- 所有数据存在本地 SQLite (`%APPDATA%/com.local.lol-desktop-assistant`)
+- 仅访问本机 League Client (LCU)，**不调用 Riot 官方 API、不上传任何数据**
+- AI 功能你自己配 API Key，请求走你配置的 endpoint，不经过任何第三方
+
+---
+
+## ⚠️ 已知限制 / 风险提示
+
+- **仅支持 Windows**（macOS / Linux 没有 League 客户端）
+- **聊天预设需管理员权限**：否则 Windows UIPI 会拦截向 League 窗口的合成键盘事件
+- **国服 Vanguard 反作弊会标记合成输入**：本功能只是代你打字，不影响游戏机制，但风险自担
+- **未签名安装包**：Windows SmartScreen 会警告，点"仍要运行"即可
+
+---
+
+## 🛠️ Built With
+
+- [Rust](https://www.rust-lang.org/) — 后端
+- [Tauri 2](https://tauri.app/) — 桌面框架（Windows 用 WebView2 + Rust 二进制）
+- [React 19](https://react.dev/) + [TypeScript 5.9](https://www.typescriptlang.org/) — 前端
+- [Vite 8](https://vitejs.dev/) — 前端构建
+- [Tailwind CSS 4](https://tailwindcss.com/) — 样式
+- [rusqlite](https://github.com/rusqlite/rusqlite)（bundled SQLite）— 本地存储
+
+---
+
+## 🧱 开发
+
+### 依赖
+
+- Node.js 20+ / npm
 - Rust stable MSVC toolchain
 - Microsoft C++ Build Tools / Visual Studio Build Tools
-- WebView2 Runtime
-- Windows packaging tools required by Tauri NSIS builds
+- WebView2 Runtime（Windows 11 自带）
 
-## Getting Started
-
-Install dependencies:
+### 命令
 
 ```powershell
-npm install
+npm install                  # 装前端依赖
+npm run dev                  # 开发模式（Vite 热重载 + Rust 后端）
+npm run build                # 出 release 安装包到 target/release/bundle/nsis/
+npm run typecheck            # TS 类型检查
+cargo check --workspace      # Rust 编译检查
+cargo test --workspace       # Rust 全部测试
 ```
 
-Run the desktop app locally:
-
-```powershell
-npm run dev
-```
-
-Build the frontend only:
-
-```powershell
-npm run build:frontend
-```
-
-Build the Windows desktop app and installer:
-
-```powershell
-npm run build
-```
-
-The NSIS installer is produced under:
-
-```text
-target/release/bundle/nsis/
-```
-
-## Useful Commands
-
-```powershell
-npm run typecheck
-npm run build:frontend
-npm run build
-cargo check --workspace
-cargo test --workspace
-cargo test -p application
-cargo test -p platform
-cargo test -p storage
-```
-
-## Architecture
-
-The repository is a Rust workspace with clear backend layers and a thin React frontend.
+### 仓库结构
 
 ```text
 .
 ├─ crates/
-│  ├─ domain/       # shared domain DTOs, enums, and pure model types
-│  ├─ application/  # use cases, validation, orchestration, safe command behavior
-│  ├─ adapters/     # read-only local League Client adapter and platform-facing reads
-│  ├─ storage/      # SQLite connection, migrations, settings, activity, notes
-│  └─ platform/     # Tauri setup, app state, command boundary, command DTOs
-├─ src-tauri/       # Tauri executable shell and Windows packaging config
+│  ├─ domain/       # 共享 DTO / enum / 纯模型类型
+│  ├─ application/  # use cases、验证、命令编排
+│  ├─ adapters/     # 本地 LCU 适配器、外部数据源
+│  ├─ storage/      # SQLite 连接、迁移、设置、活动、笔记
+│  └─ platform/     # Tauri 命令边界、AppState、命令 DTO
+├─ src-tauri/       # Tauri 可执行壳子 + Windows 打包配置
 └─ src/
-   ├─ backend/      # typed frontend wrappers around Tauri commands
-   ├─ components/   # reusable React UI components
-   ├─ pages/        # Dashboard, Profile, Matches, Activity, Settings, window routes
-   ├─ state/        # AppStateProvider and frontend state boundary
-   └─ windows/      # Tauri window helpers
+   ├─ backend/      # Tauri 命令的 TS 封装
+   ├─ components/   # 通用 React 组件
+   ├─ pages/        # Dashboard / Profile / Matches / Advisor / ChatPresets / ...
+   ├─ state/        # AppStateProvider + 前端状态边界
+   └─ windows/      # Tauri 子窗口辅助函数
 ```
 
-Layering rules:
+### 架构分层
 
-- Domain should stay dependency-light.
-- Application owns validation and business rules.
-- Storage owns SQLite and migrations.
-- Adapters own external/local-client integration details.
-- Platform owns Tauri commands and command DTOs.
-- Frontend calls backend command wrappers only.
-- Frontend should not contain business logic or direct storage/client integration logic.
+- **Domain** 不依赖任何外部 crate
+- **Application** 负责验证和业务逻辑
+- **Storage** 拥有 SQLite 和迁移
+- **Adapters** 拥有外部 / 本地客户端集成细节
+- **Platform** 拥有 Tauri 命令和命令 DTO
+- **Frontend** 只调用 backend 命令封装，不写业务逻辑
 
-## Frontend Pages
+领域术语见 [`CONTEXT.md`](./CONTEXT.md)。
 
-- `Dashboard`: app health and League Client availability.
-- `Profile`: current user profile and ranked summary.
-- `Matches`: recent completed self matches and post-match analysis.
-- `Activity`: local activity entries and notes.
-- `Settings`: settings persistence, local data import/export, activity clearing.
-- `ParticipantProfileWindow`: standalone Tauri window for completed-match participant profiles.
-
-## Tauri Commands
-
-The frontend reaches backend behavior through typed wrappers in `src/backend`.
-
-Examples of command groups:
-
-- system health and app state
-- settings load/save/defaults
-- activity list/create/clear
-- local data import/export
-- League Client status and self snapshot
-- League image/game asset lookup
-- post-match detail lookup
-- participant public profile lookup
-- player note save/clear
-
-Keep command results safe for frontend consumption. Do not add raw lockfile fields, auth headers, internal LCU URLs, or PUUIDs to command DTOs.
-
-## SQLite
-
-Storage is backend-owned. The frontend does not use a SQL plugin and does not access SQLite directly.
-
-Migrations live in:
-
-```text
-crates/storage/migrations/
-```
-
-The database is opened from the app data directory at runtime.
-
-## Windows Packaging
-
-Tauri packaging is configured in:
-
-```text
-src-tauri/tauri.conf.json
-```
-
-Current bundle target:
-
-- NSIS installer
-- current-user install mode
-
-Signing, updater configuration, overlays, tray behavior, and background automation are intentionally out of scope for the current app foundation.
-
-## Development Guidelines
-
-- Keep changes small and focused.
-- Prefer existing workspace boundaries over new abstractions.
-- Add backend validation before exposing new command surface.
-- Add focused tests for command DTOs and storage/application behavior.
-- Keep React as a presentation/state boundary, not an integration layer.
-- Do not copy implementation, wording, layout, or structure from other product repositories.
-
-## Verification Checklist
-
-Before handing off a meaningful change, run the narrowest useful checks first, then broaden if needed:
+### 发新版本
 
 ```powershell
-npm run typecheck
-npm run build:frontend
-cargo test -p application
-cargo test -p platform
-cargo test -p storage
-cargo check --workspace
-```
-
-For release/packaging smoke tests:
-
-```powershell
-cargo test --workspace
 npm run build
+gh release create v0.x.0 "target/release/bundle/nsis/LoL Desktop Assistant_0.x.0_x64-setup.exe" `
+  --title "v0.x.0" --notes-file release-notes.md
 ```
 
-For League Client UI flows, manually verify with the local League Client running:
+---
 
-- client unavailable and not-logged-in states render gracefully
-- Profile loads self profile/ranked data when available
-- Matches loads recent completed matches
-- expanded match details show participants and assets
-- participant profile window opens, focuses, and reuses the same window
-- local notes/tags save and refresh visible participant tags
+## 📄 License
+
+[AGPL-3.0-or-later](./LICENSE)
+
+简单说：你可以自由用、改、分发，但**如果你修改后分发（包括作为网络服务）**，必须以同样的 AGPL 协议开源你的修改。

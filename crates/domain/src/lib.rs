@@ -1063,6 +1063,8 @@ pub struct ChampSelectPlayer {
     pub champion_name: Option<String>,
     pub team: ChampSelectTeam,
     pub ranked_queues: Vec<RankedQueueSummary>,
+    pub summoner_level: Option<i64>,
+    pub mastery_level: Option<i64>,
     pub recent_stats: Option<ParticipantRecentStats>,
     pub recent_stats_status: ChampSelectRecentStatsStatus,
 }

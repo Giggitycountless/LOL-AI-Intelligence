@@ -18,7 +18,7 @@ use application::{
     ActivityListInput, ActivityNoteInput, AdvisorDataInput, AdvisorDataRefreshInput,
     ApplicationError, LeagueChampionDetailsInput, LeagueChampionIconInput, LeagueClientReadError,
     LeagueClientReader, LeagueGameAssetInput, LeagueProfileIconInput, LeagueSelfSnapshotInput,
-    ParticipantPublicProfileInput, PostMatchDetailInput, RuneRecommendationProvider,
+    ParticipantPublicProfileInput, PostMatchDetailInput,
     RankedChampionStatsInput, SettingsInput, normalize_player_name,
 };
 use domain::{
@@ -535,6 +535,20 @@ impl LeagueClientReader for CachedLeagueClientReader<'_> {
     ) -> Result<(), LeagueClientReadError> {
         self.inner
             .apply_champ_select_preferences(pick_champion_id, ban_champion_id)
+    }
+
+    fn participant_ranked_stats_batch(
+        &self,
+        puuids: &[String],
+    ) -> std::collections::HashMap<String, Vec<domain::RankedQueueSummary>> {
+        self.inner.participant_ranked_stats_batch(puuids)
+    }
+
+    fn champion_mastery_batch(
+        &self,
+        entries: &[(i64, i64)],
+    ) -> std::collections::HashMap<i64, Option<i64>> {
+        self.inner.champion_mastery_batch(entries)
     }
 }
 
@@ -1538,20 +1552,32 @@ fn merge_recent_stats_from_cache(
     snapshot: &mut domain::ChampSelectSnapshot,
     cached_snapshot: &domain::ChampSelectSnapshot,
 ) {
-    let cached_stats: HashMap<String, ParticipantRecentStats> = cached_snapshot
+    let cached_by_puuid: HashMap<&str, &domain::ChampSelectPlayer> = cached_snapshot
         .players
         .iter()
-        .filter_map(|player| {
-            player
-                .recent_stats
-                .clone()
-                .map(|stats| (player.puuid.clone(), stats))
-        })
+        .filter(|player| !player.puuid.is_empty())
+        .map(|player| (player.puuid.as_str(), player))
         .collect();
 
     for player in &mut snapshot.players {
+        if player.puuid.is_empty() {
+            continue;
+        }
+        let Some(cached) = cached_by_puuid.get(player.puuid.as_str()) else {
+            continue;
+        };
         if player.recent_stats.is_none() {
-            player.recent_stats = cached_stats.get(player.puuid.as_str()).cloned();
+            player.recent_stats = cached.recent_stats.clone();
+        }
+        if player.ranked_queues.is_empty() {
+            player.ranked_queues = cached.ranked_queues.clone();
+        }
+        if player.summoner_level.is_none() {
+            player.summoner_level = cached.summoner_level;
+        }
+        // Only carry mastery if the champion hasn't changed; mastery is per-champion.
+        if player.mastery_level.is_none() && player.champion_id == cached.champion_id {
+            player.mastery_level = cached.mastery_level;
         }
     }
 }
@@ -3254,6 +3280,9 @@ mod tests {
                     auto_ban_enabled: current_settings.auto_ban_enabled,
                     auto_ban_champion_id: current_settings.auto_ban_champion_id,
                     auto_ban_delay_seconds: current_settings.auto_ban_delay_seconds,
+                    ai_base_url: None,
+                    ai_api_key: None,
+                    ai_model: None,
                 },
             },
         )
@@ -3857,6 +3886,8 @@ mod tests {
                 champion_name: None,
                 team: ChampSelectTeam::Ally,
                 ranked_queues: Vec::new(),
+                summoner_level: None,
+                mastery_level: None,
                 recent_stats: None,
                 recent_stats_status: domain::ChampSelectRecentStatsStatus::MissingIdentity,
             }],
@@ -3871,6 +3902,7 @@ mod tests {
             played_at: Some("2026-04-19T12:00:00Z".to_string()),
             game_duration_seconds: Some(1880),
             result: MatchResult::Win,
+            self_participant_id: Some(1),
             teams: vec![PostMatchTeam {
                 team_id: 100,
                 result: MatchResult::Win,
@@ -3900,7 +3932,25 @@ mod tests {
                     cs: 210,
                     gold_earned: 12_000,
                     damage_to_champions: 22_000,
+                    physical_damage_to_champions: 0,
+                    magic_damage_to_champions: 22_000,
+                    true_damage_to_champions: 0,
+                    damage_to_objectives: 5_000,
+                    damage_to_turrets: 3_000,
+                    damage_taken: 18_000,
                     vision_score: 18,
+                    wards_placed: 4,
+                    wards_killed: 2,
+                    control_wards_bought: 3,
+                    time_spent_dead_seconds: 30,
+                    largest_killing_spree: 4,
+                    largest_multi_kill: 2,
+                    double_kills: 2,
+                    triple_kills: 0,
+                    quadra_kills: 0,
+                    penta_kills: 0,
+                    first_blood: true,
+                    first_tower: false,
                     items: vec![1056, 3020],
                     runes: vec![8112],
                     spells: vec![4, 14],
