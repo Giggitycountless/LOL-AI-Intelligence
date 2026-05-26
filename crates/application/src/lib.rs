@@ -2590,16 +2590,18 @@ pub fn get_champ_select_snapshot(
         .into_iter()
         .map(|seed| {
             let recent_stats_result = recent_stats_by_puuid.get(seed.puuid.as_str());
+            let diagnosis = diagnose_recent_stats(recent_limit, seed.puuid.as_str(), recent_stats_result);
+            if diagnosis.should_log_to_stderr() {
+                eprintln!(
+                    "[overlay-history] player team={team} name={name:?} championId={champion:?} -> {phrase}",
+                    team = champ_select_team_log_label(&seed.team),
+                    name = seed.display_name,
+                    champion = seed.champion_id,
+                    phrase = diagnosis.log_phrase(),
+                );
+            }
             let recent_stats = recent_stats_result.and_then(|result| result.clone().ok());
-            let recent_stats_status = if recent_limit <= 0 {
-                ChampSelectRecentStatsStatus::NotRequested
-            } else if seed.puuid.is_empty() {
-                ChampSelectRecentStatsStatus::MissingIdentity
-            } else if recent_stats.is_some() {
-                ChampSelectRecentStatsStatus::Loaded
-            } else {
-                ChampSelectRecentStatsStatus::Unavailable
-            };
+            let recent_stats_status = diagnosis.public_status();
             let ranked_queues = ranked_by_puuid
                 .get(seed.puuid.as_str())
                 .cloned()
@@ -2657,6 +2659,92 @@ fn log_overlay_history_snapshot(args: OverlayHistoryLogArgs) {
         args.recent_stats_failed,
         args.missing_identity_count
     );
+}
+
+/// Per-player explanation for why recent_stats is or is not populated.
+/// Derived from the same inputs the public `ChampSelectRecentStatsStatus` uses,
+/// but carries the underlying LCU error and match count so failures can be
+/// diagnosed at runtime from logs alone.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum RecentStatsDiagnosis {
+    /// `recent_limit <= 0` — light/event-driven build path skipped fetching.
+    NotRequested,
+    /// PUUID was empty after both the champ-select session and name-lookup
+    /// fallback. Typically Riot anti-dodge anonymization of `their_team`
+    /// during ChampSelect, or an unresolved display name.
+    MissingIdentity,
+    /// LCU returned a successful response containing N games.
+    Loaded(usize),
+    /// LCU returned `Ok` but with zero games (account exists but no history).
+    LoadedEmpty,
+    /// LCU rejected the match-history request for this PUUID. Carries the
+    /// rendered error message so it shows up in the log line.
+    LcuError(String),
+    /// The batch HashMap had no entry for this PUUID at all — should not
+    /// normally happen and indicates an upstream batching bug.
+    NoResult,
+}
+
+impl RecentStatsDiagnosis {
+    pub(crate) fn public_status(&self) -> ChampSelectRecentStatsStatus {
+        match self {
+            Self::NotRequested => ChampSelectRecentStatsStatus::NotRequested,
+            Self::MissingIdentity => ChampSelectRecentStatsStatus::MissingIdentity,
+            Self::Loaded(_) | Self::LoadedEmpty => ChampSelectRecentStatsStatus::Loaded,
+            Self::LcuError(_) | Self::NoResult => ChampSelectRecentStatsStatus::Unavailable,
+        }
+    }
+
+    pub(crate) fn should_log_to_stderr(&self) -> bool {
+        // Suppress the noisy happy path; surface only states the user/
+        // developer would want to know about when triaging.
+        !matches!(self, Self::NotRequested | Self::Loaded(_))
+    }
+
+    pub(crate) fn log_phrase(&self) -> String {
+        match self {
+            Self::NotRequested => "skipped (recentLimit<=0)".to_string(),
+            Self::MissingIdentity => {
+                "MISSING_IDENTITY — LCU never exposed a PUUID for this player (Riot anti-dodge anonymization of enemies during ChampSelect, or summoner-name lookup did not resolve)".to_string()
+            }
+            Self::Loaded(count) => format!("OK matches={count}"),
+            Self::LoadedEmpty => {
+                "EMPTY_HISTORY — LCU returned 0 games for this PUUID (new account or hidden history)".to_string()
+            }
+            Self::LcuError(message) => {
+                format!("LCU_ERROR — match-history request failed: {message}")
+            }
+            Self::NoResult => {
+                "NO_RESULT — recent_stats batch returned no entry for this PUUID (upstream batching bug)".to_string()
+            }
+        }
+    }
+}
+
+pub(crate) fn diagnose_recent_stats(
+    recent_limit: i64,
+    puuid: &str,
+    result: Option<&Result<ParticipantRecentStats, LeagueClientReadError>>,
+) -> RecentStatsDiagnosis {
+    if recent_limit <= 0 {
+        return RecentStatsDiagnosis::NotRequested;
+    }
+    if puuid.trim().is_empty() {
+        return RecentStatsDiagnosis::MissingIdentity;
+    }
+    match result {
+        Some(Ok(stats)) if stats.recent_matches.is_empty() => RecentStatsDiagnosis::LoadedEmpty,
+        Some(Ok(stats)) => RecentStatsDiagnosis::Loaded(stats.recent_matches.len()),
+        Some(Err(error)) => RecentStatsDiagnosis::LcuError(error.to_string()),
+        None => RecentStatsDiagnosis::NoResult,
+    }
+}
+
+fn champ_select_team_log_label(team: &domain::ChampSelectTeam) -> &'static str {
+    match team {
+        domain::ChampSelectTeam::Ally => "ally",
+        domain::ChampSelectTeam::Enemy => "enemy",
+    }
 }
 
 pub fn get_league_champion_catalog(

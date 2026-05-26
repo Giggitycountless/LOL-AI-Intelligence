@@ -2042,3 +2042,127 @@ fn sample_completed_match() -> LeagueCompletedMatch {
         ],
     }
 }
+
+// ─── recent_stats diagnosis ──────────────────────────────────────────────────
+//
+// These tests pin the per-player diagnostic behavior so future refactors don't
+// regress the runtime explanation of why a player's history is missing.
+
+fn sample_recent_stats(match_count: usize) -> ParticipantRecentStats {
+    use domain::{MatchResult, RecentMatchSummary};
+    let matches = (0..match_count)
+        .map(|i| RecentMatchSummary {
+            game_id: i as i64,
+            champion_id: Some(103),
+            champion_name: "Ahri".to_string(),
+            queue_name: None,
+            lane: None,
+            result: MatchResult::Win,
+            kills: 5,
+            deaths: 2,
+            assists: 7,
+            kda: Some(6.0),
+            played_at: None,
+            game_duration_seconds: None,
+        })
+        .collect();
+    ParticipantRecentStats {
+        match_count,
+        average_kda: Some(6.0),
+        recent_champions: vec!["Ahri".to_string()],
+        recent_matches: matches,
+    }
+}
+
+#[test]
+fn diagnose_recent_stats_reports_not_requested_when_limit_is_zero() {
+    let diagnosis = diagnose_recent_stats(0, "puuid-1", None);
+    assert_eq!(diagnosis, RecentStatsDiagnosis::NotRequested);
+    assert_eq!(
+        diagnosis.public_status(),
+        ChampSelectRecentStatsStatus::NotRequested
+    );
+    assert!(!diagnosis.should_log_to_stderr());
+}
+
+#[test]
+fn diagnose_recent_stats_reports_missing_identity_when_puuid_is_blank() {
+    for puuid in ["", "   ", "\t"] {
+        let diagnosis = diagnose_recent_stats(20, puuid, None);
+        assert_eq!(diagnosis, RecentStatsDiagnosis::MissingIdentity, "input={puuid:?}");
+        assert_eq!(
+            diagnosis.public_status(),
+            ChampSelectRecentStatsStatus::MissingIdentity
+        );
+        assert!(diagnosis.should_log_to_stderr());
+        assert!(diagnosis.log_phrase().contains("MISSING_IDENTITY"));
+        assert!(
+            diagnosis.log_phrase().contains("anti-dodge"),
+            "log phrase must hint at Riot's anonymization so users know why enemies are blank"
+        );
+    }
+}
+
+#[test]
+fn diagnose_recent_stats_reports_loaded_with_match_count() {
+    let stats: Result<ParticipantRecentStats, LeagueClientReadError> = Ok(sample_recent_stats(7));
+    let diagnosis = diagnose_recent_stats(20, "puuid-1", Some(&stats));
+    assert_eq!(diagnosis, RecentStatsDiagnosis::Loaded(7));
+    assert_eq!(
+        diagnosis.public_status(),
+        ChampSelectRecentStatsStatus::Loaded
+    );
+    assert!(!diagnosis.should_log_to_stderr());
+    assert_eq!(diagnosis.log_phrase(), "OK matches=7");
+}
+
+#[test]
+fn diagnose_recent_stats_reports_empty_history_when_lcu_returns_zero_games() {
+    let stats: Result<ParticipantRecentStats, LeagueClientReadError> = Ok(sample_recent_stats(0));
+    let diagnosis = diagnose_recent_stats(20, "puuid-1", Some(&stats));
+    assert_eq!(diagnosis, RecentStatsDiagnosis::LoadedEmpty);
+    assert_eq!(
+        diagnosis.public_status(),
+        ChampSelectRecentStatsStatus::Loaded,
+        "an empty-but-successful response is still public-Loaded"
+    );
+    assert!(diagnosis.should_log_to_stderr());
+    assert!(diagnosis.log_phrase().contains("EMPTY_HISTORY"));
+}
+
+#[test]
+fn diagnose_recent_stats_reports_lcu_error_with_underlying_message() {
+    let error: Result<ParticipantRecentStats, LeagueClientReadError> = Err(
+        LeagueClientReadError::Integration("403 Forbidden".to_string()),
+    );
+    let diagnosis = diagnose_recent_stats(20, "puuid-1", Some(&error));
+    assert_eq!(
+        diagnosis,
+        RecentStatsDiagnosis::LcuError("403 Forbidden".to_string())
+    );
+    assert_eq!(
+        diagnosis.public_status(),
+        ChampSelectRecentStatsStatus::Unavailable
+    );
+    assert!(diagnosis.should_log_to_stderr());
+    let phrase = diagnosis.log_phrase();
+    assert!(phrase.contains("LCU_ERROR"));
+    assert!(
+        phrase.contains("403 Forbidden"),
+        "the underlying LCU error must surface in the log so the user can read it"
+    );
+}
+
+#[test]
+fn diagnose_recent_stats_reports_no_result_when_batch_is_missing_entry() {
+    // PUUID looked valid but the batch HashMap had no entry — upstream
+    // batching bug. The diagnosis must point at that case explicitly.
+    let diagnosis = diagnose_recent_stats(20, "puuid-1", None);
+    assert_eq!(diagnosis, RecentStatsDiagnosis::NoResult);
+    assert_eq!(
+        diagnosis.public_status(),
+        ChampSelectRecentStatsStatus::Unavailable
+    );
+    assert!(diagnosis.should_log_to_stderr());
+    assert!(diagnosis.log_phrase().contains("NO_RESULT"));
+}

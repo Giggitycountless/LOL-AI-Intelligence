@@ -1074,6 +1074,15 @@ fn handle_league_phase_change<R: Runtime + 'static>(
             {
                 let _ = app_handle.emit("open-self-history-overlay", ());
             }
+
+            // The cache captured during ChampSelect carries Riot's anti-dodge
+            // anonymization for `their_team` (empty PUUIDs). The gameflow
+            // session exposes both teams once the game starts, so drop the
+            // anonymized cache and immediately rebuild: this emits a
+            // champ-select-update with real identities and kicks off background
+            // hydration so enemy match history arrives without user interaction.
+            invalidate_anonymized_champ_select_cache(state);
+            let _ = refresh_champ_select_from_event(app_handle, state);
         }
         "EndOfGame" => {
             let _ = app_handle.emit("post-game-notes-open", ());
@@ -1231,11 +1240,37 @@ fn champ_select_cache_is_usable(
     current_phase: Option<&str>,
 ) -> bool {
     if current_phase == Some("InProgress") {
+        // The official Riot client anonymizes `their_team` during ChampSelect
+        // (empty PUUID/summoner_id/display_name) as an anti-dodge measure.
+        // Those anonymized rows persist in the cache after the game starts;
+        // refuse the cache so the next fetch rebuilds via the gameflow
+        // fallback, which exposes both teams' identities once the game is
+        // underway.
+        if champ_select_cache_has_anonymized_players(&entry.snapshot) {
+            return false;
+        }
         return recent_limit <= CHAMP_SELECT_LIGHT_RECENT_LIMIT
             || entry.recent_limit >= recent_limit;
     }
 
     entry.cached_at.elapsed() < CHAMP_SELECT_CACHE_TTL && entry.recent_limit >= recent_limit
+}
+
+fn champ_select_cache_has_anonymized_players(snapshot: &domain::ChampSelectSnapshot) -> bool {
+    snapshot.players.iter().any(|player| player.puuid.is_empty())
+}
+
+fn invalidate_anonymized_champ_select_cache(state: &AppState) {
+    let mut cache = lock_or_recover(&state.champ_select_cache);
+    let needs_invalidation = cache
+        .as_ref()
+        .is_some_and(|entry| champ_select_cache_has_anonymized_players(&entry.snapshot));
+    if needs_invalidation {
+        eprintln!(
+            "[champ-select] dropping anonymized cache on InProgress so gameflow can resolve enemy identities"
+        );
+        *cache = None;
+    }
 }
 
 fn champ_select_cache_can_hydrate_from_cache(
@@ -3166,6 +3201,121 @@ mod tests {
             CHAMP_SELECT_HYDRATED_RECENT_LIMIT,
             Some("ChampSelect"),
         ));
+    }
+
+    #[test]
+    fn champ_select_cache_has_anonymized_players_detects_empty_puuid() {
+        let mut snapshot = sample_champ_select_snapshot();
+        assert!(!champ_select_cache_has_anonymized_players(&snapshot));
+
+        snapshot.players.push(ChampSelectPlayer {
+            summoner_id: 8,
+            puuid: String::new(),
+            display_name: "Anon enemy".to_string(),
+            champion_id: Some(64),
+            champion_name: None,
+            team: ChampSelectTeam::Enemy,
+            ranked_queues: Vec::new(),
+            summoner_level: None,
+            mastery_level: None,
+            recent_stats: None,
+            recent_stats_status: domain::ChampSelectRecentStatsStatus::MissingIdentity,
+        });
+
+        assert!(champ_select_cache_has_anonymized_players(&snapshot));
+    }
+
+    #[test]
+    fn champ_select_cache_unusable_in_progress_when_any_player_lacks_puuid() {
+        // Riot anonymizes `their_team` PUUIDs during ChampSelect; once the game
+        // moves to InProgress we must rebuild from gameflow rather than reuse
+        // the anonymized cache.
+        let mut snapshot = sample_champ_select_snapshot();
+        snapshot.players.push(ChampSelectPlayer {
+            summoner_id: 8,
+            puuid: String::new(),
+            display_name: "Anon enemy".to_string(),
+            champion_id: Some(64),
+            champion_name: None,
+            team: ChampSelectTeam::Enemy,
+            ranked_queues: Vec::new(),
+            summoner_level: None,
+            mastery_level: None,
+            recent_stats: None,
+            recent_stats_status: domain::ChampSelectRecentStatsStatus::MissingIdentity,
+        });
+        let entry = ChampSelectCacheEntry {
+            snapshot,
+            cached_at: Instant::now(),
+            recent_limit: CHAMP_SELECT_HYDRATED_RECENT_LIMIT,
+        };
+
+        assert!(!champ_select_cache_is_usable(
+            &entry,
+            CHAMP_SELECT_HYDRATED_RECENT_LIMIT,
+            Some("InProgress"),
+        ));
+    }
+
+    #[test]
+    fn champ_select_cache_usable_in_progress_when_all_puuids_resolved() {
+        let entry = ChampSelectCacheEntry {
+            snapshot: sample_champ_select_snapshot(),
+            cached_at: Instant::now(),
+            recent_limit: CHAMP_SELECT_HYDRATED_RECENT_LIMIT,
+        };
+
+        assert!(champ_select_cache_is_usable(
+            &entry,
+            CHAMP_SELECT_HYDRATED_RECENT_LIMIT,
+            Some("InProgress"),
+        ));
+    }
+
+    #[test]
+    fn invalidate_anonymized_cache_drops_only_anonymized_entries() {
+        let data_dir = unique_temp_dir();
+        let state = AppState::initialize(&data_dir).expect("app state initializes");
+
+        // Step 1: fully-resolved cache survives invalidation.
+        *lock_or_recover(&state.champ_select_cache) = Some(ChampSelectCacheEntry {
+            snapshot: sample_champ_select_snapshot(),
+            cached_at: Instant::now(),
+            recent_limit: CHAMP_SELECT_HYDRATED_RECENT_LIMIT,
+        });
+        invalidate_anonymized_champ_select_cache(&state);
+        assert!(
+            lock_or_recover(&state.champ_select_cache).is_some(),
+            "fully-resolved cache must be preserved"
+        );
+
+        // Step 2: cache with any empty-PUUID player gets dropped.
+        let mut snapshot_with_anon = sample_champ_select_snapshot();
+        snapshot_with_anon.players.push(ChampSelectPlayer {
+            summoner_id: 8,
+            puuid: String::new(),
+            display_name: "Anon enemy".to_string(),
+            champion_id: Some(64),
+            champion_name: None,
+            team: ChampSelectTeam::Enemy,
+            ranked_queues: Vec::new(),
+            summoner_level: None,
+            mastery_level: None,
+            recent_stats: None,
+            recent_stats_status: domain::ChampSelectRecentStatsStatus::MissingIdentity,
+        });
+        *lock_or_recover(&state.champ_select_cache) = Some(ChampSelectCacheEntry {
+            snapshot: snapshot_with_anon,
+            cached_at: Instant::now(),
+            recent_limit: CHAMP_SELECT_HYDRATED_RECENT_LIMIT,
+        });
+        invalidate_anonymized_champ_select_cache(&state);
+        assert!(
+            lock_or_recover(&state.champ_select_cache).is_none(),
+            "anonymized cache must be invalidated so gameflow can rebuild it"
+        );
+
+        let _ = fs::remove_dir_all(data_dir);
     }
 
     #[test]
