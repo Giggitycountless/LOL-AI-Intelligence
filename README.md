@@ -5,6 +5,12 @@
 ![GitHub release](https://img.shields.io/github/v/release/Giggitycountless/LOL-Desktop-Assistant)
 ![License](https://img.shields.io/github/license/Giggitycountless/LOL-Desktop-Assistant)
 ![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-blue)
+![Tauri](https://img.shields.io/badge/tauri-2.0-%23FFC131?logo=tauri)
+![React](https://img.shields.io/badge/react-19-%2361DAFB?logo=react)
+![Rust](https://img.shields.io/badge/rust-%F0%9F%A6%80-orange?logo=rust)
+![Stars](https://img.shields.io/github/stars/Giggitycountless/LOL-Desktop-Assistant?style=social)
+
+🌐 **[宣传网站](https://giggitycountless.github.io/LOL-Desktop-Assistant/landing)** · **[英文推广文案](docs/promotion-copy.md#-reddit--rleagueoflegends)**
 
 ---
 
