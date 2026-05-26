@@ -1837,6 +1837,7 @@ impl LeagueClientReader for FakeLeagueClientReader {
         Ok(vec![LeagueChampionSummary {
             champion_id: 103,
             champion_name: "Ahri".to_string(),
+            champion_alias: Some("Ahri".to_string()),
         }])
     }
 

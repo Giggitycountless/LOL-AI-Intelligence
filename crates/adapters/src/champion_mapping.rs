@@ -28,6 +28,7 @@ pub(crate) fn map_champion_catalog(champions: Vec<LcuChampionSummary>) -> Vec<Le
         .map(|champion| LeagueChampionSummary {
             champion_id: champion.id,
             champion_name: champion.name.trim().to_string(),
+            champion_alias: champion.alias.filter(|a| !a.trim().is_empty()),
         })
         .collect()
 }

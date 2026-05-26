@@ -464,6 +464,7 @@ export type LeagueSelfSnapshotInput = {
 export type LeagueChampionSummary = {
   championId: number;
   championName: string;
+  championAlias: string | null;
 };
 
 export type AbilityStat = {

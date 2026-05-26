@@ -4,6 +4,7 @@ import { fetchLeagueChampionCatalog } from "../backend/leagueClient";
 import type { AppLanguagePreference, AppThemePreference, AutoAcceptStatus, LeagueChampionSummary, SaveSettingsInput, StartupPage } from "../backend/types";
 import type { TranslationKey } from "../i18n";
 import { useAppCore } from "../state/AppStateProvider";
+import { extraKeywords } from "../utils/championKeywords";
 
 const MIN_ACTIVITY_LIMIT = 1;
 const MAX_ACTIVITY_LIMIT = 500;
@@ -918,18 +919,20 @@ function validateAutomationDraft(draft: SaveSettingsInput, t: Translator) {
 function filterChampions(value: string, champions: LeagueChampionSummary[]) {
   const normalized = value.trim().toLowerCase();
   const filtered = normalized
-    ? champions.filter(
-        (champion) =>
-          champion.championName.toLowerCase().includes(normalized) ||
-          String(champion.championId).includes(normalized) ||
-          championLabel(champion).toLowerCase().includes(normalized),
-      )
+    ? champions.filter((champion) => championMatchesQuery(champion, normalized))
     : champions;
 
   return filtered
     .slice()
     .sort((left, right) => left.championName.localeCompare(right.championName))
     .slice(0, CHAMPION_RESULT_LIMIT);
+}
+
+function championMatchesQuery(champion: LeagueChampionSummary, query: string): boolean {
+  if (champion.championName.toLowerCase().includes(query)) return true;
+  if (champion.championAlias?.toLowerCase().includes(query)) return true;
+  if (extraKeywords(champion.championId).toLowerCase().includes(query)) return true;
+  return false;
 }
 
 function championLabel(champion: LeagueChampionSummary) {

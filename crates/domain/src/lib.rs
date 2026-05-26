@@ -443,6 +443,9 @@ pub struct LeagueGameAsset {
 pub struct LeagueChampionSummary {
     pub champion_id: i64,
     pub champion_name: String,
+    /// English champion key from the LCU (e.g. "Ahri", "Sett").
+    /// Always ASCII regardless of client language. Used for alias search.
+    pub champion_alias: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
