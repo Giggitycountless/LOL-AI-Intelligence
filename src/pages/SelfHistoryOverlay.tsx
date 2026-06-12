@@ -1,4 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useState, type MouseEvent, type ReactNode } from "react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import type {
   ChampSelectPlayer,
@@ -10,7 +11,7 @@ import type { LeagueChampionAbilityView, LeagueChampionDetailsView } from "../st
 import { useAdvisor, useAppCore, useChampSelect, useLeagueAssets } from "../state/AppStateProvider";
 import { canOpenSelfHistoryOverlayWindow, destroySelfHistoryOverlayWindow } from "../windows/selfHistoryOverlayWindow";
 import { type T } from "../utils/formatting";
-import { RefreshIcon } from "../components/overlay/Icons";
+import { HideIcon, RefreshIcon } from "../components/overlay/Icons";
 import { PlayerTrack } from "../components/overlay/PlayerTrack";
 import { ChampionDetailsPanel } from "../components/overlay/ChampionDetailsPanel";
 import {
@@ -237,6 +238,13 @@ export function SelfHistoryOverlay() {
             title={t("overlay.refresh")}
           >
             <RefreshIcon isSpinning={isRefreshingChampSelect} />
+          </IconButton>
+          <IconButton
+            ariaLabel={t("overlay.hide")}
+            onClick={() => void getCurrentWindow().hide()}
+            title={t("overlay.hide")}
+          >
+            <HideIcon />
           </IconButton>
         </div>
       </header>
