@@ -96,6 +96,15 @@ export function AppShell() {
       root.classList.remove("dark");
     }
   }, [isDark]);
+
+  // Success banners dismiss themselves; errors stay until the user dismisses them.
+  useEffect(() => {
+    if (feedback?.kind !== "success") {
+      return;
+    }
+    const timer = window.setTimeout(clearFeedback, 4000);
+    return () => window.clearTimeout(timer);
+  }, [feedback, clearFeedback]);
   const navigateTo = useCallback((page: Page, options?: { isUserInitiated?: boolean }) => {
     if (options?.isUserInitiated) {
       didUserNavigate.current = true;

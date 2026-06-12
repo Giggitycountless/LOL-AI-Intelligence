@@ -1,6 +1,7 @@
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 
 import { callBackend } from "../backend/commands";
+import { clampToScreen } from "./windowSize";
 
 export const SELF_HISTORY_OVERLAY_WINDOW_LABEL = "self-history-overlay";
 
@@ -39,18 +40,19 @@ async function openSelfHistoryOverlayWindowOnce() {
       return true;
     }
 
+    const size = clampToScreen({ width: 1400, height: 800 }, { width: 1200, height: 560 });
     const overlayWindow = new WebviewWindow(SELF_HISTORY_OVERLAY_WINDOW_LABEL, {
       alwaysOnTop: true,
       center: true,
       decorations: false,
       focus: false,
-      height: 800,
-      minHeight: 700,
+      height: size.height,
+      minHeight: 560,
       minWidth: 1200,
       resizable: true,
       title: "Self History",
       url: selfHistoryOverlayWindowUrl(),
-      width: 1400,
+      width: size.width,
     });
     void overlayWindow.once("tauri://error", () => {
       console.warn("Self history overlay window could not be opened.");

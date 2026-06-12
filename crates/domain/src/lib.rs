@@ -425,7 +425,35 @@ pub struct LeagueDataWarning {
 #[serde(rename_all = "camelCase")]
 pub struct LeagueImageAsset {
     pub mime_type: String,
+    /// Serialized as a base64 string: a JSON number array is ~3-4x larger on the
+    /// IPC wire and far slower for the webview to parse than one string literal.
+    #[serde(serialize_with = "serialize_bytes_base64")]
     pub bytes: Vec<u8>,
+}
+
+fn serialize_bytes_base64<S: serde::Serializer>(
+    bytes: &[u8],
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    serializer.serialize_str(&base64_encode(bytes))
+}
+
+/// Standard base64 (RFC 4648, with padding). Hand-rolled to keep this crate
+/// free of dependencies beyond serde.
+pub fn base64_encode(input: &[u8]) -> String {
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(input.len().div_ceil(3) * 4);
+    for chunk in input.chunks(3) {
+        let b0 = chunk[0] as u32;
+        let b1 = chunk.get(1).copied().unwrap_or(0) as u32;
+        let b2 = chunk.get(2).copied().unwrap_or(0) as u32;
+        let triple = (b0 << 16) | (b1 << 8) | b2;
+        out.push(ALPHABET[(triple >> 18) as usize & 0x3f] as char);
+        out.push(ALPHABET[(triple >> 12) as usize & 0x3f] as char);
+        out.push(if chunk.len() > 1 { ALPHABET[(triple >> 6) as usize & 0x3f] as char } else { '=' });
+        out.push(if chunk.len() > 2 { ALPHABET[triple as usize & 0x3f] as char } else { '=' });
+    }
+    out
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -1136,4 +1164,22 @@ pub struct RunePageSnapshot {
     pub recommendations: Vec<RuneRecommendation>,
     pub saved_config: Option<ChampionRuneConfig>,
     pub auto_applied: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::base64_encode;
+
+    #[test]
+    fn base64_encode_matches_rfc4648_test_vectors() {
+        assert_eq!(base64_encode(b""), "");
+        assert_eq!(base64_encode(b"f"), "Zg==");
+        assert_eq!(base64_encode(b"fo"), "Zm8=");
+        assert_eq!(base64_encode(b"foo"), "Zm9v");
+        assert_eq!(base64_encode(b"foob"), "Zm9vYg==");
+        assert_eq!(base64_encode(b"fooba"), "Zm9vYmE=");
+        assert_eq!(base64_encode(b"foobar"), "Zm9vYmFy");
+        assert_eq!(base64_encode(&[1, 2, 3]), "AQID");
+        assert_eq!(base64_encode(&[0xff, 0xfe, 0xfd, 0xfc]), "//79/A==");
+    }
 }

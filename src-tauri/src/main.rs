@@ -6,19 +6,22 @@ use tauri::{Emitter, Manager, State};
 
 const SELF_HISTORY_OVERLAY_WINDOW_LABEL: &str = "self-history-overlay";
 
+// Sync commands below run on the main thread — only acceptable for in-memory reads
+// and window operations. Anything touching SQLite, the LCU, or remote HTTP is marked
+// `(async)` so slow I/O cannot stall the window event loop.
 #[tauri::command]
 fn healthcheck(state: State<'_, platform::AppState>) -> domain::HealthReport {
     platform::healthcheck(state.inner())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn get_app_state(
     state: State<'_, platform::AppState>,
 ) -> Result<domain::AppSnapshot, platform::CommandError> {
     platform::get_app_state(state.inner())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn get_settings(
     state: State<'_, platform::AppState>,
 ) -> Result<domain::AppSettings, platform::CommandError> {
@@ -30,7 +33,7 @@ fn get_settings_defaults() -> domain::SettingsValues {
     platform::get_settings_defaults()
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn save_settings(
     state: State<'_, platform::AppState>,
     input: platform::SaveSettingsCommand,
@@ -38,7 +41,7 @@ fn save_settings(
     platform::save_settings(state.inner(), input)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn list_activity_entries(
     state: State<'_, platform::AppState>,
     input: platform::ListActivityEntriesCommand,
@@ -46,7 +49,7 @@ fn list_activity_entries(
     platform::list_activity_entries(state.inner(), input)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn create_activity_note(
     state: State<'_, platform::AppState>,
     input: platform::CreateActivityNoteCommand,
@@ -54,14 +57,14 @@ fn create_activity_note(
     platform::create_activity_note(state.inner(), input)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn export_local_data(
     state: State<'_, platform::AppState>,
 ) -> Result<domain::LocalDataExport, platform::CommandError> {
     platform::export_local_data(state.inner())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn import_local_data(
     state: State<'_, platform::AppState>,
     input: platform::ImportLocalDataCommand,
@@ -69,7 +72,7 @@ fn import_local_data(
     platform::import_local_data(state.inner(), input)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn clear_activity_entries(
     state: State<'_, platform::AppState>,
     input: platform::ClearActivityEntriesCommand,
@@ -77,7 +80,7 @@ fn clear_activity_entries(
     platform::clear_activity_entries(state.inner(), input)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn get_league_client_status(
     state: State<'_, platform::AppState>,
 ) -> Result<domain::LeagueClientStatus, platform::CommandError> {
@@ -99,14 +102,14 @@ fn destroy_self_history_overlay_window(app: tauri::AppHandle) {
     platform::destroy_self_history_overlay_window(&app);
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn get_league_champion_catalog(
     state: State<'_, platform::AppState>,
 ) -> Result<Vec<domain::LeagueChampionSummary>, platform::CommandError> {
     platform::get_league_champion_catalog(state.inner())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn get_league_self_snapshot(
     state: State<'_, platform::AppState>,
     input: platform::LeagueSelfSnapshotCommand,
@@ -114,7 +117,7 @@ fn get_league_self_snapshot(
     platform::get_league_self_snapshot(state.inner(), input)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn get_champ_select_snapshot(
     state: State<'_, platform::AppState>,
     input: platform::ChampSelectSnapshotCommand,
@@ -122,7 +125,7 @@ fn get_champ_select_snapshot(
     platform::get_champ_select_snapshot(state.inner(), input)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn get_ranked_champion_stats(
     state: State<'_, platform::AppState>,
     input: platform::RankedChampionStatsCommand,
@@ -130,7 +133,7 @@ fn get_ranked_champion_stats(
     platform::get_ranked_champion_stats(state.inner(), input)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn refresh_ranked_champion_stats(
     state: State<'_, platform::AppState>,
     input: platform::RefreshRankedChampionStatsCommand,
@@ -138,7 +141,7 @@ fn refresh_ranked_champion_stats(
     platform::refresh_ranked_champion_stats(state.inner(), input)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn get_advisor_data(
     state: State<'_, platform::AppState>,
     input: platform::AdvisorDataCommand,
@@ -146,7 +149,7 @@ fn get_advisor_data(
     platform::get_advisor_data(state.inner(), input)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn refresh_advisor_data(
     state: State<'_, platform::AppState>,
     input: platform::RefreshAdvisorDataCommand,
@@ -154,7 +157,7 @@ fn refresh_advisor_data(
     platform::refresh_advisor_data(state.inner(), input)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn get_champ_select_advisor_snapshot(
     state: State<'_, platform::AppState>,
     input: platform::ChampSelectSnapshotCommand,
@@ -162,14 +165,14 @@ fn get_champ_select_advisor_snapshot(
     platform::get_champ_select_advisor_snapshot(state.inner(), input)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn get_live_overlay_snapshot(
     state: State<'_, platform::AppState>,
 ) -> Result<domain::LiveOverlaySnapshot, platform::CommandError> {
     platform::get_live_overlay_snapshot(state.inner())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn get_league_profile_icon(
     state: State<'_, platform::AppState>,
     input: platform::LeagueProfileIconCommand,
@@ -177,7 +180,7 @@ fn get_league_profile_icon(
     platform::get_league_profile_icon(state.inner(), input)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn get_league_champion_icon(
     state: State<'_, platform::AppState>,
     input: platform::LeagueChampionIconCommand,
@@ -185,7 +188,7 @@ fn get_league_champion_icon(
     platform::get_league_champion_icon(state.inner(), input)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn get_league_champion_details(
     state: State<'_, platform::AppState>,
     input: platform::LeagueChampionDetailsCommand,
@@ -193,7 +196,7 @@ fn get_league_champion_details(
     platform::get_league_champion_details(state.inner(), input)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn get_league_game_asset(
     state: State<'_, platform::AppState>,
     input: platform::LeagueGameAssetCommand,
@@ -201,7 +204,7 @@ fn get_league_game_asset(
     platform::get_league_game_asset(state.inner(), input)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn get_post_match_detail(
     state: State<'_, platform::AppState>,
     input: platform::PostMatchDetailCommand,
@@ -209,7 +212,7 @@ fn get_post_match_detail(
     platform::get_post_match_detail(state.inner(), input)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn get_post_match_participant_profile(
     state: State<'_, platform::AppState>,
     input: platform::ParticipantPublicProfileCommand,
@@ -217,7 +220,7 @@ fn get_post_match_participant_profile(
     platform::get_post_match_participant_profile(state.inner(), input)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn save_player_note(
     state: State<'_, platform::AppState>,
     input: platform::SavePlayerNoteCommand,
@@ -225,7 +228,7 @@ fn save_player_note(
     platform::save_player_note(state.inner(), input)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn clear_player_note(
     state: State<'_, platform::AppState>,
     input: platform::ClearPlayerNoteCommand,
@@ -233,15 +236,15 @@ fn clear_player_note(
     platform::clear_player_note(state.inner(), input)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn get_rune_recommendations(
     state: State<'_, platform::AppState>,
     input: platform::GetRuneRecommendationsCommand,
-) -> Vec<domain::RuneRecommendation> {
-    platform::get_rune_recommendations(state.inner(), input)
+) -> Result<Vec<domain::RuneRecommendation>, platform::CommandError> {
+    Ok(platform::get_rune_recommendations(state.inner(), input))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn apply_rune_page(
     state: State<'_, platform::AppState>,
     input: platform::ApplyRunePageCommand,
@@ -249,7 +252,7 @@ fn apply_rune_page(
     platform::apply_rune_page(state.inner(), input)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn save_champion_rune_config(
     state: State<'_, platform::AppState>,
     input: platform::SaveRuneConfigCommand,
@@ -257,7 +260,7 @@ fn save_champion_rune_config(
     platform::save_champion_rune_config(state.inner(), input)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn get_champion_rune_config(
     state: State<'_, platform::AppState>,
     input: platform::GetRuneConfigCommand,
@@ -265,7 +268,7 @@ fn get_champion_rune_config(
     platform::get_champion_rune_config(state.inner(), input)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn delete_champion_rune_config(
     state: State<'_, platform::AppState>,
     input: platform::GetRuneConfigCommand,
@@ -278,7 +281,7 @@ static HOTKEY_LISTENER_STARTED: std::sync::atomic::AtomicBool =
 
 /// Called from the frontend after the window loads.
 /// Guards against multiple calls — only one rdev listener is ever started per process.
-#[tauri::command]
+#[tauri::command(async)]
 fn run_ai_analysis(
     app: tauri::AppHandle,
     state: State<'_, platform::AppState>,
@@ -288,7 +291,7 @@ fn run_ai_analysis(
     platform::run_ai_analysis(&app, state.inner(), scope, tone)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn run_match_recap_analysis(
     app: tauri::AppHandle,
     state: State<'_, platform::AppState>,
@@ -298,14 +301,14 @@ fn run_match_recap_analysis(
     platform::run_match_recap_analysis(&app, state.inner(), game_id, tone)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn list_chat_presets(
     state: State<'_, platform::AppState>,
 ) -> Result<Vec<domain::ChatPreset>, platform::CommandError> {
     platform::list_chat_presets(state.inner())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn save_chat_preset(
     state: State<'_, platform::AppState>,
     slot: i64,
@@ -315,7 +318,7 @@ fn save_chat_preset(
     platform::save_chat_preset(state.inner(), slot, label, message)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn delete_chat_preset(
     state: State<'_, platform::AppState>,
     slot: i64,
@@ -323,14 +326,14 @@ fn delete_chat_preset(
     platform::delete_chat_preset(state.inner(), slot)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn get_ai_config(
     state: State<'_, platform::AppState>,
 ) -> Result<domain::AiConfig, platform::CommandError> {
     platform::get_ai_config(state.inner())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn save_ai_analysis(
     state: State<'_, platform::AppState>,
     input: platform::SaveAiAnalysisCommand,
@@ -338,7 +341,7 @@ fn save_ai_analysis(
     platform::save_ai_analysis(state.inner(), input)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn get_ai_analysis(
     state: State<'_, platform::AppState>,
     scope: String,
@@ -644,10 +647,41 @@ fn toggle_overlay(app: &tauri::AppHandle) {
     }
 }
 
+/// The configured 1200x800 initial size assumes a roomy display. On small
+/// laptop screens (e.g. 1366x768) the window spawns taller than the monitor's
+/// work area and its bottom lands under the taskbar — shrink to fit, then
+/// re-center. The configured minimum size (960x640) is still enforced by tao.
+fn clamp_main_window_to_work_area(app: &tauri::App) {
+    const MARGIN: f64 = 48.0;
+    let Some(window) = app.get_webview_window("main") else {
+        return;
+    };
+    let Ok(Some(monitor)) = window.current_monitor() else {
+        return;
+    };
+    let Ok(current) = window.inner_size() else {
+        return;
+    };
+    let scale = monitor.scale_factor();
+    let work = monitor.work_area();
+    let avail_width = work.size.width as f64 / scale - MARGIN;
+    let avail_height = work.size.height as f64 / scale - MARGIN;
+    let current_width = current.width as f64 / scale;
+    let current_height = current.height as f64 / scale;
+    if current_width > avail_width || current_height > avail_height {
+        let _ = window.set_size(tauri::LogicalSize::new(
+            current_width.min(avail_width),
+            current_height.min(avail_height),
+        ));
+        let _ = window.center();
+    }
+}
+
 fn main() {
     if let Err(error) = tauri::Builder::default()
         .setup(|app| {
             platform::setup_app(app)?;
+            clamp_main_window_to_work_area(app);
 
             let app_handle = app.handle().clone();
             let state = app.state::<platform::AppState>().inner().clone();

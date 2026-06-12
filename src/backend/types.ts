@@ -498,7 +498,8 @@ export type LeagueChampionDetails = {
 
 export type LeagueImageAsset = {
   mimeType: string;
-  bytes: number[];
+  /** Base64-encoded image bytes (see domain::LeagueImageAsset). */
+  bytes: string;
 };
 
 export type LeagueGameAssetKind = "item" | "rune" | "spell";

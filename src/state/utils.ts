@@ -10,7 +10,12 @@ export function errorMessage(error: unknown) {
 }
 
 export function imageAssetUrl(asset: LeagueImageAsset) {
-  return URL.createObjectURL(new Blob([Uint8Array.from(asset.bytes)], { type: asset.mimeType }));
+  const binary = atob(asset.bytes);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return URL.createObjectURL(new Blob([bytes], { type: asset.mimeType }));
 }
 
 export function participantProfileKey(gameId: number, participantId: number) {

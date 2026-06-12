@@ -14,7 +14,9 @@ export function PostMatchAnalysis({
   gameAssets,
   onParticipantSelect,
   participantImages,
-  teamsLayoutClassName = "md:grid-cols-2",
+  // Each team panel needs ~592px (MIN_W) before side-by-side stops forcing
+  // inner horizontal scrollbars, so the panels only pair up from xl (1280px).
+  teamsLayoutClassName = "xl:grid-cols-2",
 }: {
   detail: PostMatchDetail;
   gameAssets: Record<string, LeagueGameAssetView>;

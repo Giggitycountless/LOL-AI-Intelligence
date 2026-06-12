@@ -2,6 +2,7 @@ import { emit, emitTo } from "@tauri-apps/api/event";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 
 import type { SelectedParticipant } from "../components/ParticipantProfilePanel";
+import { clampToScreen } from "./windowSize";
 
 export const PARTICIPANT_PROFILE_WINDOW_LABEL = "participant-profile";
 export const PARTICIPANT_PROFILE_SELECTED_EVENT = "participant-profile-selected";
@@ -17,16 +18,17 @@ export async function openParticipantProfileWindow(selection: SelectedParticipan
     return;
   }
 
+  const size = clampToScreen({ width: 420, height: 720 }, { width: 380, height: 560 });
   const profileWindow = new WebviewWindow(PARTICIPANT_PROFILE_WINDOW_LABEL, {
     center: true,
     focus: true,
-    height: 720,
+    height: size.height,
     minHeight: 560,
     minWidth: 380,
     resizable: true,
     title: "Participant Profile",
     url: participantProfileWindowUrl(selection),
-    width: 420,
+    width: size.width,
   });
   void profileWindow.once("tauri://error", () => {
     console.warn("Participant profile window could not be opened.");

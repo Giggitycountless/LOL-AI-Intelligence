@@ -241,7 +241,9 @@ export function SelfHistoryOverlay() {
         </div>
       </header>
 
-      <div className="grid min-h-0 flex-1 grid-cols-2 gap-2">
+      {/* Scrolls vertically when the window is shorter than the player tracks
+          (small laptop screens) — the boards must never be cut off unreachably. */}
+      <div className="grid min-h-0 flex-1 grid-cols-2 gap-2 overflow-y-auto">
         <TeamBoard
           onChampionSelect={handleChampionSelect}
           players={model.enemies}
@@ -296,7 +298,7 @@ const TeamBoard = memo(function TeamBoard({
   return (
     <section
       className={[
-        "grid h-full min-h-0 grid-cols-5 gap-2 rounded-lg border bg-white p-2 shadow-sm",
+        "grid min-h-full grid-cols-5 gap-2 rounded-lg border bg-white p-2 shadow-sm",
         tone === "ally" ? "border-emerald-200" : "border-rose-200",
       ].join(" ")}
     >

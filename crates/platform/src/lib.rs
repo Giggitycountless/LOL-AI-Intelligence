@@ -3854,7 +3854,8 @@ mod tests {
         .expect("image asset serializes");
 
         assert_eq!(value["mimeType"], "image/png");
-        assert_eq!(value["bytes"], json!([1, 2, 3]));
+        // Bytes cross the IPC boundary base64-encoded, not as a number array.
+        assert_eq!(value["bytes"], json!("AQID"));
         assert!(value.get("url").is_none());
         assert!(value.get("authorization").is_none());
         assert!(value.get("password").is_none());

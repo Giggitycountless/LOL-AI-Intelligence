@@ -79,6 +79,7 @@ export function AppStateProvider({ children, mode = "main" }: { children: ReactN
   const [isRankedChampionStatsLoading, setIsRankedChampionStatsLoading] = useState(false);
   const [isAdvisorDataLoading, setIsAdvisorDataLoading] = useState(false);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
+  const clearFeedback = useCallback(() => setFeedback(null), []);
   const { run } = useAsyncAction(setFeedback);
   const languagePreference = snapshot?.settings.language ?? "system";
   const effectiveLanguage = useMemo(() => resolveEffectiveLanguage(languagePreference), [languagePreference]);
@@ -241,8 +242,10 @@ export function AppStateProvider({ children, mode = "main" }: { children: ReactN
     async (settings: SaveSettingsInput) => {
       try {
         await saveSettings(settings);
-        await refresh();
+        // Confirm the save immediately — the snapshot refresh below can take a
+        // moment and shouldn't delay the user's feedback.
         setFeedback({ kind: "success", message: t("feedback.settingsSaved") });
+        await refresh();
         return true;
       } catch (caught: unknown) {
         setFeedback({ kind: "error", message: errorMessage(caught) });
@@ -401,7 +404,7 @@ export function AppStateProvider({ children, mode = "main" }: { children: ReactN
       languagePreference,
       effectiveLanguage,
       t,
-      clearFeedback: () => setFeedback(null),
+      clearFeedback,
       refresh,
       loadActivityEntries: loadActivityEntriesAction,
       refreshLeagueClient: refreshLeagueClientAction,
@@ -421,6 +424,7 @@ export function AppStateProvider({ children, mode = "main" }: { children: ReactN
     [
       activityEntries,
       autoAcceptStatus,
+      clearFeedback,
       clearActivityEntriesAction,
       clearPlayerNoteAction,
       createActivityNoteAction,

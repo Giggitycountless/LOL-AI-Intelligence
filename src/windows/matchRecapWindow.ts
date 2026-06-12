@@ -1,6 +1,8 @@
 import { emitTo } from "@tauri-apps/api/event";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 
+import { clampToScreen } from "./windowSize";
+
 export const MATCH_RECAP_WINDOW_LABEL = "match-recap";
 export const MATCH_RECAP_SELECTED_EVENT = "match-recap-selected";
 
@@ -18,16 +20,17 @@ export async function openMatchRecapWindow(selection: MatchRecapSelection) {
     return;
   }
 
+  const size = clampToScreen({ width: 1280, height: 880 }, { width: 880, height: 640 });
   const recapWindow = new WebviewWindow(MATCH_RECAP_WINDOW_LABEL, {
     center: true,
     focus: true,
-    height: 880,
+    height: size.height,
     minHeight: 640,
     minWidth: 880,
     resizable: true,
     title: "赛后复盘",
     url: matchRecapWindowUrl(selection),
-    width: 1280,
+    width: size.width,
   });
   void recapWindow.once("tauri://error", () => {
     console.warn("Match recap window could not be opened.");
