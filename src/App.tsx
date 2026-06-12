@@ -232,13 +232,13 @@ export function AppShell() {
         )}
         {!isLoading && !snapshot && (
           <div className="flex items-center justify-between gap-4 border-b border-red-200 bg-red-50 px-8 py-3 text-sm">
-            <span className="font-medium text-red-800">{t("app.loadingState")}</span>
+            <span className="font-medium text-red-800">{t("app.loadFailedState")}</span>
             <button
               type="button"
               onClick={() => void refresh()}
               className="inline-flex h-8 items-center rounded-md bg-red-100 px-3 text-sm font-semibold text-red-700 transition hover:bg-red-200"
             >
-              {t("common.refresh")}
+              {t("common.retry")}
             </button>
           </div>
         )}

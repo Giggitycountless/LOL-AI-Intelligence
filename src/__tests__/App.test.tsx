@@ -44,6 +44,8 @@ function translator(key: string) {
     "app.languageToggle": "EN",
     "app.dismiss": "Dismiss",
     "app.loadingState": "Loading",
+    "app.loadFailedState": "Failed to load application state",
+    "common.retry": "Retry",
   };
 
   return labels[key] ?? key;
