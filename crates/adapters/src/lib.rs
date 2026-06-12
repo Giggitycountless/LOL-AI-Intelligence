@@ -3275,18 +3275,8 @@ mod tests {
                                     total_damage_dealt_to_champions: Some(9_000),
                                     vision_score: Some(11),
                                     item0: Some(1055),
-                                    item1: None,
-                                    item2: None,
-                                    item3: None,
-                                    item4: None,
-                                    item5: None,
-                                    item6: None,
                                     perk0: Some(8010),
-                                    perk1: None,
-                                    perk2: None,
-                                    perk3: None,
-                                    perk4: None,
-                                    perk5: None,
+                                    ..Default::default()
                                 }),
                                 timeline: Some(LcuParticipantTimeline {
                                     role: Some("SOLO".to_string()),
@@ -3312,17 +3302,8 @@ mod tests {
                                     vision_score: Some(18),
                                     item0: Some(1056),
                                     item1: Some(3020),
-                                    item2: None,
-                                    item3: None,
-                                    item4: None,
-                                    item5: None,
-                                    item6: None,
                                     perk0: Some(8112),
-                                    perk1: None,
-                                    perk2: None,
-                                    perk3: None,
-                                    perk4: None,
-                                    perk5: None,
+                                    ..Default::default()
                                 }),
                                 timeline: Some(LcuParticipantTimeline {
                                     role: Some("SOLO".to_string()),
@@ -3530,17 +3511,14 @@ mod tests {
             played_at: Some("2026-04-19T01:21:32Z".to_string()),
             game_duration_seconds: Some(1807),
             result: MatchResult::Win,
+            self_participant_id: None,
             participants: (1..=count)
                 .map(|participant_id| application::LeagueCompletedParticipant {
                     participant_id,
                     team_id: if participant_id <= 5 { 100 } else { 200 },
                     display_name: format!("Participant {participant_id}"),
-                    player_puuid: None,
-                    profile_icon_id: None,
                     champion_id: Some(103),
                     champion_name: "Ahri".to_string(),
-                    role: None,
-                    lane: None,
                     result: MatchResult::Win,
                     kills: 1,
                     deaths: 1,
@@ -3550,9 +3528,7 @@ mod tests {
                     gold_earned: 10_000,
                     damage_to_champions: 10_000,
                     vision_score: 10,
-                    items: Vec::new(),
-                    runes: Vec::new(),
-                    spells: Vec::new(),
+                    ..Default::default()
                 })
                 .collect(),
         }
@@ -3603,12 +3579,14 @@ mod tests {
         // PID n+2 is very unlikely to exist on any system.
         // On non-Linux this returns true (PID check skipped),
         // so only assert on Linux.
-        let bogus_pid = u32::MAX - 1;
         #[cfg(target_os = "linux")]
-        assert!(
-            !is_pid_alive(bogus_pid),
-            "pid {bogus_pid} should not exist"
-        );
+        {
+            let bogus_pid = u32::MAX - 1;
+            assert!(
+                !is_pid_alive(bogus_pid),
+                "pid {bogus_pid} should not exist"
+            );
+        }
     }
 
     #[test]

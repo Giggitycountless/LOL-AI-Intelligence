@@ -166,7 +166,7 @@ pub(crate) struct LcuParticipant {
     pub(crate) timeline: Option<LcuParticipantTimeline>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct LcuParticipantStats {
     pub(crate) kills: Option<i64>,
@@ -625,16 +625,11 @@ mod tests {
 
     fn stats_with_items(items: &[i64]) -> LcuParticipantStats {
         LcuParticipantStats {
-            kills: None, deaths: None, assists: None, win: None,
-            total_minions_killed: None, neutral_minions_killed: None,
-            gold_earned: None, total_damage_dealt_to_champions: None,
-            vision_score: None,
             item0: items.first().copied(), item1: items.get(1).copied(),
             item2: items.get(2).copied(), item3: items.get(3).copied(),
             item4: items.get(4).copied(), item5: items.get(5).copied(),
             item6: items.get(6).copied(),
-            perk0: None, perk1: None, perk2: None,
-            perk3: None, perk4: None, perk5: None,
+            ..Default::default()
         }
     }
 
@@ -660,15 +655,10 @@ mod tests {
 
     fn stats_with_runes(runes: &[i64]) -> LcuParticipantStats {
         LcuParticipantStats {
-            kills: None, deaths: None, assists: None, win: None,
-            total_minions_killed: None, neutral_minions_killed: None,
-            gold_earned: None, total_damage_dealt_to_champions: None,
-            vision_score: None,
-            item0: None, item1: None, item2: None, item3: None,
-            item4: None, item5: None, item6: None,
             perk0: runes.first().copied(), perk1: runes.get(1).copied(),
             perk2: runes.get(2).copied(), perk3: runes.get(3).copied(),
             perk4: runes.get(4).copied(), perk5: runes.get(5).copied(),
+            ..Default::default()
         }
     }
 

@@ -931,11 +931,12 @@ pub struct RecentMatchSummary {
     pub game_duration_seconds: Option<i64>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum MatchResult {
     Win,
     Loss,
+    #[default]
     Unknown,
 }
 

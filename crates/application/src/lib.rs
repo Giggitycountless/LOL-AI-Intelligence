@@ -446,7 +446,7 @@ pub struct LeagueCompletedMatch {
     pub participants: Vec<LeagueCompletedParticipant>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct LeagueCompletedParticipant {
     pub participant_id: i64,
     pub team_id: i64,
