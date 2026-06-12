@@ -10,7 +10,7 @@
 ![Rust](https://img.shields.io/badge/rust-%F0%9F%A6%80-orange?logo=rust)
 ![Stars](https://img.shields.io/github/stars/Giggitycountless/LOL-Desktop-Assistant?style=social)
 
-🌐 **[Landing Page](https://htmlpreview.github.io/?https://raw.githubusercontent.com/Giggitycountless/LOL-Desktop-Assistant/main/docs/landing.html)** · [中文文档](README_CN.md) · [Promotion Copy](docs/promotion-copy.md)
+🌐 **[Landing Page](https://giggitycountless.github.io/LOL-AI-Intelligence/)** · [中文文档](README_CN.md) · [Promotion Copy](docs/promotion-copy.md)
 
 ---
 
