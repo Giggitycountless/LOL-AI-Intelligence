@@ -381,6 +381,69 @@ fn configure_connection(connection: &Connection) -> StorageResult<()> {
     Ok(())
 }
 
+const MIGRATIONS: &[Migration] = &[
+    Migration {
+        version: 1,
+        description: "initial_schema",
+        sql: MIGRATION_0001,
+    },
+    Migration {
+        version: 2,
+        description: "state_foundation",
+        sql: MIGRATION_0002,
+    },
+    Migration {
+        version: 3,
+        description: "player_notes",
+        sql: MIGRATION_0003,
+    },
+    Migration {
+        version: 4,
+        description: "ranked_champion_cache",
+        sql: MIGRATION_0004,
+    },
+    Migration {
+        version: 5,
+        description: "lobby_automation_settings",
+        sql: MIGRATION_0005,
+    },
+    Migration {
+        version: 6,
+        description: "language_preference",
+        sql: MIGRATION_0006,
+    },
+    Migration {
+        version: 7,
+        description: "advisor_data_cache",
+        sql: MIGRATION_0007,
+    },
+    Migration {
+        version: 8,
+        description: "pick_ban_delay",
+        sql: MIGRATION_0008,
+    },
+    Migration {
+        version: 9,
+        description: "champion_rune_configs",
+        sql: MIGRATION_0009,
+    },
+    Migration {
+        version: 10,
+        description: "theme_preference",
+        sql: MIGRATION_0010,
+    },
+    Migration {
+        version: 11,
+        description: "ai_config",
+        sql: MIGRATION_0011,
+    },
+    Migration {
+        version: 12,
+        description: "chat_presets",
+        sql: MIGRATION_0012,
+    },
+];
+
 fn run_migrations(connection: &mut Connection) -> StorageResult<()> {
     let transaction = connection.transaction()?;
 
@@ -392,68 +455,7 @@ fn run_migrations(connection: &mut Connection) -> StorageResult<()> {
         );",
     )?;
 
-    for migration in [
-        Migration {
-            version: 1,
-            description: "initial_schema",
-            sql: MIGRATION_0001,
-        },
-        Migration {
-            version: 2,
-            description: "state_foundation",
-            sql: MIGRATION_0002,
-        },
-        Migration {
-            version: 3,
-            description: "player_notes",
-            sql: MIGRATION_0003,
-        },
-        Migration {
-            version: 4,
-            description: "ranked_champion_cache",
-            sql: MIGRATION_0004,
-        },
-        Migration {
-            version: 5,
-            description: "lobby_automation_settings",
-            sql: MIGRATION_0005,
-        },
-        Migration {
-            version: 6,
-            description: "language_preference",
-            sql: MIGRATION_0006,
-        },
-        Migration {
-            version: 7,
-            description: "advisor_data_cache",
-            sql: MIGRATION_0007,
-        },
-        Migration {
-            version: 8,
-            description: "pick_ban_delay",
-            sql: MIGRATION_0008,
-        },
-        Migration {
-            version: 9,
-            description: "champion_rune_configs",
-            sql: MIGRATION_0009,
-        },
-        Migration {
-            version: 10,
-            description: "theme_preference",
-            sql: MIGRATION_0010,
-        },
-        Migration {
-            version: 11,
-            description: "ai_config",
-            sql: MIGRATION_0011,
-        },
-        Migration {
-            version: 12,
-            description: "chat_presets",
-            sql: MIGRATION_0012,
-        },
-    ] {
+    for migration in MIGRATIONS {
         let migration_is_applied = transaction
             .query_row(
                 "SELECT 1 FROM __app_migrations WHERE version = ?1",
@@ -1237,10 +1239,10 @@ mod tests {
         let store = SqliteStore::initialize(&data_dir).expect("storage initializes");
 
         assert!(store.database_path().exists());
-        assert_eq!(store.health().expect("storage health").schema_version, 11);
+        assert_eq!(store.health().expect("storage health").schema_version, latest_schema_version());
         assert_eq!(store.get_settings().expect("settings").activity_limit, 100);
         assert_eq!(store.get_settings().expect("settings").language, AppLanguagePreference::System);
-        assert_eq!(migration_count(store.database_path()), 11);
+        assert_eq!(migration_count(store.database_path()), latest_schema_version());
 
         let _ = fs::remove_dir_all(data_dir);
     }
@@ -1253,8 +1255,8 @@ mod tests {
         let second = SqliteStore::initialize(&data_dir).expect("second initialization");
 
         assert_eq!(first.database_path(), second.database_path());
-        assert_eq!(second.health().expect("storage health").schema_version, 11);
-        assert_eq!(migration_count(second.database_path()), 11);
+        assert_eq!(second.health().expect("storage health").schema_version, latest_schema_version());
+        assert_eq!(migration_count(second.database_path()), latest_schema_version());
 
         let _ = fs::remove_dir_all(data_dir);
     }
@@ -1288,7 +1290,7 @@ mod tests {
 
         let store = SqliteStore::initialize(&data_dir).expect("upgrade database");
 
-        assert_eq!(store.health().expect("storage health").schema_version, 11);
+        assert_eq!(store.health().expect("storage health").schema_version, latest_schema_version());
         assert_eq!(
             store.get_settings().expect("settings").startup_page,
             StartupPage::Dashboard
@@ -1297,7 +1299,7 @@ mod tests {
             store.get_settings().expect("settings").language,
             AppLanguagePreference::System
         );
-        assert_eq!(migration_count(store.database_path()), 11);
+        assert_eq!(migration_count(store.database_path()), latest_schema_version());
 
         let _ = fs::remove_dir_all(data_dir);
     }
@@ -1598,6 +1600,12 @@ mod tests {
                 row.get(0)
             })
             .expect("query migration count")
+    }
+
+    /// Derived from the MIGRATIONS registry so adding a migration can never
+    /// silently break these tests again.
+    fn latest_schema_version() -> i64 {
+        MIGRATIONS.len() as i64
     }
 
     fn ranked_snapshot_count(database_path: &Path) -> i64 {
