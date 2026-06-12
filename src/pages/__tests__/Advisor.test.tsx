@@ -4,156 +4,108 @@ import React from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockUseAppCore = vi.fn();
-const mockUseAdvisor = vi.fn();
-const mockUseLeagueAssets = vi.fn();
+const mockFetchAiAnalysis = vi.fn();
+const mockInvoke = vi.fn();
 
 vi.mock("../../state/AppStateProvider", () => ({
   useAppCore: () => mockUseAppCore(),
-  useAdvisor: () => mockUseAdvisor(),
-  useLeagueAssets: () => mockUseLeagueAssets(),
 }));
 
-function advisorRecord() {
+vi.mock("../../backend/leagueClient", () => ({
+  fetchAiAnalysis: (scope: string) => mockFetchAiAnalysis(scope),
+}));
+
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: (command: string, args?: unknown) => mockInvoke(command, args),
+}));
+
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: vi.fn().mockResolvedValue(() => {}),
+}));
+
+function createSnapshot(aiSettings: { aiBaseUrl?: string; aiApiKey?: string; aiModel?: string } = {}) {
   return {
-    championId: 103,
-    championName: "Ahri",
-    championAlias: "Ahri",
-    lane: "top",
-    winRate: 51.4,
-    pickRate: 10.2,
-    banRate: 8.1,
-    overallScore: 42.0,
-    games: 12000,
-    runes: {
-      primaryStyle: "Domination",
-      primaryRunes: [{ id: 8112, name: "Electrocute" }],
-      secondaryStyle: "Sorcery",
-      secondaryRunes: [{ id: 8210, name: "Transcendence" }],
-      statShards: ["Adaptive Force"],
+    settings: {
+      startupPage: "dashboard",
+      language: "zh",
+      compactMode: false,
+      aiBaseUrl: aiSettings.aiBaseUrl ?? null,
+      aiApiKey: aiSettings.aiApiKey ?? null,
+      aiModel: aiSettings.aiModel ?? null,
     },
-    summonerSpells: [
-      { id: 4, name: "Flash" },
-      { id: 14, name: "Ignite" },
-    ],
-    skillOrder: {
-      maxOrder: ["Q", "W", "E"],
-      earlyOrder: ["Q", "W", "E", "Q", "Q", "R"],
-    },
-    itemBuild: {
-      starter: [{ id: 1056, name: "Doran's Ring" }],
-      core: [{ id: 6655, name: "Luden's Companion" }],
-      boots: [{ id: 3020, name: "Sorcerer's Shoes" }],
-      late: [{ id: 3089, name: "Rabadon's Deathcap" }],
-      situational: [{ id: 3157, name: "Zhonya's Hourglass" }],
-    },
-    strongAgainst: [{ championId: 777, championName: "Yone", note: "Punish Q3.", winRateDelta: 2.1 }],
-    weakAgainst: [{ championId: 238, championName: "Zed", note: "Respect level 6.", winRateDelta: -1.8 }],
-    powerSpikes: [{ timing: "6", label: "Spirit Rush", description: "Look for roam windows." }],
-    laneAdvice: "Push waves before roaming.",
-    teamfightAdvice: "Enter after key cooldowns are used.",
   };
 }
 
-function defaultAdvisor(records = [advisorRecord()]) {
-  return {
-    advisorData: {
-      lane: "top",
-      championId: null,
-      records,
-      source: "fixture",
-      updatedAt: "1",
-      generatedAt: null,
-      importedAt: "1",
-      patch: "26.08",
-      region: "KR",
-      queue: "RANKED_SOLO_5X5",
-      tier: "EMERALD_PLUS",
-      isCached: true,
-      dataStatus: "cached",
-      statusMessage: null,
-    },
-    champSelectAdvisorSnapshot: null,
-    liveOverlaySnapshot: null,
-    isAdvisorDataLoading: false,
-    advisorDataError: null,
-    loadAdvisorData: vi.fn().mockResolvedValue(true),
-    refreshAdvisorData: vi.fn().mockResolvedValue(true),
-    refreshChampSelectAdvisorSnapshot: vi.fn().mockResolvedValue(true),
-    refreshLiveOverlaySnapshot: vi.fn().mockResolvedValue(true),
-  };
-}
+const configuredAi = {
+  aiBaseUrl: "https://api.example.com/v1",
+  aiApiKey: "sk-test",
+  aiModel: "test-model",
+};
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockUseAppCore.mockReturnValue({
-    t: (key: string) => {
-      const map: Record<string, string> = {
-        "advisor.eyebrow": "Advisor",
-        "advisor.title": "Champion Recommendations",
-        "advisor.champions": "champions",
-        "advisor.noData": "No advisor data is available for this lane.",
-        "advisor.recommendations": "Recommendations",
-        "common.refresh": "Refresh",
-        "advisor.localSample": "Local Sample",
-      };
-      return map[key] ?? key;
-    },
-    snapshot: null,
-    feedback: null,
-    clearFeedback: vi.fn(),
-    isLoading: false,
-    effectiveLanguage: "en",
-    setLanguagePreference: vi.fn(),
-  });
-  mockUseAdvisor.mockReturnValue(defaultAdvisor());
-  mockUseLeagueAssets.mockReturnValue({
-    leagueImages: { profileIcons: {}, championIcons: {}, gameAssets: {} },
-    loadLeagueChampionIcon: vi.fn().mockResolvedValue(true),
-  });
+  mockUseAppCore.mockReturnValue({ snapshot: createSnapshot() });
+  mockFetchAiAnalysis.mockResolvedValue(null);
+  mockInvoke.mockResolvedValue({ recentMatches: [] });
 });
 
 describe("Advisor", () => {
-  it("renders runes, summoners, skill order, build, matchups, and advice", async () => {
+  it("shows the unconfigured notice and disables analysis when AI is not set up", async () => {
     const { Advisor } = await import("../Advisor");
 
     render(React.createElement(Advisor));
 
-    expect(await screen.findByText("Champion Recommendations")).toBeDefined();
-    expect(await screen.findByText("Ahri")).toBeDefined();
-    expect(screen.getByText(/Electrocute/)).toBeDefined();
-    expect(screen.getByText("Flash + Ignite")).toBeDefined();
-    expect(screen.getByText(/Max Q > W > E/)).toBeDefined();
-    expect(screen.getByText(/Doran's Ring/)).toBeDefined();
-    expect(screen.getByText("Rabadon's Deathcap")).toBeDefined();
-    expect(screen.getByText("Zhonya's Hourglass")).toBeDefined();
-    expect(screen.getByText("Yone")).toBeDefined();
-    expect(screen.getByText("Zed")).toBeDefined();
-    expect(screen.getByText("Push waves before roaming.")).toBeDefined();
+    expect(await screen.findByText(/未配置 AI/)).toBeDefined();
+    expect(screen.getByText("请先在设置中配置 AI")).toBeDefined();
+    const analyzeButton = screen.getByRole("button", { name: "开始分析" });
+    expect((analyzeButton as HTMLButtonElement).disabled).toBe(true);
   });
 
-  it("renders an empty state for missing advisor data", async () => {
-    mockUseAdvisor.mockReturnValue(defaultAdvisor([]));
+  it("enables analysis and shows the launch hint when AI is configured", async () => {
+    mockUseAppCore.mockReturnValue({ snapshot: createSnapshot(configuredAi) });
     const { Advisor } = await import("../Advisor");
 
     render(React.createElement(Advisor));
 
-    expect(await screen.findByText("No advisor data is available for this lane.")).toBeDefined();
+    expect(await screen.findByText("选择位置范围，点击「开始分析」")).toBeDefined();
+    expect(screen.queryByText(/未配置 AI/)).toBeNull();
+    const analyzeButton = screen.getByRole("button", { name: "开始分析" });
+    expect((analyzeButton as HTMLButtonElement).disabled).toBe(false);
   });
 
-  it("does not show stale records from another selected lane", async () => {
-    mockUseAdvisor.mockReturnValue({
-      ...defaultAdvisor([advisorRecord()]),
-      advisorData: {
-        ...defaultAdvisor([advisorRecord()]).advisorData,
-        lane: "middle",
-        records: [{ ...advisorRecord(), lane: "middle" }],
-      },
+  it("renders a cached analysis and relabels the button for re-analysis", async () => {
+    mockUseAppCore.mockReturnValue({ snapshot: createSnapshot(configuredAi) });
+    mockFetchAiAnalysis.mockResolvedValue({
+      scope: "all",
+      resultText: "**优势**\n补刀稳健，经济领先。",
+      gameCountAtAnalysis: 10,
+      analyzedAt: "2026-06-01T10:00:00Z",
     });
     const { Advisor } = await import("../Advisor");
 
     render(React.createElement(Advisor));
 
-    expect(await screen.findByText("No advisor data is available for this lane.")).toBeDefined();
-    expect(screen.queryByText("Ahri")).toBeNull();
+    expect(await screen.findByText("补刀稳健，经济领先。")).toBeDefined();
+    expect(screen.getByText("优势")).toBeDefined();
+    expect(screen.getByRole("button", { name: "重新分析" })).toBeDefined();
+  });
+
+  it("prompts a refresh once enough new games accumulate since the last analysis", async () => {
+    mockUseAppCore.mockReturnValue({ snapshot: createSnapshot(configuredAi) });
+    mockFetchAiAnalysis.mockResolvedValue({
+      scope: "all",
+      resultText: "分析结果",
+      gameCountAtAnalysis: 10,
+      analyzedAt: "2026-06-01T10:00:00Z",
+    });
+    mockInvoke.mockResolvedValue({ recentMatches: new Array(16).fill({}) });
+    const { Advisor } = await import("../Advisor");
+
+    render(React.createElement(Advisor));
+
+    expect(await screen.findByText(/已有 6 场新对局/)).toBeDefined();
+    expect(mockInvoke).toHaveBeenCalledWith("get_league_self_snapshot", {
+      input: { matchLimit: 100 },
+    });
   });
 });

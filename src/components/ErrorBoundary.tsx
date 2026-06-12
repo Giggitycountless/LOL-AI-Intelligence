@@ -1,7 +1,9 @@
 import React, { Component, type ReactNode } from "react";
 
 interface Props {
-  children: ReactNode;
+  // Optional so createElement(ErrorBoundary, { fallback }, child) typechecks —
+  // children supplied as a separate argument aren't part of the props object.
+  children?: ReactNode;
   fallback?: ReactNode;
 }
 
