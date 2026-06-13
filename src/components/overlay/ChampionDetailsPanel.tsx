@@ -1,11 +1,12 @@
-import { memo } from "react";
+import { memo, useMemo } from "react";
 
 import type { LeagueChampionAbilityView, LeagueChampionDetailsView } from "../../state/AppStateProvider";
 import { initials, type T } from "../../utils/formatting";
 import {
   abilityStatDisplay,
   abilityStatText,
-  abilityTooltipText,
+  parseAbilityDescription,
+  type SpanKind,
 } from "../../pages/selfHistoryOverlayAbilityView";
 import { CloseIcon } from "./Icons";
 
@@ -101,6 +102,19 @@ const SLOT_BADGE: Record<string, string> = {
   R:       "bg-rose-50 text-rose-700 border-rose-200",
 };
 
+// Inline-span colors for parsed ability descriptions. Mirrors LoL's damage-type
+// conventions so cooldown/scaling text is scannable rather than a wall of grey.
+const SPAN_CLASS: Record<SpanKind, string> = {
+  text:       "text-zinc-600",
+  magic:      "font-semibold text-sky-700",
+  physical:   "font-semibold text-orange-700",
+  true:       "font-semibold text-zinc-900",
+  healing:    "font-semibold text-emerald-700",
+  status:     "font-semibold text-violet-700",
+  bold:       "font-semibold text-zinc-900",
+  unresolved: "font-semibold text-rose-600",
+};
+
 // ── Ability card ─────────────────────────────────────────────────────────────
 
 const AbilityCard = memo(function AbilityCard({
@@ -114,7 +128,6 @@ const AbilityCard = memo(function AbilityCard({
   const borderColor = SLOT_BORDER[slot] ?? SLOT_BORDER.Q;
   const badgeColor = SLOT_BADGE[slot] ?? SLOT_BADGE.Q;
 
-  const tooltip = abilityTooltipText(ability.summaryDescription, ability.description);
   const cooldown = abilityStatText(ability.cooldownValues, ability.cooldown);
   const cost = abilityStatText(ability.costValues, ability.cost);
   const range = abilityStatText(ability.rangeValues, ability.range);
@@ -122,7 +135,6 @@ const AbilityCard = memo(function AbilityCard({
   return (
     <section
       className={`flex gap-3 rounded-lg border border-zinc-200 border-l-4 bg-white px-3 py-3 shadow-sm transition hover:border-zinc-300 hover:shadow ${borderColor}`}
-      title={tooltip || undefined}
     >
       {/* Icon */}
       <div className="shrink-0">
@@ -164,10 +176,53 @@ const AbilityCard = memo(function AbilityCard({
             />
           ))}
         </div>
+
+        {/* Description */}
+        <AbilityDescription description={ability.description} summaryDescription={ability.summaryDescription} />
       </div>
     </section>
   );
 });
+
+function AbilityDescription({
+  description,
+  summaryDescription,
+}: {
+  description: string | null | undefined;
+  summaryDescription: string | null | undefined;
+}) {
+  const sections = useMemo(
+    () => parseAbilityDescription(description || summaryDescription || ""),
+    [description, summaryDescription],
+  );
+
+  if (sections.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="mt-2 space-y-1.5 border-t border-zinc-100 pt-2 text-xs leading-relaxed">
+      {sections.map((section, sectionIndex) => (
+        <div key={sectionIndex}>
+          {section.lines.map((line, lineIndex) => (
+            <p key={lineIndex}>
+              {lineIndex === 0 && section.label && (
+                <span className="mr-1 inline-flex items-center rounded bg-zinc-100 px-1 py-px align-middle text-[10px] font-bold uppercase tracking-wide text-zinc-500">
+                  {section.label}
+                </span>
+              )}
+              {line.map((span, spanIndex) => (
+                <span className={SPAN_CLASS[span.kind]} key={spanIndex}>
+                  {span.text}
+                </span>
+              ))}
+            </p>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
