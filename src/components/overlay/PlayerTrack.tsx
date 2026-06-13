@@ -5,7 +5,6 @@ import {
   advisorTagClass,
   recentStatsStatusMessage,
   resultClass,
-  scoreWidth,
 } from "../../pages/selfHistoryOverlayUtils";
 import { initials, type T } from "../../utils/formatting";
 
@@ -34,6 +33,15 @@ export const PlayerTrack = memo(function PlayerTrack({
       ].join(" ")}
       onClick={(event) => event.stopPropagation()}
     >
+      <p
+        className={[
+          "mb-1.5 truncate text-[11px] font-semibold leading-tight",
+          player.isEmpty ? "text-zinc-400" : "text-zinc-800",
+        ].join(" ")}
+        title={player.displayName}
+      >
+        {player.displayName}
+      </p>
       <div className="grid h-16 grid-cols-[4rem_minmax(0,1fr)] gap-2">
         <ChampionPortrait
           championId={player.championId}
@@ -60,7 +68,7 @@ export const PlayerTrack = memo(function PlayerTrack({
         <div className="mt-1.5 h-2.5 overflow-hidden rounded-full bg-zinc-100">
           <div
             className={["h-full rounded-full", tone === "ally" ? "bg-emerald-500" : "bg-rose-600"].join(" ")}
-            style={{ width: `${scoreWidth(player.score)}%` }}
+            style={{ width: `${player.scorePct}%` }}
           />
         </div>
         {player.badge && (

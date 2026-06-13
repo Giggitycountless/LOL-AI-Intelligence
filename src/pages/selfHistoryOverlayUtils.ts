@@ -37,6 +37,8 @@ export type PlayerView = {
   masteryLevel: number | null;
   rows: MatchRowView[];
   score: number | null;
+  /** Bar width (0–100) for the score, relative to the highest score in this match. */
+  scorePct: number;
   soloRank: string | null;
   summonerLevel: number | null;
   recentStatsStatus: ChampSelectRecentStatsStatus;
@@ -64,12 +66,21 @@ export function createOverlayModel(
   t: T,
 ): OverlayModel {
   const advisorBySummonerId = new Map(advisorPlayers.map((player) => [player.summonerId, player]));
-  const allies = fillTeam(players.filter((player) => player.team === "ally")).map((player, index) =>
+  const rawAllies = fillTeam(players.filter((player) => player.team === "ally")).map((player, index) =>
     playerView(player, advisorBySummonerId, index, "ally", imageUrls, effectiveLanguage, t),
   );
-  const enemies = fillTeam(players.filter((player) => player.team === "enemy")).map((player, index) =>
+  const rawEnemies = fillTeam(players.filter((player) => player.team === "enemy")).map((player, index) =>
     playerView(player, advisorBySummonerId, index, "enemy", imageUrls, effectiveLanguage, t),
   );
+
+  // Scout Score only carries meaning relative to the other players in this match
+  // (see CONTEXT.md), so size each bar against the highest score on the board
+  // rather than a fixed absolute scale — the latter saturated strong players and
+  // crushed weak ones into an indistinguishable sliver.
+  const maxScore = Math.max(0, ...[...rawAllies, ...rawEnemies].map((player) => player.score ?? 0));
+  const withScorePct = (player: PlayerView): PlayerView => ({ ...player, scorePct: scoreWidth(player.score, maxScore) });
+  const allies = rawAllies.map(withScorePct);
+  const enemies = rawEnemies.map(withScorePct);
 
   return {
     allies,
@@ -119,6 +130,7 @@ export function playerView(
     masteryLevel: player?.masteryLevel ?? null,
     rows,
     score: playerScore(player),
+    scorePct: 0,
     soloRank: rankValue(soloRank, effectiveLanguage, t),
     summonerLevel: player?.summonerLevel ?? null,
     recentStatsStatus: player?.recentStatsStatus ?? "notRequested",
@@ -186,12 +198,13 @@ export function playerBadge(wins: number, games: number, tone: TeamTone) {
   return String(Math.max(1, games - wins));
 }
 
-export function scoreWidth(score: number | null) {
-  if (score === null) {
+export function scoreWidth(score: number | null, maxScore: number) {
+  if (score === null || maxScore <= 0) {
     return 0;
   }
 
-  return Math.max(8, Math.min(100, Math.round(score / 220)));
+  const pct = Math.round((score / maxScore) * 100);
+  return Math.max(8, Math.min(100, pct));
 }
 
 export function rankValue(summary: RankedQueueSummary | undefined, language: EffectiveLanguage, t: T) {
