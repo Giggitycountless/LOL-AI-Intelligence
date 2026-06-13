@@ -40,7 +40,7 @@ async function openSelfHistoryOverlayWindowOnce() {
       return true;
     }
 
-    const size = clampToScreen({ width: 1400, height: 800 }, { width: 1200, height: 560 });
+    const size = clampToScreen({ width: 1600, height: 800 }, { width: 1280, height: 560 });
     const overlayWindow = new WebviewWindow(SELF_HISTORY_OVERLAY_WINDOW_LABEL, {
       alwaysOnTop: true,
       center: true,
@@ -48,7 +48,7 @@ async function openSelfHistoryOverlayWindowOnce() {
       focus: false,
       height: size.height,
       minHeight: 560,
-      minWidth: 1200,
+      minWidth: 1280,
       resizable: true,
       title: "Self History",
       url: selfHistoryOverlayWindowUrl(),

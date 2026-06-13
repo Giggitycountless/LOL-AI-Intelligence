@@ -249,9 +249,12 @@ export function SelfHistoryOverlay() {
         </div>
       </header>
 
-      {/* Scrolls vertically when the window is shorter than the player tracks
-          (small laptop screens) — the boards must never be cut off unreachably. */}
-      <div className="grid min-h-0 flex-1 grid-cols-2 gap-2 overflow-y-auto">
+      {/* Two teams sit side-by-side on wide displays. Below 2xl (1536px) — e.g. a
+          1366-wide laptop where clampToScreen can't open the window wide enough —
+          they stack vertically so each card keeps a legible width instead of the
+          rank/name fields being crushed into an unreadable sliver.
+          Scrolls vertically so the boards are never cut off unreachably. */}
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-2 overflow-y-auto 2xl:grid-cols-2">
         <TeamBoard
           onChampionSelect={handleChampionSelect}
           players={model.enemies}
@@ -306,20 +309,33 @@ const TeamBoard = memo(function TeamBoard({
   return (
     <section
       className={[
-        "grid min-h-full grid-cols-5 gap-2 rounded-lg border bg-white p-2 shadow-sm",
+        "flex min-h-full flex-col gap-2 rounded-lg border bg-white p-2 shadow-sm",
         tone === "ally" ? "border-emerald-200" : "border-rose-200",
       ].join(" ")}
     >
-      {players.map((player) => (
-        <PlayerTrack
-          key={player.id}
-          onChampionSelect={onChampionSelect}
-          player={player}
-          selectedChampionId={selectedChampionId}
-          t={t}
-          tone={tone}
-        />
-      ))}
+      <div className="flex items-center gap-1.5 px-0.5">
+        <span className={["h-2 w-2 rounded-full", tone === "ally" ? "bg-emerald-500" : "bg-rose-600"].join(" ")} />
+        <span
+          className={[
+            "text-[11px] font-bold uppercase tracking-wide",
+            tone === "ally" ? "text-emerald-700" : "text-rose-700",
+          ].join(" ")}
+        >
+          {tone === "ally" ? t("overlay.allyTeam") : t("overlay.enemyTeam")}
+        </span>
+      </div>
+      <div className="grid flex-1 grid-cols-5 gap-2">
+        {players.map((player) => (
+          <PlayerTrack
+            key={player.id}
+            onChampionSelect={onChampionSelect}
+            player={player}
+            selectedChampionId={selectedChampionId}
+            t={t}
+            tone={tone}
+          />
+        ))}
+      </div>
     </section>
   );
 });
