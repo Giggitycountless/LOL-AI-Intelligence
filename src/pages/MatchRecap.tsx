@@ -6,6 +6,7 @@ import { PostMatchAnalysis } from "../components/PostMatchAnalysis";
 import { listenWithCleanup } from "../backend/events";
 import { isCommandError } from "../backend/commands";
 import { useAppCore, useLeagueAssets } from "../state/AppStateProvider";
+import type { TranslationKey } from "../i18n";
 import {
   isMatchRecapSelection,
   matchRecapHash,
@@ -15,15 +16,15 @@ import {
 
 type RecapTone = "objective" | "rage" | "flatter";
 
-const tones: Array<{ id: RecapTone; label: string; className: string }> = [
-  { id: "objective", label: "客观分析", className: "border-zinc-300 dark:border-zinc-600 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 data-[active=true]:bg-zinc-950 data-[active=true]:text-white dark:data-[active=true]:bg-zinc-100 dark:data-[active=true]:text-zinc-900 data-[active=true]:border-zinc-950" },
-  { id: "rage",      label: "🤬 极端怒喷", className: "border-orange-300 dark:border-orange-700 text-orange-700 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-950 data-[active=true]:bg-orange-600 data-[active=true]:text-white data-[active=true]:border-orange-600" },
-  { id: "flatter",   label: "🌸 专业夸夸", className: "border-pink-300 dark:border-pink-700 text-pink-700 dark:text-pink-400 hover:bg-pink-50 dark:hover:bg-pink-950 data-[active=true]:bg-pink-500 data-[active=true]:text-white data-[active=true]:border-pink-500" },
+const tones: Array<{ id: RecapTone; labelKey: TranslationKey; className: string }> = [
+  { id: "objective", labelKey: "recap.toneObjective", className: "border-zinc-300 dark:border-zinc-600 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 data-[active=true]:bg-zinc-950 data-[active=true]:text-white dark:data-[active=true]:bg-zinc-100 dark:data-[active=true]:text-zinc-900 data-[active=true]:border-zinc-950" },
+  { id: "rage",      labelKey: "recap.toneRage", className: "border-orange-300 dark:border-orange-700 text-orange-700 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-950 data-[active=true]:bg-orange-600 data-[active=true]:text-white data-[active=true]:border-orange-600" },
+  { id: "flatter",   labelKey: "recap.toneFlatter", className: "border-pink-300 dark:border-pink-700 text-pink-700 dark:text-pink-400 hover:bg-pink-50 dark:hover:bg-pink-950 data-[active=true]:bg-pink-500 data-[active=true]:text-white data-[active=true]:border-pink-500" },
 ];
 
 export function MatchRecap({ initialSelection }: { initialSelection: MatchRecapSelection }) {
   const [selection, setSelection] = useState<MatchRecapSelection>(initialSelection);
-  const { snapshot, postMatchDetails, loadPostMatchDetail } = useAppCore();
+  const { snapshot, postMatchDetails, loadPostMatchDetail, t } = useAppCore();
   const { leagueImages, loadLeagueChampionIcon, loadLeagueGameAsset } = useLeagueAssets();
   const detail = postMatchDetails[selection.gameId];
 
@@ -64,11 +65,11 @@ export function MatchRecap({ initialSelection }: { initialSelection: MatchRecapS
   useEffect(() => {
     if (!detail) {
       void loadPostMatchDetail(selection.gameId).catch((err: unknown) => {
-        const msg = isCommandError(err) ? err.message : err instanceof Error ? err.message : "无法加载对局数据";
+        const msg = isCommandError(err) ? err.message : err instanceof Error ? err.message : t("recap.detailLoadFailed");
         setDetailError(msg);
       });
     }
-  }, [selection.gameId, detail, loadPostMatchDetail]);
+  }, [selection.gameId, detail, loadPostMatchDetail, t]);
 
   // Prefetch icons/items/runes/spells when detail loads
   useEffect(() => {
@@ -143,13 +144,13 @@ export function MatchRecap({ initialSelection }: { initialSelection: MatchRecapS
       unlistenersRef.current = [chunkUnlisten, doneUnlisten, errorUnlisten];
       await invoke("run_match_recap_analysis", { gameId: selection.gameId, tone });
     } catch (err: unknown) {
-      const msg = isCommandError(err) ? err.message : err instanceof Error ? err.message : "AI 分析启动失败";
+      const msg = isCommandError(err) ? err.message : err instanceof Error ? err.message : t("recap.aiStartFailed");
       setAiError(msg);
       setStreaming("");
       setStreamingTone(null);
       stopListeners();
     }
-  }, [detail, streamingTone, cache, stopListeners, selection.gameId]);
+  }, [detail, streamingTone, cache, stopListeners, selection.gameId, t]);
 
   const isStreaming = streamingTone !== null;
   const displayText = isStreaming
@@ -160,22 +161,25 @@ export function MatchRecap({ initialSelection }: { initialSelection: MatchRecapS
 
   const buttonsDisabled = isStreaming || !detail || !detail.selfParticipantId || !aiConfigured;
 
+  const activeToneEntry = tones.find((tone) => tone.id === activeTone);
+  const activeToneLabel = activeTone && activeToneEntry ? t(activeToneEntry.labelKey) : "";
+
   return (
     <main className="min-h-0 flex-1 overflow-auto bg-zinc-50 dark:bg-zinc-950 px-6 py-6">
       <div className="flex w-full flex-col gap-5">
         <header className="flex flex-wrap items-center gap-3">
-          <h1 className="text-2xl font-semibold text-zinc-950 dark:text-zinc-50">赛后复盘</h1>
+          <h1 className="text-2xl font-semibold text-zinc-950 dark:text-zinc-50">{t("recap.title")}</h1>
           <div className="ml-auto flex flex-wrap gap-2">
-            {tones.map((t) => (
+            {tones.map((tone) => (
               <button
-                key={t.id}
+                key={tone.id}
                 type="button"
                 disabled={buttonsDisabled}
-                data-active={activeTone === t.id}
-                onClick={() => void runAnalysis(t.id)}
-                className={`h-9 rounded-md border px-3 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${t.className}`}
+                data-active={activeTone === tone.id}
+                onClick={() => void runAnalysis(tone.id)}
+                className={`h-9 rounded-md border px-3 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${tone.className}`}
               >
-                {t.label}
+                {t(tone.labelKey)}
               </button>
             ))}
           </div>
@@ -183,13 +187,13 @@ export function MatchRecap({ initialSelection }: { initialSelection: MatchRecapS
 
         {!aiConfigured && (
           <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-300">
-            未配置 AI。请在主窗口的<strong>设置 → AI 顾问</strong>填入 API 地址、密钥和模型名称。
+            {t("recap.notConfiguredPrefix")}<strong>{t("recap.notConfiguredPath")}</strong>{t("recap.notConfiguredSuffix")}
           </div>
         )}
 
         {detail && !detail.selfParticipantId && (
           <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-300">
-            无法在本局中识别当前玩家，AI 分析已禁用。
+            {t("recap.selfUnidentified")}
           </div>
         )}
 
@@ -202,7 +206,7 @@ export function MatchRecap({ initialSelection }: { initialSelection: MatchRecapS
         {(activeTone !== null || displayText || isStreaming) && (
           <section className="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 shadow-sm">
             <div className="border-b border-zinc-100 dark:border-zinc-700 px-5 py-3 text-sm font-semibold text-zinc-700 dark:text-zinc-300">
-              AI 分析{activeTone ? ` · ${tones.find((t) => t.id === activeTone)?.label}` : ""}
+              {t("recap.aiSection")}{activeToneLabel ? ` · ${activeToneLabel}` : ""}
             </div>
             <div className="px-5 py-5">
               {(displayText || isStreaming) && (
@@ -214,11 +218,11 @@ export function MatchRecap({ initialSelection }: { initialSelection: MatchRecapS
 
         <section>
           <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-            详细数据
+            {t("recap.detailedData")}
           </h2>
           {!detail && !detailError && (
             <div className="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-5 py-6 text-sm text-zinc-500 dark:text-zinc-400">
-              加载对局数据中…
+              {t("recap.loadingDetail")}
             </div>
           )}
           {detailError && (

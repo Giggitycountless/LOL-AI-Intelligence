@@ -110,7 +110,7 @@ function MatchCard({
           </p>
           <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">KDA {match.kda === null ? "n/a" : match.kda.toFixed(1)}</p>
         </div>
-        <span className="text-xs font-medium text-rose-600 dark:text-rose-400">打开复盘 →</span>
+        <span className="text-xs font-medium text-rose-600 dark:text-rose-400">{t("matches.openRecap")} →</span>
       </div>
     </button>
   );
