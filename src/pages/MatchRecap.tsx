@@ -236,7 +236,7 @@ export function MatchRecap({ initialSelection }: { initialSelection: MatchRecapS
               gameAssets={leagueImages.gameAssets}
               onParticipantSelect={() => {}}
               participantImages={leagueImages.championIcons}
-              teamsLayoutClassName="xl:grid-cols-2"
+              teamsLayoutClassName="min-[1380px]:grid-cols-2"
             />
           )}
         </section>

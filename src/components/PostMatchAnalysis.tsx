@@ -14,9 +14,11 @@ export function PostMatchAnalysis({
   gameAssets,
   onParticipantSelect,
   participantImages,
-  // Each team panel needs ~592px (MIN_W) before side-by-side stops forcing
-  // inner horizontal scrollbars, so the panels only pair up from xl (1280px).
-  teamsLayoutClassName = "xl:grid-cols-2",
+  // A team table's natural minimum is ~41rem/656px (see COLS + gaps + padding).
+  // Two-up needs 2×41rem + gap + outer padding ≈ 1372px of viewport, so the
+  // panels only pair up from 1380px; below that they stack full-width and the
+  // inner overflow-x-auto never has to truncate columns.
+  teamsLayoutClassName = "min-[1380px]:grid-cols-2",
 }: {
   detail: PostMatchDetail;
   gameAssets: Record<string, LeagueGameAssetView>;
@@ -64,7 +66,7 @@ export function PostMatchAnalysis({
 // Shared column template: Player | Score | KDA | Damage | CS | Gold | Build
 const COLS =
   "grid-cols-[minmax(10rem,1.5fr)_3.5rem_4rem_minmax(5.5rem,0.6fr)_2.5rem_3rem_minmax(8rem,0.9fr)]";
-const MIN_W = "min-w-[37rem]";
+const MIN_W = "min-w-[41rem]";
 
 const TEAM_TONE = {
   win: {

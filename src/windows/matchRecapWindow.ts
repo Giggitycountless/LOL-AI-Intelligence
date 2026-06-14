@@ -20,7 +20,7 @@ export async function openMatchRecapWindow(selection: MatchRecapSelection) {
     return;
   }
 
-  const size = clampToScreen({ width: 1280, height: 880 }, { width: 880, height: 640 });
+  const size = clampToScreen({ width: 1400, height: 880 }, { width: 880, height: 640 });
   const recapWindow = new WebviewWindow(MATCH_RECAP_WINDOW_LABEL, {
     center: true,
     focus: true,
