@@ -45,3 +45,17 @@ lto = "fat"
 codegen-units = 1
 opt-level = 3
 strip = true
+
+# reqwest's blocking client has a debug-assertions-only sanity check (`wait::enter`)
+# that builds and drops a throwaway Tokio runtime solely to panic if a blocking
+# request runs inside an async context. This app intentionally drives the blocking
+# LCU client from async contexts (the auto-accept monitor and Tauri command
+# dispatch); that is harmless in release (the check compiles out) but panics in
+# `npm run dev` with "Cannot drop a runtime in a context where blocking is not
+# allowed". Compile reqwest without debug-assertions so dev matches release. Our
+# own crates keep their debug-assertions.
+[profile.dev.package.reqwest]
+debug-assertions = false
+
+[profile.test.package.reqwest]
+debug-assertions = false
