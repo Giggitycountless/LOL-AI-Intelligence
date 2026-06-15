@@ -31,12 +31,16 @@ export function Rune({ lockedChampionId }: { lockedChampionId: number | null }) 
   const [isLoading, setIsLoading] = useState(false);
   const [applyingIndex, setApplyingIndex] = useState<number | null>(null);
   const [appliedIndex, setAppliedIndex] = useState<number | null>(null);
+  const [applyErrorIndex, setApplyErrorIndex] = useState<number | null>(null);
+  const [configError, setConfigError] = useState(false);
 
   const championId = lockedChampionId;
 
   const loadRuneData = useCallback(async (champId: number) => {
     setIsLoading(true);
     setAppliedIndex(null);
+    setApplyErrorIndex(null);
+    setConfigError(false);
     try {
       const [recs, config] = await Promise.all([
         fetchRuneRecommendations(champId),
@@ -64,11 +68,13 @@ export function Rune({ lockedChampionId }: { lockedChampionId: number | null }) 
   const handleApply = useCallback(async (rec: RuneRecommendation, index: number) => {
     if (!championId) return;
     setApplyingIndex(index);
+    setApplyErrorIndex(null);
+    setAppliedIndex((current) => (current === index ? null : current));
     try {
       await applyRunePage(championId, rec.page, championName);
       setAppliedIndex(index);
     } catch {
-      // error handled silently — user can retry
+      setApplyErrorIndex(index);
     } finally {
       setApplyingIndex(null);
     }
@@ -76,14 +82,24 @@ export function Rune({ lockedChampionId }: { lockedChampionId: number | null }) 
 
   const handleSaveConfig = useCallback(async (page: RunePage) => {
     if (!championId) return;
-    const saved = await saveChampionRuneConfig(championId, page);
-    setSavedConfig(saved);
+    setConfigError(false);
+    try {
+      const saved = await saveChampionRuneConfig(championId, page);
+      setSavedConfig(saved);
+    } catch {
+      setConfigError(true);
+    }
   }, [championId]);
 
   const handleDeleteConfig = useCallback(async () => {
     if (!championId) return;
-    await deleteChampionRuneConfig(championId);
-    setSavedConfig(null);
+    setConfigError(false);
+    try {
+      await deleteChampionRuneConfig(championId);
+      setSavedConfig(null);
+    } catch {
+      setConfigError(true);
+    }
   }, [championId]);
 
   function positionLabel(position: string): string {
@@ -119,6 +135,12 @@ export function Rune({ lockedChampionId }: { lockedChampionId: number | null }) 
               </div>
             )}
 
+            {configError && (
+              <div className="rounded-md border border-rose-200 dark:border-rose-800 bg-rose-50 dark:bg-rose-950 px-4 py-2 text-sm font-medium text-rose-800 dark:text-rose-300">
+                {t("rune.configFailed")}
+              </div>
+            )}
+
             {isLoading && (
               <div className="text-sm text-zinc-500 dark:text-zinc-400">{t("common.loading")}</div>
             )}
@@ -150,6 +172,9 @@ export function Rune({ lockedChampionId }: { lockedChampionId: number | null }) 
                     </button>
                   </div>
                 </div>
+                {applyErrorIndex === -1 && (
+                  <p className="mt-3 text-xs font-medium text-rose-700 dark:text-rose-400">{t("rune.applyFailed")}</p>
+                )}
               </div>
             )}
 
@@ -205,6 +230,9 @@ export function Rune({ lockedChampionId }: { lockedChampionId: number | null }) 
                     </button>
                   </div>
                 </div>
+                {applyErrorIndex === index && (
+                  <p className="mt-3 text-xs font-medium text-rose-700 dark:text-rose-400">{t("rune.applyFailed")}</p>
+                )}
               </div>
             ))}
           </div>

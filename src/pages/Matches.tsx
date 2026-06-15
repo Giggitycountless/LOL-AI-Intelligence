@@ -63,7 +63,7 @@ export function Matches() {
                   imageUrl={match.championId ? leagueImages.championIcons[match.championId] : undefined}
                   key={match.gameId}
                   match={match}
-                  onOpen={() => void openMatchRecapWindow({ gameId: match.gameId })}
+                  onOpen={() => void openMatchRecapWindow({ gameId: match.gameId }, t("recap.title"))}
                   t={t}
                 />
               ))}
@@ -99,7 +99,7 @@ function MatchCard({
             <ResultBadge result={match.result} />
           </div>
           <p className="mt-1 truncate text-xs text-zinc-500 dark:text-zinc-400">
-            {match.queueName ?? "Unknown queue"} - {formatTimestamp(match.playedAt, t)}
+            {match.queueName ?? t("common.unknown")} - {formatTimestamp(match.playedAt, t)}
           </p>
         </div>
       </div>

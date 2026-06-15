@@ -10,11 +10,12 @@ export type MatchRecapSelection = {
   gameId: number;
 };
 
-export async function openMatchRecapWindow(selection: MatchRecapSelection) {
+export async function openMatchRecapWindow(selection: MatchRecapSelection, title = "Match Recap") {
   const existing = await WebviewWindow.getByLabel(MATCH_RECAP_WINDOW_LABEL);
 
   if (existing) {
     await emitTo(MATCH_RECAP_WINDOW_LABEL, MATCH_RECAP_SELECTED_EVENT, selection);
+    await existing.setTitle(title);
     await existing.show();
     await existing.setFocus();
     return;
@@ -28,7 +29,7 @@ export async function openMatchRecapWindow(selection: MatchRecapSelection) {
     minHeight: 640,
     minWidth: 880,
     resizable: true,
-    title: "赛后复盘",
+    title,
     url: matchRecapWindowUrl(selection),
     width: size.width,
   });

@@ -2876,7 +2876,7 @@ mod tests {
     fn save_settings_accepts_frontend_payload_shape() {
         let command: SaveSettingsCommand = serde_json::from_value(json!({
             "settings": {
-                "startupPage": "activity",
+                "startupPage": "profile",
                 "language": "en",
                 "compactMode": true,
                 "activityLimit": 25,
@@ -2889,7 +2889,7 @@ mod tests {
         }))
         .expect("frontend-shaped settings command deserializes");
 
-        assert_eq!(command.settings.startup_page, "activity");
+        assert_eq!(command.settings.startup_page, "profile");
         assert_eq!(command.settings.language, "en");
         assert!(command.settings.compact_mode);
         assert_eq!(command.settings.activity_limit, 25);

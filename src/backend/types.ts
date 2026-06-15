@@ -1,6 +1,6 @@
 export type ServiceStatus = "ok" | "degraded";
 export type DatabaseStatus = "ok" | "unavailable";
-export type StartupPage = "dashboard" | "activity" | "settings";
+export type StartupPage = "dashboard" | "profile" | "matches" | "advisor" | "settings";
 export type AppLanguagePreference = "system" | "zh" | "en";
 export type AppThemePreference = "light" | "dark";
 export type ActivityKind = "note" | "settings" | "system";

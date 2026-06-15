@@ -58,19 +58,19 @@ export function formatLeaguePhase(phase: string | undefined, t: T): string {
     case "connected":
       return t("common.connected");
     case "partialData":
-      return "Partial data";
+      return t("phase.partialData");
     case "unauthorized":
-      return "Unauthorized";
+      return t("phase.unauthorized");
     case "notLoggedIn":
-      return "Not logged in";
+      return t("phase.notLoggedIn");
     case "patching":
-      return "Preparing";
+      return t("phase.patching");
     case "notRunning":
-      return "Not running";
+      return t("phase.notRunning");
     case "lockfileMissing":
-      return "No lockfile";
+      return t("phase.lockfileMissing");
     case "connecting":
-      return "Connecting";
+      return t("phase.connecting");
     case "unavailable":
       return t("common.unavailable");
     default:

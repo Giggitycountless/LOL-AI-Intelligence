@@ -442,6 +442,11 @@ const MIGRATIONS: &[Migration] = &[
         description: "chat_presets",
         sql: MIGRATION_0012,
     },
+    Migration {
+        version: 13,
+        description: "startup_page_options",
+        sql: MIGRATION_0013,
+    },
 ];
 
 fn run_migrations(connection: &mut Connection) -> StorageResult<()> {
@@ -1305,13 +1310,54 @@ mod tests {
     }
 
     #[test]
+    fn migration_folds_removed_activity_startup_page_to_dashboard() {
+        let data_dir = unique_temp_dir();
+        fs::create_dir_all(&data_dir).expect("create test data dir");
+        let database_path = data_dir.join(DATABASE_FILE_NAME);
+        let connection = Connection::open(&database_path).expect("open legacy database");
+
+        connection
+            .execute_batch(
+                "CREATE TABLE __app_migrations (
+                    version INTEGER PRIMARY KEY,
+                    description TEXT NOT NULL,
+                    applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );",
+            )
+            .expect("create migration table");
+        connection.execute_batch(MIGRATION_0001).expect("apply v1 migration");
+        connection.execute_batch(MIGRATION_0002).expect("apply v2 migration");
+        connection
+            .execute_batch(
+                "INSERT INTO __app_migrations (version, description)
+                 VALUES (1, 'initial_schema'), (2, 'state_foundation');",
+            )
+            .expect("record v1+v2 migrations");
+        // 'activity' was a valid startup page in the v2 schema but is no longer an option.
+        connection
+            .execute("UPDATE app_settings SET startup_page = 'activity' WHERE id = 1", [])
+            .expect("seed legacy startup page");
+        drop(connection);
+
+        let store = SqliteStore::initialize(&data_dir).expect("upgrade database");
+
+        assert_eq!(
+            store.get_settings().expect("settings").startup_page,
+            StartupPage::Dashboard
+        );
+        assert_eq!(store.health().expect("storage health").schema_version, latest_schema_version());
+
+        let _ = fs::remove_dir_all(data_dir);
+    }
+
+    #[test]
     fn persists_settings() {
         let data_dir = unique_temp_dir();
         let store = SqliteStore::initialize(&data_dir).expect("storage initializes");
 
         let settings = store
             .save_settings(&SettingsValues {
-                startup_page: StartupPage::Activity,
+                startup_page: StartupPage::Profile,
                 language: AppLanguagePreference::Zh,
                 theme: AppThemePreference::Dark,
                 compact_mode: true,
@@ -1329,7 +1375,7 @@ mod tests {
             })
             .expect("settings saved");
 
-        assert_eq!(settings.startup_page, StartupPage::Activity);
+        assert_eq!(settings.startup_page, StartupPage::Profile);
         assert_eq!(settings.language, AppLanguagePreference::Zh);
         assert!(settings.compact_mode);
         assert!(!settings.auto_accept_enabled);
@@ -1415,7 +1461,7 @@ mod tests {
         let result = store
             .import_local_data(
                 &SettingsValues {
-                    startup_page: StartupPage::Activity,
+                    startup_page: StartupPage::Profile,
                     language: AppLanguagePreference::En,
                     theme: AppThemePreference::Light,
                     compact_mode: true,
@@ -1443,7 +1489,7 @@ mod tests {
         let entries = store.list_all_activity_entries().expect("all activity");
 
         assert_eq!(result.imported_activity_count, 1);
-        assert_eq!(result.settings.startup_page, StartupPage::Activity);
+        assert_eq!(result.settings.startup_page, StartupPage::Profile);
         assert_eq!(result.settings.language, AppLanguagePreference::En);
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].created_at, "2026-04-19 12:00:00");

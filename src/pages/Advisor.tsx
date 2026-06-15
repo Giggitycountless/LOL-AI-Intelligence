@@ -6,29 +6,30 @@ import { useAppCore } from "../state/AppStateProvider";
 import { fetchAiAnalysis } from "../backend/leagueClient";
 import { isCommandError } from "../backend/commands";
 import type { AiAnalysisCache } from "../backend/types";
+import type { TranslationKey } from "../i18n";
 
 type AnalysisScope = "all" | "top" | "jungle" | "middle" | "bottom" | "support";
 type AnalysisTone = "objective" | "rage" | "flatter";
 
-const tones: Array<{ id: AnalysisTone; label: string; className: string }> = [
-  { id: "objective", label: "客观分析", className: "border-zinc-300 dark:border-zinc-600 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 data-[active=true]:bg-zinc-950 data-[active=true]:text-white dark:data-[active=true]:bg-zinc-100 dark:data-[active=true]:text-zinc-900 data-[active=true]:border-zinc-950" },
-  { id: "rage",      label: "🤬 极端怒喷", className: "border-orange-300 dark:border-orange-700 text-orange-700 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-950 data-[active=true]:bg-orange-600 data-[active=true]:text-white data-[active=true]:border-orange-600" },
-  { id: "flatter",   label: "🌸 专业夸夸", className: "border-pink-300 dark:border-pink-700 text-pink-700 dark:text-pink-400 hover:bg-pink-50 dark:hover:bg-pink-950 data-[active=true]:bg-pink-500 data-[active=true]:text-white data-[active=true]:border-pink-500" },
+const tones: Array<{ id: AnalysisTone; labelKey: TranslationKey; className: string }> = [
+  { id: "objective", labelKey: "recap.toneObjective", className: "border-zinc-300 dark:border-zinc-600 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 data-[active=true]:bg-zinc-950 data-[active=true]:text-white dark:data-[active=true]:bg-zinc-100 dark:data-[active=true]:text-zinc-900 data-[active=true]:border-zinc-950" },
+  { id: "rage",      labelKey: "recap.toneRage", className: "border-orange-300 dark:border-orange-700 text-orange-700 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-950 data-[active=true]:bg-orange-600 data-[active=true]:text-white data-[active=true]:border-orange-600" },
+  { id: "flatter",   labelKey: "recap.toneFlatter", className: "border-pink-300 dark:border-pink-700 text-pink-700 dark:text-pink-400 hover:bg-pink-50 dark:hover:bg-pink-950 data-[active=true]:bg-pink-500 data-[active=true]:text-white data-[active=true]:border-pink-500" },
 ];
 
-const scopes: Array<{ id: AnalysisScope; label: string }> = [
-  { id: "all", label: "全部" },
-  { id: "top", label: "上路" },
-  { id: "jungle", label: "打野" },
-  { id: "middle", label: "中路" },
-  { id: "bottom", label: "下路" },
-  { id: "support", label: "辅助" },
+const scopes: Array<{ id: AnalysisScope; labelKey: TranslationKey }> = [
+  { id: "all", labelKey: "aiAdvisor.scopeAll" },
+  { id: "top", labelKey: "aiAdvisor.scopeTop" },
+  { id: "jungle", labelKey: "aiAdvisor.scopeJungle" },
+  { id: "middle", labelKey: "aiAdvisor.scopeMiddle" },
+  { id: "bottom", labelKey: "aiAdvisor.scopeBottom" },
+  { id: "support", labelKey: "aiAdvisor.scopeSupport" },
 ];
 
 const NEW_GAME_THRESHOLD = 5;
 
-export function Advisor() {
-  const { snapshot } = useAppCore();
+export function Advisor({ onOpenSettings }: { onOpenSettings: () => void }) {
+  const { snapshot, t } = useAppCore();
   const [scope, setScope] = useState<AnalysisScope>("all");
   const [tone, setTone] = useState<AnalysisTone>("objective");
   const [cached, setCached] = useState<AiAnalysisCache | null>(null);
@@ -117,12 +118,12 @@ export function Advisor() {
           ? err.message
           : err instanceof Error
           ? err.message
-          : "分析启动失败";
+          : t("recap.aiStartFailed");
       setError(message);
       setIsAnalyzing(false);
       stopListeners();
     }
-  }, [isAnalyzing, scope, tone, stopListeners]);
+  }, [isAnalyzing, scope, tone, stopListeners, t]);
 
   useEffect(() => () => stopListeners(), [stopListeners]);
 
@@ -132,16 +133,27 @@ export function Advisor() {
     <main className="min-h-0 flex-1 overflow-auto px-8 py-7">
       <div className="mx-auto flex w-full max-w-4xl flex-col gap-6">
         <header>
-          <p className="text-sm font-medium uppercase tracking-wide text-rose-700">AI 顾问</p>
-          <h1 className="mt-2 text-3xl font-semibold text-zinc-950 dark:text-zinc-50">个人数据分析</h1>
+          <p className="text-sm font-medium uppercase tracking-wide text-rose-700">{t("aiAdvisor.eyebrow")}</p>
+          <h1 className="mt-2 text-3xl font-semibold text-zinc-950 dark:text-zinc-50">{t("aiAdvisor.title")}</h1>
           <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-            基于近期排位对局（单双排 + 灵活组排），AI 分析你的优势、弱点和改进方向
+            {t("aiAdvisor.subtitle")}
           </p>
         </header>
 
         {!aiConfigured && (
-          <div className="rounded-lg border border-amber-200 bg-amber-50 px-5 py-4 text-sm font-medium text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-300">
-            未配置 AI。请前往<strong>设置 → AI 顾问</strong>填入 API 地址（需含 <code>/v1</code>）、密钥和模型名称。
+          <div className="flex flex-col items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 px-5 py-4 text-sm font-medium text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-300">
+            <span>
+              {t("aiAdvisor.notConfiguredPrefix")}
+              <strong>{t("aiAdvisor.notConfiguredPath")}</strong>
+              {t("aiAdvisor.notConfiguredSuffix")}
+            </span>
+            <button
+              type="button"
+              onClick={onOpenSettings}
+              className="inline-flex h-8 items-center rounded-md bg-amber-700 px-3 text-xs font-semibold text-white transition hover:bg-amber-800"
+            >
+              {t("home.configureAi")}
+            </button>
           </div>
         )}
 
@@ -159,22 +171,22 @@ export function Advisor() {
                     : "text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800",
                 ].join(" ")}
               >
-                {s.label}
+                {t(s.labelKey)}
               </button>
             ))}
           </div>
 
           <div className="flex gap-2">
-            {tones.map((t) => (
+            {tones.map((toneOption) => (
               <button
-                key={t.id}
+                key={toneOption.id}
                 type="button"
                 disabled={isAnalyzing}
-                data-active={tone === t.id}
-                onClick={() => { if (!isAnalyzing) setTone(t.id); }}
-                className={`h-9 rounded-md border px-3 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${t.className}`}
+                data-active={tone === toneOption.id}
+                onClick={() => { if (!isAnalyzing) setTone(toneOption.id); }}
+                className={`h-9 rounded-md border px-3 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${toneOption.className}`}
               >
-                {t.label}
+                {t(toneOption.labelKey)}
               </button>
             ))}
           </div>
@@ -188,17 +200,17 @@ export function Advisor() {
             {isAnalyzing ? (
               <>
                 <SpinnerIcon />
-                <span>分析中…</span>
+                <span>{t("aiAdvisor.analyzing")}</span>
               </>
             ) : (
-              <span>{cached ? "重新分析" : "开始分析"}</span>
+              <span>{cached ? t("aiAdvisor.reanalyze") : t("aiAdvisor.analyze")}</span>
             )}
           </button>
         </div>
 
         {shouldPromptRefresh && !isAnalyzing && (
           <div className="rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm font-medium text-sky-800 dark:border-sky-800 dark:bg-sky-950 dark:text-sky-300">
-            已有 {newGamesSinceAnalysis} 场新对局，建议重新分析以获取最新建议。
+            {t("aiAdvisor.newGamesPrefix")}{newGamesSinceAnalysis}{t("aiAdvisor.newGamesSuffix")}
           </div>
         )}
 
@@ -212,7 +224,7 @@ export function Advisor() {
           <div className="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 shadow-sm">
             {cached && !isAnalyzing && (
               <div className="border-b border-zinc-100 dark:border-zinc-700 px-5 py-2 text-xs text-zinc-400">
-                分析时间：{formatAnalyzedAt(cached.analyzedAt)}
+                {t("aiAdvisor.analyzedAt")}{formatAnalyzedAt(cached.analyzedAt)}
               </div>
             )}
             <div className="px-5 py-5">
@@ -224,8 +236,17 @@ export function Advisor() {
         {!displayText && !isAnalyzing && !error && (
           <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-zinc-300 dark:border-zinc-600 py-16 text-center">
             <p className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
-              {aiConfigured ? "选择位置范围，点击「开始分析」" : "请先在设置中配置 AI"}
+              {aiConfigured ? t("aiAdvisor.emptyConfigured") : t("aiAdvisor.emptyUnconfigured")}
             </p>
+            {!aiConfigured && (
+              <button
+                type="button"
+                onClick={onOpenSettings}
+                className="inline-flex h-9 items-center rounded-md bg-rose-700 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-rose-800"
+              >
+                {t("home.configureAi")}
+              </button>
+            )}
           </div>
         )}
       </div>

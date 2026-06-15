@@ -2,7 +2,9 @@
 import { render, screen } from "@testing-library/react";
 import React from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { createTranslator } from "../../i18n";
 
+const t = createTranslator("zh");
 const mockUseAppCore = vi.fn();
 const mockFetchAiAnalysis = vi.fn();
 const mockInvoke = vi.fn();
@@ -44,7 +46,7 @@ const configuredAi = {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockUseAppCore.mockReturnValue({ snapshot: createSnapshot() });
+  mockUseAppCore.mockReturnValue({ snapshot: createSnapshot(), t });
   mockFetchAiAnalysis.mockResolvedValue(null);
   mockInvoke.mockResolvedValue({ recentMatches: [] });
 });
@@ -53,7 +55,7 @@ describe("Advisor", () => {
   it("shows the unconfigured notice and disables analysis when AI is not set up", async () => {
     const { Advisor } = await import("../Advisor");
 
-    render(React.createElement(Advisor));
+    render(React.createElement(Advisor, { onOpenSettings: () => {} }));
 
     expect(await screen.findByText(/未配置 AI/)).toBeDefined();
     expect(screen.getByText("请先在设置中配置 AI")).toBeDefined();
@@ -62,10 +64,10 @@ describe("Advisor", () => {
   });
 
   it("enables analysis and shows the launch hint when AI is configured", async () => {
-    mockUseAppCore.mockReturnValue({ snapshot: createSnapshot(configuredAi) });
+    mockUseAppCore.mockReturnValue({ snapshot: createSnapshot(configuredAi), t });
     const { Advisor } = await import("../Advisor");
 
-    render(React.createElement(Advisor));
+    render(React.createElement(Advisor, { onOpenSettings: () => {} }));
 
     expect(await screen.findByText("选择位置范围，点击「开始分析」")).toBeDefined();
     expect(screen.queryByText(/未配置 AI/)).toBeNull();
@@ -74,7 +76,7 @@ describe("Advisor", () => {
   });
 
   it("renders a cached analysis and relabels the button for re-analysis", async () => {
-    mockUseAppCore.mockReturnValue({ snapshot: createSnapshot(configuredAi) });
+    mockUseAppCore.mockReturnValue({ snapshot: createSnapshot(configuredAi), t });
     mockFetchAiAnalysis.mockResolvedValue({
       scope: "all",
       resultText: "**优势**\n补刀稳健，经济领先。",
@@ -83,7 +85,7 @@ describe("Advisor", () => {
     });
     const { Advisor } = await import("../Advisor");
 
-    render(React.createElement(Advisor));
+    render(React.createElement(Advisor, { onOpenSettings: () => {} }));
 
     expect(await screen.findByText("补刀稳健，经济领先。")).toBeDefined();
     expect(screen.getByText("优势")).toBeDefined();
@@ -91,7 +93,7 @@ describe("Advisor", () => {
   });
 
   it("prompts a refresh once enough new games accumulate since the last analysis", async () => {
-    mockUseAppCore.mockReturnValue({ snapshot: createSnapshot(configuredAi) });
+    mockUseAppCore.mockReturnValue({ snapshot: createSnapshot(configuredAi), t });
     mockFetchAiAnalysis.mockResolvedValue({
       scope: "all",
       resultText: "分析结果",
@@ -101,7 +103,7 @@ describe("Advisor", () => {
     mockInvoke.mockResolvedValue({ recentMatches: new Array(16).fill({}) });
     const { Advisor } = await import("../Advisor");
 
-    render(React.createElement(Advisor));
+    render(React.createElement(Advisor, { onOpenSettings: () => {} }));
 
     expect(await screen.findByText(/已有 6 场新对局/)).toBeDefined();
     expect(mockInvoke).toHaveBeenCalledWith("get_league_self_snapshot", {

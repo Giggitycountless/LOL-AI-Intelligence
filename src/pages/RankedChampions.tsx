@@ -3,37 +3,38 @@ import { useEffect, useMemo, useState } from "react";
 import { ChampionImage } from "../components/common";
 import { useAppCore, useLeagueAssets } from "../state/AppStateProvider";
 import type { RankedChampionDataStatus, RankedChampionLane, RankedChampionSort, RankedChampionStat } from "../backend/types";
+import type { TranslationKey } from "../i18n";
 import { initials, type T } from "../utils/formatting";
 
-const lanes: Array<{ id: RankedChampionLane; label: string; shortLabel: string }> = [
-  { id: "top", label: "Top", shortLabel: "TOP" },
-  { id: "jungle", label: "Jungle", shortLabel: "JUG" },
-  { id: "middle", label: "Mid", shortLabel: "MID" },
-  { id: "bottom", label: "Bot", shortLabel: "BOT" },
-  { id: "support", label: "Support", shortLabel: "SUP" },
+const lanes: Array<{ id: RankedChampionLane; labelKey: TranslationKey }> = [
+  { id: "top", labelKey: "rune.position.top" },
+  { id: "jungle", labelKey: "rune.position.jungle" },
+  { id: "middle", labelKey: "rune.position.middle" },
+  { id: "bottom", labelKey: "rune.position.bottom" },
+  { id: "support", labelKey: "rune.position.support" },
 ];
 
-const tencentTiers: Array<{ value: number; label: string }> = [
-  { value: 200, label: "全段位" },
-  { value: 120, label: "黄金+" },
-  { value: 40, label: "钻石+" },
-  { value: 0, label: "王者" },
+const tencentTiers: Array<{ value: number; labelKey: TranslationKey }> = [
+  { value: 200, labelKey: "ranked.tierAll" },
+  { value: 120, labelKey: "ranked.tierGoldPlus" },
+  { value: 40, labelKey: "ranked.tierDiamondPlus" },
+  { value: 0, labelKey: "ranked.tierChallenger" },
 ];
 
-const krTiers: Array<{ value: number; label: string }> = [
-  { value: 2, label: "翡翠~王者" },
-  { value: 13, label: "钻石~王者" },
-  { value: 3, label: "大师~王者" },
-  { value: 1, label: "青铜~铂金" },
+const krTiers: Array<{ value: number; labelKey: TranslationKey }> = [
+  { value: 2, labelKey: "ranked.tierEmeraldUp" },
+  { value: 13, labelKey: "ranked.tierDiamondUp" },
+  { value: 3, labelKey: "ranked.tierMasterUp" },
+  { value: 1, labelKey: "ranked.tierBronzePlat" },
 ];
 
 type Region = "cn" | "kr";
 
-const sorts: Array<{ id: RankedChampionSort; label: string; metric: keyof RankedChampionStat }> = [
-  { id: "overall", label: "Overall", metric: "overallScore" },
-  { id: "winRate", label: "Win rate", metric: "winRate" },
-  { id: "banRate", label: "Ban rate", metric: "banRate" },
-  { id: "pickRate", label: "Pick rate", metric: "pickRate" },
+const sorts: Array<{ id: RankedChampionSort; labelKey: TranslationKey; metric: keyof RankedChampionStat }> = [
+  { id: "overall", labelKey: "ranked.sortOverall", metric: "overallScore" },
+  { id: "winRate", labelKey: "ranked.sortWinRate", metric: "winRate" },
+  { id: "banRate", labelKey: "ranked.sortBanRate", metric: "banRate" },
+  { id: "pickRate", labelKey: "ranked.sortPickRate", metric: "pickRate" },
 ];
 const RANKED_RENDER_BATCH = 40;
 
@@ -59,7 +60,7 @@ export function RankedChampions() {
   const records = rankedChampionStats?.records ?? [];
   const visibleRecords = useMemo(() => records.slice(0, visibleCount), [records, visibleCount]);
   const status = rankedChampionStats?.dataStatus ?? "sample";
-  const statusView = dataStatusView(status);
+  const statusView = dataStatusView(status, t);
   const metadata = rankedChampionStats
     ? [rankedChampionStats.patch, rankedChampionStats.region, rankedChampionStats.queue, rankedChampionStats.tier].filter(Boolean).join(" / ")
     : "";
@@ -118,7 +119,7 @@ export function RankedChampions() {
                   }}
                   type="button"
                 >
-                  {r === "cn" ? "国服" : "韩服"}
+                  {t(r === "cn" ? "ranked.regionCn" : "ranked.regionKr")}
                 </button>
               ))}
             </div>
@@ -135,7 +136,7 @@ export function RankedChampions() {
                   onClick={() => setActiveTier(tier.value)}
                   type="button"
                 >
-                  {tier.label}
+                  {t(tier.labelKey)}
                 </button>
               ))}
             </div>
@@ -171,7 +172,7 @@ export function RankedChampions() {
                 type="button"
               >
                 <LaneIcon lane={laneOption.id} />
-                <span>{laneOption.label}</span>
+                <span>{t(laneOption.labelKey)}</span>
               </button>
             ))}
           </div>
@@ -189,7 +190,7 @@ export function RankedChampions() {
                 onClick={() => setSortBy(sort.id)}
                 type="button"
               >
-                {sort.label}
+                {t(sort.labelKey)}
               </button>
             ))}
           </div>
@@ -200,14 +201,14 @@ export function RankedChampions() {
             <div>
               <div className="flex flex-wrap items-center gap-2">
                 <h2 className="text-base font-semibold text-zinc-950 dark:text-zinc-50">
-                  {laneLabel(lane)} {t("ranked.champions")}
+                  {laneLabel(lane, t)} {t("ranked.champions")}
                 </h2>
                 <span className={["rounded px-2 py-0.5 text-xs font-bold", statusView.className].join(" ")}>
                   {statusView.label}
                 </span>
               </div>
               <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-                {t("ranked.sortedBy")} {activeSort.label.toLowerCase()} / {rankedChampionStats?.source ?? t("ranked.localSample")}
+                {t("ranked.sortedBy")} {t(activeSort.labelKey).toLowerCase()} / {rankedChampionStats?.source ?? t("ranked.localSample")}
               </p>
             </div>
             <div className="text-right">
@@ -282,7 +283,7 @@ function ChampionRow({
         <ChampionImage championName={record.championName} imageUrl={imageUrl} size="lg" />
         <div className="min-w-0">
           <p className="truncate text-sm font-semibold text-zinc-950 dark:text-zinc-50">{record.championName}</p>
-          <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">{laneLabel(record.lane)}</p>
+          <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">{laneLabel(record.lane, t)}</p>
         </div>
       </div>
       <Metric value={record.overallScore} suffix="" isActive={highlightMetric === "overallScore"} />
@@ -346,18 +347,18 @@ function LaneIcon({ lane }: { lane: RankedChampionLane }) {
   );
 }
 
-function laneLabel(lane: RankedChampionLane) {
+function laneLabel(lane: RankedChampionLane, t: T) {
   switch (lane) {
     case "top":
-      return "Top";
+      return t("rune.position.top");
     case "jungle":
-      return "Jungle";
+      return t("rune.position.jungle");
     case "middle":
-      return "Mid";
+      return t("rune.position.middle");
     case "bottom":
-      return "Bot";
+      return t("rune.position.bottom");
     case "support":
-      return "Support";
+      return t("rune.position.support");
   }
 }
 
@@ -369,16 +370,16 @@ function formatGames(value: number) {
   return String(value);
 }
 
-function dataStatusView(status: RankedChampionDataStatus) {
+function dataStatusView(status: RankedChampionDataStatus, t: T) {
   switch (status) {
     case "fresh":
-      return { label: "Fresh", className: "bg-emerald-100 text-emerald-800" };
+      return { label: t("ranked.statusFresh"), className: "bg-emerald-100 text-emerald-800" };
     case "cached":
-      return { label: "Cached", className: "bg-sky-100 text-sky-800" };
+      return { label: t("ranked.statusCached"), className: "bg-sky-100 text-sky-800" };
     case "staleCache":
-      return { label: "Stale cache", className: "bg-amber-100 text-amber-800" };
+      return { label: t("ranked.statusStaleCache"), className: "bg-amber-100 text-amber-800" };
     case "sample":
-      return { label: "Sample", className: "bg-zinc-100 text-zinc-700" };
+      return { label: t("ranked.statusSample"), className: "bg-zinc-100 text-zinc-700" };
   }
 }
 
@@ -398,12 +399,12 @@ function timeSummary(
 
   const parts = [];
   if (stats.generatedAt) {
-    parts.push(`generated ${stats.generatedAt}`);
+    parts.push(`${t("ranked.timeGenerated")} ${stats.generatedAt}`);
   }
   if (stats.importedAt) {
-    parts.push(`cached ${stats.importedAt}`);
+    parts.push(`${t("ranked.timeCached")} ${stats.importedAt}`);
   }
 
-  return parts.length > 0 ? parts.join(" / ") : `updated ${stats.updatedAt}`;
+  return parts.length > 0 ? parts.join(" / ") : `${t("ranked.timeUpdated")} ${stats.updatedAt}`;
 }
 

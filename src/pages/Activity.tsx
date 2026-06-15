@@ -6,7 +6,7 @@ import { useAppCore } from "../state/AppStateProvider";
 type ActivityFilter = ActivityKind | "all";
 const ACTIVITY_RENDER_BATCH = 80;
 
-export function Activity() {
+export function Activity({ onBack }: { onBack?: () => void }) {
   const {
     activityEntries,
     isActivityLoading,
@@ -84,6 +84,15 @@ export function Activity() {
   return (
     <main className="min-h-0 flex-1 overflow-auto px-8 py-7">
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
+        {onBack && (
+          <button
+            type="button"
+            onClick={onBack}
+            className="inline-flex w-fit items-center gap-1 text-sm font-medium text-rose-700 transition hover:underline"
+          >
+            <span aria-hidden="true">←</span> {t("activity.backToSettings")}
+          </button>
+        )}
         <header className="flex flex-wrap items-end justify-between gap-4">
           <div>
             <p className="text-sm font-medium uppercase tracking-wide text-rose-700">{t("activity.eyebrow")}</p>

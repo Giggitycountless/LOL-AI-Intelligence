@@ -1,4 +1,4 @@
-import { startTransition, useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, startTransition, useCallback, useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 
@@ -16,6 +16,7 @@ import { Rune } from "./pages/Rune";
 import { SelfHistoryOverlay } from "./pages/SelfHistoryOverlay";
 import { Settings } from "./pages/Settings";
 import { AppStateProvider, useAppCore, type AppWindowMode } from "./state/AppStateProvider";
+import { LiveStatusStrip } from "./components/LiveStatusStrip";
 import type { StartupPage } from "./backend/types";
 import { oppositeLanguage, type TranslationKey } from "./i18n";
 import { selectionFromMatchRecapHash } from "./windows/matchRecapWindow";
@@ -23,21 +24,39 @@ import { selectionFromParticipantProfileHash } from "./windows/participantProfil
 import { isSelfHistoryOverlayHash } from "./windows/selfHistoryOverlayWindow";
 import { isPostGameNotesHash, openPostGameNotesWindow } from "./windows/postGameNotesWindow";
 
-type Page = StartupPage | "profile" | "matches" | "ranked" | "advisor" | "rune" | "chat";
+// Activity is still a navigable page (reached from Settings) even though it is no longer
+// a StartupPage option, so it is listed explicitly here.
+type Page = StartupPage | "profile" | "matches" | "ranked" | "advisor" | "rune" | "chat" | "activity";
 
 const PERSISTENT_PAGES = new Set<Page>(["matches", "ranked", "activity"]);
 
-const pages: Array<{ id: Page; labelKey: TranslationKey; icon: IconName }> = [
+type NavItem = { id: Page; labelKey: TranslationKey; icon: IconName; group?: TranslationKey; live?: boolean };
+
+// Grouped so the sidebar reads as sections instead of a flat list. Items sharing a
+// `group` must stay contiguous — a header is rendered at each group boundary.
+const pages: NavItem[] = [
   { id: "dashboard", labelKey: "nav.dashboard", icon: "dashboard" },
-  { id: "profile", labelKey: "nav.profile", icon: "profile" },
-  { id: "matches", labelKey: "nav.matches", icon: "matches" },
-  { id: "advisor", labelKey: "nav.advisor", icon: "advisor" },
-  { id: "ranked", labelKey: "nav.ranked", icon: "ranked" },
-  { id: "rune", labelKey: "nav.rune", icon: "rune" },
-  { id: "chat", labelKey: "nav.chat", icon: "chat" },
-  { id: "activity", labelKey: "nav.activity", icon: "activity" },
-  { id: "settings", labelKey: "nav.settings", icon: "settings" },
+  { id: "profile", labelKey: "nav.profile", icon: "profile", group: "nav.groupYou" },
+  { id: "matches", labelKey: "nav.matches", icon: "matches", group: "nav.groupYou" },
+  { id: "ranked", labelKey: "nav.ranked", icon: "ranked", group: "nav.groupYou" },
+  { id: "advisor", labelKey: "nav.advisor", icon: "advisor", group: "nav.groupCoach" },
+  { id: "chat", labelKey: "nav.chat", icon: "chat", group: "nav.groupSetup" },
+  { id: "settings", labelKey: "nav.settings", icon: "settings", group: "nav.groupSetup" },
 ];
+
+// Title-bar labels for every page, including those not in the primary nav
+// (Rune is a Live-mode surface; Activity is reached from Settings).
+const PAGE_LABELS: Record<Page, TranslationKey> = {
+  dashboard: "nav.dashboard",
+  profile: "nav.profile",
+  matches: "nav.matches",
+  advisor: "nav.advisor",
+  ranked: "nav.ranked",
+  rune: "nav.rune",
+  chat: "nav.chat",
+  activity: "nav.activity",
+  settings: "nav.settings",
+};
 
 export function App() {
   const matchRecapSelection = selectionFromMatchRecapHash(window.location.hash);
@@ -140,15 +159,24 @@ export function AppShell() {
     };
   }, [navigateTo]);
 
-  // Open post-game notes window when game ends
+  // Open post-game notes window when game ends. The game is over, so the champ-select
+  // rune context is no longer relevant — clear it so the contextual Rune nav entry hides.
   useEffect(() => {
     const unlisten = listen("post-game-notes-open", () => {
       void openPostGameNotesWindow();
+      setLockedChampionId(null);
     });
     return () => {
       void unlisten.then((fn) => fn());
     };
   }, []);
+
+  // Rune is a Live-mode surface, not a permanent destination: it only appears in the nav
+  // while a champion is locked in (set on lock-in, cleared after the game).
+  const navItems: NavItem[] = lockedChampionId !== null
+    ? [...pages, { id: "rune", labelKey: "nav.rune", icon: "rune", group: "nav.groupLive", live: true }]
+    : pages;
+  const activeLabelKey = PAGE_LABELS[activePage];
 
   return (
     <div className="flex h-screen min-h-0 bg-zinc-100 dark:bg-zinc-950 text-zinc-950 dark:text-zinc-50">
@@ -171,13 +199,23 @@ export function AppShell() {
         </div>
 
         <nav className="flex flex-1 flex-col gap-2 px-3 py-4" aria-label="Primary">
-          {pages.map((page) => {
+          {navItems.map((page, index) => {
             const isActive = page.id === activePage;
             const label = t(page.labelKey);
+            const showHeader = Boolean(page.group) && page.group !== navItems[index - 1]?.group;
 
             return (
+              <Fragment key={page.id}>
+                {showHeader && (
+                  compactMode ? (
+                    <div className="mx-2 mt-2 mb-1 border-t border-zinc-200 dark:border-zinc-700" />
+                  ) : (
+                    <p className="px-3 pt-3 pb-0.5 text-[11px] font-semibold uppercase tracking-wide text-zinc-400 dark:text-zinc-500">
+                      {t(page.group!)}
+                    </p>
+                  )
+                )}
               <button
-                key={page.id}
                 type="button"
                 title={compactMode ? label : undefined}
                 aria-label={label}
@@ -192,7 +230,17 @@ export function AppShell() {
               >
                 <Icon name={page.icon} />
                 {!compactMode && <span>{label}</span>}
+                {page.live && (
+                  <span
+                    className={[
+                      "h-2 w-2 shrink-0 rounded-full animate-pulse",
+                      compactMode ? "" : "ml-auto",
+                      isActive ? "bg-white" : "bg-rose-500",
+                    ].join(" ")}
+                  />
+                )}
               </button>
+              </Fragment>
             );
           })}
         </nav>
@@ -200,7 +248,10 @@ export function AppShell() {
 
       <div className="flex min-w-0 flex-1 flex-col">
         <div className="flex h-12 shrink-0 items-center justify-between border-b border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-8">
-          <p className="text-sm font-medium text-zinc-500 dark:text-zinc-400">{t(pages.find((p) => p.id === activePage)?.labelKey ?? "nav.dashboard")}</p>
+          <div className="flex items-center gap-3">
+            <p className="text-sm font-medium text-zinc-500 dark:text-zinc-400">{t(activeLabelKey)}</p>
+            <LiveStatusStrip />
+          </div>
           <button
             type="button"
             onClick={() => void setLanguagePreference(oppositeLanguage(effectiveLanguage))}
@@ -242,15 +293,19 @@ export function AppShell() {
             </button>
           </div>
         )}
-        {activePage === "dashboard" && <Dashboard />}
+        {activePage === "dashboard" && <Dashboard onOpenSettings={() => navigateTo("settings", { isUserInitiated: true })} />}
         {activePage === "profile" && <Profile />}
         {mountedPages.has("matches") && <div className={activePage === "matches" ? "" : "hidden"}><Matches /></div>}
-        {activePage === "advisor" && <Advisor />}
+        {activePage === "advisor" && <Advisor onOpenSettings={() => navigateTo("settings", { isUserInitiated: true })} />}
         {mountedPages.has("ranked") && <div className={activePage === "ranked" ? "" : "hidden"}><RankedChampions /></div>}
         {activePage === "rune" && <Rune lockedChampionId={lockedChampionId} />}
         {activePage === "chat" && <ChatPresets />}
-        {mountedPages.has("activity") && <div className={activePage === "activity" ? "" : "hidden"}><Activity /></div>}
-        {activePage === "settings" && <Settings />}
+        {mountedPages.has("activity") && (
+          <div className={activePage === "activity" ? "" : "hidden"}>
+            <Activity onBack={() => navigateTo("settings", { isUserInitiated: true })} />
+          </div>
+        )}
+        {activePage === "settings" && <Settings onOpenActivity={() => navigateTo("activity", { isUserInitiated: true })} />}
       </div>
     </div>
   );
