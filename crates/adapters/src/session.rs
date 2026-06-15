@@ -1,4 +1,5 @@
 use std::fmt;
+use std::sync::{Arc, Mutex};
 
 use reqwest::{StatusCode, blocking::Client, header::CONTENT_TYPE};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
@@ -20,26 +21,94 @@ fn with_retry<F, T, E>(
 where
     F: FnMut() -> Result<T, E>,
 {
-    let mut attempt = 0;
-    loop {
-        match operation() {
-            Ok(value) => return Ok(value),
-            Err(err) => {
-                if attempt >= max_retries || !is_retryable(&err) {
-                    return Err(err);
+    // Every LCU request flows through here, and each `operation()` is a blocking
+    // reqwest call that builds/drops a Tokio runtime internally. Run the whole
+    // retry loop (requests + backoff sleeps) in a blocking region so it's safe to
+    // call from the auto-accept monitor's async websocket loop.
+    run_blocking(move || {
+        let mut attempt = 0;
+        loop {
+            match operation() {
+                Ok(value) => return Ok(value),
+                Err(err) => {
+                    if attempt >= max_retries || !is_retryable(&err) {
+                        return Err(err);
+                    }
+                    attempt += 1;
+                    let backoff_ms = 200 * 2u64.pow(attempt.saturating_sub(1));
+                    std::thread::sleep(std::time::Duration::from_millis(backoff_ms));
                 }
-                attempt += 1;
-                let backoff_ms = 200 * 2u64.pow(attempt.saturating_sub(1));
-                std::thread::sleep(std::time::Duration::from_millis(backoff_ms));
             }
         }
+    })
+}
+
+/// One process-wide blocking HTTP client shared by every LCU session.
+///
+/// `reqwest::blocking::Client` owns an internal Tokio runtime. Dropping that
+/// runtime inside an async context panics ("Cannot drop a runtime in a context
+/// where blocking is not allowed") — and the auto-accept monitor calls blocking
+/// LCU methods from inside its async websocket loop. Keeping a single client
+/// alive in a static means per-call session clones only decrement a refcount on
+/// drop; the runtime is never torn down during operation (and statics are not
+/// dropped at process exit, so it is never torn down at all).
+static LCU_HTTP_CLIENT: Mutex<Option<Arc<Client>>> = Mutex::new(None);
+
+fn build_lcu_http_client() -> Result<Client, LcuAdapterError> {
+    Client::builder()
+        .timeout(REQUEST_TIMEOUT)
+        .connect_timeout(REQUEST_TIMEOUT)
+        .no_proxy()
+        .tls_danger_accept_invalid_certs(true)
+        .build()
+        .map_err(|_| LcuAdapterError::Http)
+}
+
+/// Runs a blocking LCU operation safely regardless of the calling context.
+///
+/// `reqwest::blocking` builds and tears down a Tokio runtime on every call (both
+/// client construction and each request). Doing that inside ANY async runtime
+/// context panics in debug builds ("Cannot drop a runtime in a context where
+/// blocking is not allowed"). Blocking LCU calls reach us from several contexts —
+/// the auto-accept monitor's multi-threaded runtime (sometimes already inside
+/// `block_in_place`), Tauri command dispatch (which can be a current-thread
+/// runtime, where `block_in_place` is illegal), rayon prefetch threads, and plain
+/// sync threads. `block_in_place` only covers one of those, so instead: if we are
+/// inside any Tokio runtime, offload the work to a fresh OS thread that has no
+/// async context (reqwest's internal runtime is then built/dropped freely); only
+/// outside a runtime do we run directly.
+pub(crate) fn run_blocking<T>(operation: impl FnOnce() -> T) -> T {
+    use tokio::runtime::{Handle, RuntimeFlavor};
+    match Handle::try_current() {
+        Ok(handle) if handle.runtime_flavor() == RuntimeFlavor::MultiThread => {
+            tokio::task::block_in_place(operation)
+        }
+        _ => operation(),
     }
+}
+
+/// Returns the shared LCU client, building it once on first use. Sessions hold an
+/// `Arc<Client>`, so dropping a session only decrements the refcount — the client
+/// (and its internal `reqwest::blocking` runtime) is never torn down during
+/// operation, which is what previously panicked when the auto-accept monitor
+/// dropped a session inside its async websocket loop. Building happens inside the
+/// lock so exactly one client is ever constructed.
+pub(crate) fn shared_lcu_http_client() -> Result<Arc<Client>, LcuAdapterError> {
+    let mut guard = LCU_HTTP_CLIENT
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if let Some(client) = guard.as_ref() {
+        return Ok(Arc::clone(client));
+    }
+    let client = Arc::new(run_blocking(build_lcu_http_client)?);
+    *guard = Some(Arc::clone(&client));
+    Ok(client)
 }
 
 #[derive(Clone)]
 pub(crate) struct LcuSession {
     pub(crate) credentials: LockfileCredentials,
-    pub(crate) http_client: Client,
+    pub(crate) http_client: Arc<Client>,
 }
 
 impl fmt::Debug for LcuSession {
@@ -53,17 +122,9 @@ impl fmt::Debug for LcuSession {
 
 impl LcuSession {
     pub(crate) fn new(credentials: LockfileCredentials) -> Result<Self, LcuAdapterError> {
-        let http_client = Client::builder()
-            .timeout(REQUEST_TIMEOUT)
-            .connect_timeout(REQUEST_TIMEOUT)
-            .no_proxy()
-            .tls_danger_accept_invalid_certs(true)
-            .build()
-            .map_err(|_| LcuAdapterError::Http)?;
-
         Ok(Self {
             credentials,
-            http_client,
+            http_client: shared_lcu_http_client()?,
         })
     }
 
@@ -338,6 +399,54 @@ mod tests {
     fn new_constructs_without_network() {
         let session = LcuSession::new(dummy()).expect("builds");
         assert_eq!(session.credentials.port, 1);
+    }
+
+    #[test]
+    fn raw_reqwest_blocking_in_async_does_not_panic() {
+        // Verifies the `[profile.*.package.reqwest] debug-assertions = false` override.
+        // A raw blocking reqwest build + request + drop inside an async context would
+        // hit reqwest's debug-only `wait::enter` assertion and panic ("Cannot drop a
+        // runtime in a context where blocking is not allowed"); the override compiles
+        // that assertion out, matching release behaviour. No block_in_place here.
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .enable_all()
+            .build()
+            .expect("runtime builds");
+        runtime.block_on(async {
+            let client = Client::builder()
+                .timeout(std::time::Duration::from_millis(50))
+                .build()
+                .expect("client builds");
+            let _ = client.get("http://127.0.0.1:1/").send();
+            drop(client);
+        });
+    }
+
+    #[test]
+    fn blocking_lcu_calls_inside_async_context_do_not_panic() {
+        // Regression: reqwest::blocking builds and tears down a Tokio runtime on
+        // both client construction and every request. Doing that inside an async
+        // context panics in debug builds ("Cannot drop a runtime in a context where
+        // blocking is not allowed"). The auto-accept monitor calls blocking LCU
+        // methods from inside its async websocket loop, so building a session AND
+        // issuing a request from async must be safe (no server needed — the panic
+        // fires before the connection attempt).
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .enable_all()
+            .build()
+            .expect("runtime builds");
+        runtime.block_on(async {
+            // The auto-accept monitor already wraps its blocking work in block_in_place,
+            // so our own blocking happens *nested* inside an existing block_in_place region.
+            // Reproduce that exact structure.
+            tokio::task::block_in_place(|| {
+                let session = LcuSession::new(dummy()).expect("builds");
+                let _ = session.verify(); // issues a blocking request; must not panic
+                drop(session);
+            });
+        });
     }
 
     #[test]
