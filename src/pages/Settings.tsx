@@ -12,7 +12,7 @@ const CHAMPION_RESULT_LIMIT = 8;
 
 type Translator = (key: TranslationKey) => string;
 
-export function Settings() {
+export function Settings({ onOpenActivity }: { onOpenActivity: () => void }) {
   const {
     snapshot,
     saveSettings,
@@ -89,7 +89,7 @@ export function Settings() {
       .catch(() => {
         if (isMounted) {
           setChampions([]);
-          setChampionsError("Failed to load champion catalog — is League Client running?");
+          setChampionsError(t("settings.championCatalogLoadError"));
         }
       })
       .finally(() => {
@@ -101,7 +101,7 @@ export function Settings() {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [t]);
 
   const activityValidationMessage = useMemo(() => validateActivityLimit(draft, t), [draft.activityLimit, t]);
   const automationValidationMessage = useMemo(() => validateAutomationDraft(draft, t), [draft, t]);
@@ -198,7 +198,7 @@ export function Settings() {
           <h1 className="mt-2 text-3xl font-semibold text-zinc-950 dark:text-zinc-50">{t("settings.title")}</h1>
         </header>
 
-        <section className="grid gap-4 lg:grid-cols-[0.95fr_1.05fr]">
+        <section>
           <form className="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-5 shadow-sm" onSubmit={handleSubmit}>
             <div className="flex items-start justify-between gap-4">
               <div>
@@ -231,7 +231,9 @@ export function Settings() {
                   className="h-10 rounded-md border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-900 px-3 text-sm text-zinc-950 dark:text-zinc-50 outline-none focus:border-rose-700 focus:ring-2 focus:ring-rose-100 dark:focus:ring-rose-900"
                 >
                   <option value="dashboard">{t("nav.dashboard")}</option>
-                  <option value="activity">{t("nav.activity")}</option>
+                  <option value="profile">{t("nav.profile")}</option>
+                  <option value="matches">{t("nav.matches")}</option>
+                  <option value="advisor">{t("nav.advisor")}</option>
                   <option value="settings">{t("nav.settings")}</option>
                 </select>
               </label>
@@ -264,7 +266,7 @@ export function Settings() {
                       theme: event.target.value as AppThemePreference,
                     }))
                   }
-                  className="h-10 rounded-md border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-900 dark:bg-zinc-800 px-3 text-sm text-zinc-950 dark:text-zinc-50 outline-none focus:border-rose-700 focus:ring-2 focus:ring-rose-100 dark:focus:ring-rose-900"
+                  className="h-10 rounded-md border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-900 px-3 text-sm text-zinc-950 dark:text-zinc-50 outline-none focus:border-rose-700 focus:ring-2 focus:ring-rose-100 dark:focus:ring-rose-900"
                 >
                   <option value="light">{t("settings.themeLight")}</option>
                   <option value="dark">{t("settings.themeDark")}</option>
@@ -393,23 +395,6 @@ export function Settings() {
               </button>
             </div>
           </form>
-
-          <div className="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-5 shadow-sm">
-            <h2 className="text-base font-semibold text-zinc-950 dark:text-zinc-50">{t("settings.currentValues")}</h2>
-            <dl className="mt-5 grid gap-4">
-              <SettingRow label={t("settings.startupPage")} value={persisted ? startupPageLabel(persisted.startupPage, t) : t("common.loading")} />
-              <SettingRow label={t("settings.language")} value={persisted ? languageLabel(persisted.language, t) : t("common.loading")} />
-              <SettingRow label={t("settings.theme")} value={persisted ? themeLabel(persisted.theme, t) : t("common.loading")} />
-              <SettingRow label={t("settings.compactMode")} value={persisted?.compactMode ? t("common.on") : t("common.off")} />
-              <SettingRow label={t("settings.activityLimit")} value={persisted ? String(persisted.activityLimit) : t("common.loading")} />
-              <SettingRow label={t("settings.autoAcceptShort")} value={persisted ? (persisted.autoAcceptEnabled ? t("common.on") : t("common.off")) : t("common.loading")} />
-              <SettingRow label={t("settings.autoPickShort")} value={persisted ? automationSummary(persisted.autoPickEnabled, persisted.autoPickChampionId, champions, t) : t("common.loading")} />
-              <SettingRow label={t("settings.pickDelay")} value={persisted ? `${persisted.autoPickDelaySeconds.toFixed(1)}${t("settings.delaySeconds")}` : t("common.loading")} />
-              <SettingRow label={t("settings.autoBanShort")} value={persisted ? automationSummary(persisted.autoBanEnabled, persisted.autoBanChampionId, champions, t) : t("common.loading")} />
-              <SettingRow label={t("settings.banDelay")} value={persisted ? `${persisted.autoBanDelaySeconds.toFixed(1)}${t("settings.delaySeconds")}` : t("common.loading")} />
-              <SettingRow label={t("dashboard.updated")} value={persisted?.updatedAt ?? t("common.loading")} />
-            </dl>
-          </div>
         </section>
 
         <section className="grid gap-4 lg:grid-cols-2">
@@ -436,6 +421,17 @@ export function Settings() {
           <div className="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-5 shadow-sm">
             <h2 className="text-base font-semibold text-zinc-950 dark:text-zinc-50">{t("settings.importAndClear")}</h2>
             <div className="mt-5 grid gap-4">
+              <button
+                type="button"
+                onClick={onOpenActivity}
+                className="flex items-center justify-between gap-3 rounded-md border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-4 py-3 text-left transition hover:border-zinc-300 hover:bg-white dark:hover:bg-zinc-900"
+              >
+                <span className="min-w-0">
+                  <span className="block text-sm font-semibold text-zinc-950 dark:text-zinc-50">{t("settings.openActivityLog")}</span>
+                  <span className="mt-0.5 block text-xs text-zinc-500 dark:text-zinc-400">{t("settings.activityLogHint")}</span>
+                </span>
+                <span aria-hidden="true" className="shrink-0 text-sm font-medium text-rose-600 dark:text-rose-400">→</span>
+              </button>
               <textarea
                 value={importJson}
                 onChange={(event) => setImportJson(event.target.value)}
@@ -507,15 +503,6 @@ function AiConfigField({
         autoComplete="off"
       />
     </label>
-  );
-}
-
-function SettingRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-center justify-between gap-4 rounded-md border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-4 py-3">
-      <dt className="text-sm font-medium text-zinc-600 dark:text-zinc-400">{label}</dt>
-      <dd className="text-sm font-semibold capitalize text-zinc-950 dark:text-zinc-50">{value}</dd>
-    </div>
   );
 }
 
@@ -978,28 +965,3 @@ function autoAcceptStatusLabel(status: AutoAcceptStatus | null, t: (key: Transla
   }
 }
 
-function startupPageLabel(page: StartupPage, t: (key: TranslationKey) => string) {
-  switch (page) {
-    case "dashboard":
-      return t("nav.dashboard");
-    case "activity":
-      return t("nav.activity");
-    case "settings":
-      return t("nav.settings");
-  }
-}
-
-function languageLabel(language: AppLanguagePreference, t: (key: TranslationKey) => string) {
-  switch (language) {
-    case "system":
-      return t("settings.languageSystem");
-    case "zh":
-      return t("settings.languageZh");
-    case "en":
-      return t("settings.languageEn");
-  }
-}
-
-function themeLabel(theme: AppThemePreference, t: (key: TranslationKey) => string) {
-  return theme === "dark" ? t("settings.themeDark") : t("settings.themeLight");
-}
