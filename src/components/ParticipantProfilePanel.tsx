@@ -152,7 +152,7 @@ export function ParticipantProfilePanel({
           <input
             className="h-10 rounded-md border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-900 px-3 text-sm text-zinc-950 dark:text-zinc-50 outline-none transition focus:border-rose-400 focus:ring-2 focus:ring-rose-100"
             onChange={(event) => setTagsDraft(event.target.value)}
-            placeholder="support, calm"
+            placeholder={t("participant.tagsPlaceholder")}
             value={tagsDraft}
           />
         </label>
