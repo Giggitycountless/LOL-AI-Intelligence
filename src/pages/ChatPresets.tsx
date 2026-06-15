@@ -3,6 +3,8 @@ import { useCallback, useEffect, useState } from "react";
 import { deleteChatPreset, fetchChatPresets, saveChatPreset } from "../backend/leagueClient";
 import { isCommandError } from "../backend/commands";
 import type { ChatPreset } from "../backend/types";
+import { useAppCore } from "../state/AppStateProvider";
+import type { T } from "../utils/formatting";
 
 type SlotState = {
   slot: number;
@@ -39,6 +41,7 @@ function slotFromPreset(preset: ChatPreset): SlotState {
 }
 
 export function ChatPresets() {
+  const { t } = useAppCore();
   const [slots, setSlots] = useState<SlotState[]>(
     Array.from({ length: 9 }, (_, i) => emptySlot(i + 1)),
   );
@@ -59,12 +62,12 @@ export function ChatPresets() {
         }),
       );
     } catch (err: unknown) {
-      const msg = isCommandError(err) ? err.message : err instanceof Error ? err.message : "加载预设失败";
+      const msg = isCommandError(err) ? err.message : err instanceof Error ? err.message : t("chatPresets.loadError");
       setLoadError(msg);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => { void reload(); }, [reload]);
 
@@ -78,7 +81,7 @@ export function ChatPresets() {
     const label = current.label.trim();
     const message = current.message.trim();
     if (!label || !message) {
-      updateSlot(slot, { error: "标签和消息不能为空" });
+      updateSlot(slot, { error: t("chatPresets.emptyError") });
       return;
     }
     updateSlot(slot, { saving: true, error: null });
@@ -86,10 +89,10 @@ export function ChatPresets() {
       const saved = await saveChatPreset(slot, label, message);
       setSlots((prev) => prev.map((s) => (s.slot === slot ? slotFromPreset(saved) : s)));
     } catch (err: unknown) {
-      const msg = isCommandError(err) ? err.message : err instanceof Error ? err.message : "保存失败";
+      const msg = isCommandError(err) ? err.message : err instanceof Error ? err.message : t("chatPresets.saveFailed");
       updateSlot(slot, { saving: false, error: msg });
     }
-  }, [slots, updateSlot]);
+  }, [slots, updateSlot, t]);
 
   const handleDelete = useCallback(async (slot: number) => {
     updateSlot(slot, { saving: true, error: null });
@@ -97,24 +100,35 @@ export function ChatPresets() {
       await deleteChatPreset(slot);
       setSlots((prev) => prev.map((s) => (s.slot === slot ? emptySlot(slot) : s)));
     } catch (err: unknown) {
-      const msg = isCommandError(err) ? err.message : err instanceof Error ? err.message : "删除失败";
+      const msg = isCommandError(err) ? err.message : err instanceof Error ? err.message : t("chatPresets.deleteFailed");
       updateSlot(slot, { saving: false, error: msg });
     }
-  }, [updateSlot]);
+  }, [updateSlot, t]);
 
   return (
     <main className="min-h-0 flex-1 overflow-auto px-8 py-7">
       <div className="mx-auto flex w-full max-w-4xl flex-col gap-6">
         <header>
-          <p className="text-sm font-medium uppercase tracking-wide text-rose-700">快捷喊话</p>
-          <h1 className="mt-2 text-3xl font-semibold text-zinc-950 dark:text-zinc-50">聊天预设</h1>
+          <p className="text-sm font-medium uppercase tracking-wide text-rose-700">{t("chatPresets.eyebrow")}</p>
+          <h1 className="mt-2 text-3xl font-semibold text-zinc-950 dark:text-zinc-50">{t("chatPresets.title")}</h1>
           <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-            最多 9 条预设，分别绑定 <code className="rounded bg-zinc-200 dark:bg-zinc-700 px-1 text-xs">Ctrl+Shift+1</code> 到 <code className="rounded bg-zinc-200 dark:bg-zinc-700 px-1 text-xs">Ctrl+Shift+9</code>。游戏内按热键自动打开聊天框并键入消息，<strong>由你自己按 Enter 发送</strong>（或 Esc 取消、Shift+Enter 改成全聊）。
+            {t("chatPresets.subtitlePrefix")}
+            <code className="rounded bg-zinc-200 dark:bg-zinc-700 px-1 text-xs">Ctrl+Shift+1</code>
+            {t("chatPresets.subtitleTo")}
+            <code className="rounded bg-zinc-200 dark:bg-zinc-700 px-1 text-xs">Ctrl+Shift+9</code>
+            {t("chatPresets.subtitleMid")}
+            <strong>{t("chatPresets.subtitleSendBold")}</strong>
+            {t("chatPresets.subtitleSendRest")}
           </p>
           <p className="mt-2 text-xs text-amber-700 dark:text-amber-400">
-            ⚠️ 仅在 League 游戏窗口前台时触发。请勿用于刷屏或骚扰队友。
+            {t("chatPresets.warning")}
           </p>
         </header>
+
+        <div className="flex items-start gap-2 rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950 px-4 py-3 text-sm font-medium text-amber-800 dark:text-amber-300">
+          <ShieldIcon />
+          <span>{t("chatPresets.adminNote")}</span>
+        </div>
 
         {loadError && (
           <div className="rounded-lg border border-rose-200 dark:border-rose-800 bg-rose-50 dark:bg-rose-950 px-4 py-3 text-sm font-medium text-rose-800 dark:text-rose-300">
@@ -123,13 +137,14 @@ export function ChatPresets() {
         )}
 
         {loading ? (
-          <div className="text-sm text-zinc-500 dark:text-zinc-400">加载中…</div>
+          <div className="text-sm text-zinc-500 dark:text-zinc-400">{t("common.loading")}</div>
         ) : (
           <div className="grid gap-3">
             {slots.map((s) => (
               <SlotCard
                 key={s.slot}
                 state={s}
+                t={t}
                 onChangeLabel={(v) => updateSlot(s.slot, { label: v, dirty: true, error: null })}
                 onChangeMessage={(v) => updateSlot(s.slot, { message: v, dirty: true, error: null })}
                 onSave={() => void handleSave(s.slot)}
@@ -143,14 +158,24 @@ export function ChatPresets() {
   );
 }
 
+function ShieldIcon() {
+  return (
+    <svg aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M12 2 4 5v6c0 5 3.4 8.4 8 9 4.6-.6 8-4 8-9V5l-8-3Zm-1 13-3.5-3.5 1.4-1.4L11 12.2l4.1-4.1 1.4 1.4L11 15Z" />
+    </svg>
+  );
+}
+
 function SlotCard({
   state,
+  t,
   onChangeLabel,
   onChangeMessage,
   onSave,
   onDelete,
 }: {
   state: SlotState;
+  t: T;
   onChangeLabel: (v: string) => void;
   onChangeMessage: (v: string) => void;
   onSave: () => void;
@@ -168,7 +193,7 @@ function SlotCard({
         <div className="flex min-w-0 flex-1 flex-col gap-2">
           <input
             type="text"
-            placeholder={`标签，例如「上路 miss」`}
+            placeholder={t("chatPresets.labelPlaceholder")}
             value={state.label}
             onChange={(e) => onChangeLabel(e.target.value)}
             maxLength={40}
@@ -176,7 +201,7 @@ function SlotCard({
           />
           <input
             type="text"
-            placeholder="消息内容（按热键时自动发到队聊；加 /all 前缀发全频道）"
+            placeholder={t("chatPresets.messagePlaceholder")}
             value={state.message}
             onChange={(e) => onChangeMessage(e.target.value)}
             maxLength={200}
@@ -194,7 +219,7 @@ function SlotCard({
             onClick={onSave}
             className="inline-flex h-9 items-center justify-center rounded-md bg-rose-700 px-3 text-xs font-semibold text-white transition hover:bg-rose-800 disabled:cursor-not-allowed disabled:bg-zinc-300 dark:disabled:bg-zinc-700"
           >
-            {state.saving ? "保存中…" : "保存"}
+            {state.saving ? t("common.saving") : t("common.save")}
           </button>
           {state.hasSaved && (
             <button
@@ -203,7 +228,7 @@ function SlotCard({
               onClick={onDelete}
               className="inline-flex h-9 items-center justify-center rounded-md border border-zinc-300 dark:border-zinc-600 px-3 text-xs font-semibold text-zinc-700 dark:text-zinc-300 transition hover:bg-zinc-50 dark:hover:bg-zinc-800 disabled:cursor-not-allowed"
             >
-              清空
+              {t("chatPresets.clear")}
             </button>
           )}
         </div>
