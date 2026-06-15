@@ -143,7 +143,7 @@ impl CommunityDragonClient {
         }
 
         let url = format!("{COMMUNITY_DRAGON_BASE}/{cd_name}/{cd_name}.bin.json");
-        let response = match self.http.get(&url).send() {
+        let response = match crate::session::run_blocking(|| self.http.get(&url).send()) {
             Ok(r) => r,
             Err(err) => {
                 eprintln!("[community-dragon] fetch failed champion={cd_name} url={url} err={err}");
@@ -157,7 +157,7 @@ impl CommunityDragonClient {
             );
             return None;
         }
-        let raw: HashMap<String, serde_json::Value> = match response.json() {
+        let raw: HashMap<String, serde_json::Value> = match crate::session::run_blocking(move || response.json()) {
             Ok(r) => r,
             Err(err) => {
                 eprintln!("[community-dragon] json parse failed champion={cd_name} err={err}");

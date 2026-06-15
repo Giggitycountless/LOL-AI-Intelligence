@@ -142,7 +142,7 @@ impl TencentLolClient {
         }
 
         let url = format!("{}/{champion_id}.js", self.base_url);
-        let bytes = match self.http.get(&url).send().and_then(|r| r.bytes()) {
+        let bytes = match crate::session::run_blocking(|| self.http.get(&url).send().and_then(|r| r.bytes())) {
             Ok(b) => b,
             Err(e) => {
                 crate::log_lcu_adapter_event(&format!(
@@ -234,7 +234,7 @@ impl TencentLolClient {
         }
 
         let url = format!("{}/champDetail_{champion_id}.js", self.rune_base_url);
-        let text = match self.http.get(&url).send().and_then(|r| r.text()) {
+        let text = match crate::session::run_blocking(|| self.http.get(&url).send().and_then(|r| r.text())) {
             Ok(t) => t,
             Err(e) => {
                 crate::log_lcu_adapter_event(&format!(
