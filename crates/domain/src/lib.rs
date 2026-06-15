@@ -201,7 +201,9 @@ impl AppThemePreference {
 #[serde(rename_all = "lowercase")]
 pub enum StartupPage {
     Dashboard,
-    Activity,
+    Profile,
+    Matches,
+    Advisor,
     Settings,
 }
 
@@ -209,7 +211,9 @@ impl StartupPage {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Dashboard => "dashboard",
-            Self::Activity => "activity",
+            Self::Profile => "profile",
+            Self::Matches => "matches",
+            Self::Advisor => "advisor",
             Self::Settings => "settings",
         }
     }
@@ -217,7 +221,9 @@ impl StartupPage {
     pub fn parse(value: &str) -> Option<Self> {
         match value {
             "dashboard" => Some(Self::Dashboard),
-            "activity" => Some(Self::Activity),
+            "profile" => Some(Self::Profile),
+            "matches" => Some(Self::Matches),
+            "advisor" => Some(Self::Advisor),
             "settings" => Some(Self::Settings),
             _ => None,
         }
