@@ -477,17 +477,11 @@ impl LocalLeagueClient {
     }
 
     fn read_live_client_session(&self) -> Result<ChampSelectSessionData, LeagueClientReadError> {
-        let http_client = Client::builder()
-            .timeout(REQUEST_TIMEOUT)
-            .connect_timeout(REQUEST_TIMEOUT)
-            .no_proxy()
-            .tls_danger_accept_invalid_certs(true)
-            .build()
-            .map_err(|_| {
-                LeagueClientReadError::Integration(
-                    "Live Client local connection could not be prepared".to_string(),
-                )
-            })?;
+        let http_client = crate::session::shared_lcu_http_client().map_err(|_| {
+            LeagueClientReadError::Integration(
+                "Live Client local connection could not be prepared".to_string(),
+            )
+        })?;
         let players = live_client_get_json::<Vec<GameClientPlayer>>(
             &http_client,
             "/liveclientdata/playerlist",
@@ -544,17 +538,11 @@ impl LocalLeagueClient {
     }
 
     fn read_live_overlay_snapshot(&self) -> Result<LiveOverlaySnapshot, LeagueClientReadError> {
-        let http_client = Client::builder()
-            .timeout(REQUEST_TIMEOUT)
-            .connect_timeout(REQUEST_TIMEOUT)
-            .no_proxy()
-            .tls_danger_accept_invalid_certs(true)
-            .build()
-            .map_err(|_| {
-                LeagueClientReadError::Integration(
-                    "Live Client local connection could not be prepared".to_string(),
-                )
-            })?;
+        let http_client = crate::session::shared_lcu_http_client().map_err(|_| {
+            LeagueClientReadError::Integration(
+                "Live Client local connection could not be prepared".to_string(),
+            )
+        })?;
         let players = live_client_get_json::<Vec<GameClientPlayer>>(
             &http_client,
             "/liveclientdata/playerlist",
