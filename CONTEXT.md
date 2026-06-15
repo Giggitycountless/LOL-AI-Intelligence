@@ -18,10 +18,10 @@ A League of Legends rune configuration consisting of a primary style, secondary 
 A `Rune Page` sourced from the Tencent QQ Games champion-detail API (`lol.qq.com/act/lbp/common/guides/champDetail/champDetail_{champId}.js`), sorted by pick frequency. The top recommendation is auto-applied on champion lock-in.
 
 ### Champion Rune Config
-A user-saved `Rune Page` for a specific champion, stored in SQLite. When present, it takes precedence over the `Rune Recommendation` on lock-in. The user can save, update, or delete it from the Rune Page sidebar tab.
+A user-saved `Rune Page` for a specific champion, stored in SQLite. When present, it takes precedence over the `Rune Recommendation` on lock-in. The user can save, update, or delete it from the Rune view, which is a `Live Mode` surface shown contextually once a champion is locked in rather than a permanent navigation tab.
 
 ### Champ-Select Lock-in
-The moment the local player's pick action transitions to `completed: true` in the LCU champ-select session. Triggers auto-apply of the winning `Rune Page` (Champion Rune Config if present, else top Rune Recommendation) and navigates the main window to the Rune Page tab.
+The moment the local player's pick action transitions to `completed: true` in the LCU champ-select session. Triggers auto-apply of the winning `Rune Page` (Champion Rune Config if present, else top Rune Recommendation) and navigates the main window to the Rune view (a `Live Mode` surface that appears only while a champion is locked in).
 
 ### Pick/Ban Delay
 A per-action (pick and ban are independent) timer, 0–5 seconds in 0.5-second increments, that starts the moment the local player's action becomes available in the LCU session. After the delay elapses the action is locked (`completed: true`). Default 0 seconds.
@@ -64,6 +64,15 @@ The LCU account level displayed on the `Player Card`. Sourced from the LCU summo
 
 ### Champion Mastery Badge
 The LCU mastery level for the champion a player has **locked in** during champ-select. Fetched once per player at `InProgress` phase start (when all ten champions are confirmed) via the LCU champion-mastery endpoint. Absent when the champion is not yet locked. Displayed on the `Player Card` as a tier badge (e.g. M7). Distinct from `Summoner Level` and from recent-match usage frequency.
+
+### Desk Mode
+The browsing half of the app — the user is at their desk deciding where to go. Desk-mode destinations (Profile, match history, AI analysis, Settings) are always reachable from the primary navigation. Contrast with `Live Mode`.
+
+### Live Mode
+The reactive half of the app — League is running and the app responds to the client's game-flow phase rather than to navigation. Live-mode surfaces (champ-select runes, the `In-Game Overlay`, post-game review) appear contextually when their phase is active rather than as permanent navigation destinations. The `Live Status Strip` connects Live Mode back to `Desk Mode`.
+
+### Live Status Strip
+A persistent indicator in the main window that reflects the current League client state: offline, connecting, in client, not logged in, in queue, match ready, or accepted. Derived from the LCU connection phase and the auto-accept state. Read-only — it communicates state, it does not control it.
 
 ### LCU Supplement
 The League Client Update API provides **runtime metadata** (champion icon, current ability level, summoner spell state, game-flow phase, etc.).
