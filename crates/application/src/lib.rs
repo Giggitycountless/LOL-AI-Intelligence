@@ -1591,7 +1591,9 @@ fn metric_leader(
 
 fn validate_settings(input: SettingsInput) -> Result<SettingsValues, ApplicationError> {
     let startup_page = StartupPage::parse(input.startup_page.as_str()).ok_or_else(|| {
-        ApplicationError::Validation("Startup page must be dashboard, activity, or settings".into())
+        ApplicationError::Validation(
+            "Startup page must be dashboard, profile, matches, advisor, or settings".into(),
+        )
     })?;
     let language = AppLanguagePreference::parse(input.language.as_str())
         .ok_or_else(|| ApplicationError::Validation("Language must be system, zh, or en".into()))?;

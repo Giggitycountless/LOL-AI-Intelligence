@@ -42,7 +42,7 @@ fn save_settings_logs_activity_when_values_change() {
     let result = save_settings(
         &store,
         SettingsInput {
-            startup_page: "activity".to_string(),
+            startup_page: "profile".to_string(),
             language: "zh".to_string(),
             theme: "dark".to_string(),
             compact_mode: true,
@@ -61,7 +61,7 @@ fn save_settings_logs_activity_when_values_change() {
     )
     .expect("settings save succeeds");
 
-    assert_eq!(result.startup_page, StartupPage::Activity);
+    assert_eq!(result.startup_page, StartupPage::Profile);
     assert_eq!(result.language, AppLanguagePreference::Zh);
     assert_eq!(result.activity_limit, 50);
     assert_eq!(store.created_entries.borrow().len(), 1);
@@ -244,12 +244,12 @@ fn import_local_data_validates_then_writes() {
 
     let result = import_local_data(
             &store,
-            r#"{"formatVersion":1,"settings":{"startupPage":"activity","compactMode":true,"activityLimit":50},"activityEntries":[{"kind":"note","title":"Imported","body":null,"createdAt":"2026-04-19 00:00:00"}]}"#,
+            r#"{"formatVersion":1,"settings":{"startupPage":"profile","compactMode":true,"activityLimit":50},"activityEntries":[{"kind":"note","title":"Imported","body":null,"createdAt":"2026-04-19 00:00:00"}]}"#,
         )
         .expect("local data import");
 
     assert_eq!(result.imported_activity_count, 1);
-    assert_eq!(result.settings.startup_page, StartupPage::Activity);
+    assert_eq!(result.settings.startup_page, StartupPage::Profile);
     assert_eq!(*store.import_count.borrow(), 1);
 }
 
