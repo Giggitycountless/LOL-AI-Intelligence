@@ -3,6 +3,7 @@ import { memo, type MouseEvent } from "react";
 import type { PlayerView, TeamTone } from "../../pages/selfHistoryOverlayUtils";
 import {
   advisorTagClass,
+  rankTierIconUrl,
   recentStatsStatusMessage,
   resultClass,
 } from "../../pages/selfHistoryOverlayUtils";
@@ -55,10 +56,25 @@ export const PlayerTrack = memo(function PlayerTrack({
           tone={tone}
         />
         <div className="grid min-w-0 grid-rows-2 gap-1.5">
-          <RankPill label="S" title={t("overlay.rankUnavailable")} value={player.soloRank} prominent />
-          <RankPill label="F" title={t("overlay.rankUnavailable")} value={player.flexRank} />
+          <RankPill
+            label="S"
+            lp={player.soloRankLP}
+            prominent
+            tier={player.soloRankTier}
+            title={t("overlay.rankUnavailable")}
+            value={player.soloRank}
+          />
+          <RankPill
+            label="F"
+            lp={player.flexRankLP}
+            tier={player.flexRankTier}
+            title={t("overlay.rankUnavailable")}
+            value={player.flexRank}
+          />
         </div>
       </div>
+
+      <SoloRankRecord losses={player.soloRankLosses} wins={player.soloRankWins} />
 
       <div className="relative mt-2.5 rounded-md border border-zinc-200 bg-white px-2 py-2">
         <div className="flex items-center justify-between gap-2">
@@ -202,7 +218,26 @@ function SmallChampionIcon({ championName, src }: { championName: string; src: s
   );
 }
 
-function RankPill({ label, prominent, title, value }: { label: string; prominent?: boolean; title: string; value: string | null }) {
+function RankPill({
+  label,
+  lp,
+  prominent,
+  tier,
+  title,
+  value,
+}: {
+  label: string;
+  lp: number | null;
+  prominent?: boolean;
+  tier: string | null;
+  title: string;
+  value: string | null;
+}) {
+  const iconUrl = rankTierIconUrl(tier);
+  const fullTitle = value
+    ? lp !== null ? `${value} · ${lp} LP` : value
+    : title;
+
   return (
     <div
       className={[
@@ -210,10 +245,37 @@ function RankPill({ label, prominent, title, value }: { label: string; prominent
         prominent ? "text-sm font-bold" : "text-[11px] font-semibold",
         value ? "border-zinc-300 bg-white text-zinc-900" : "border-zinc-200 bg-zinc-50 text-zinc-400",
       ].join(" ")}
-      title={value ?? title}
+      title={fullTitle}
     >
-      <span className={["shrink-0", prominent ? "text-zinc-400" : "text-zinc-500"].join(" ")}>{label}</span>
-      <span className="truncate">{value ?? "--"}</span>
+      {iconUrl ? (
+        <img
+          alt=""
+          className={["shrink-0 object-contain", prominent ? "h-5 w-5" : "h-4 w-4"].join(" ")}
+          src={iconUrl}
+        />
+      ) : (
+        <span className={["shrink-0", prominent ? "text-zinc-400" : "text-zinc-500"].join(" ")}>{label}</span>
+      )}
+      <span className="min-w-0 truncate">{value ?? "--"}</span>
+      {value && lp !== null && (
+        <span className="shrink-0 text-zinc-400">{lp}</span>
+      )}
+    </div>
+  );
+}
+
+function SoloRankRecord({ wins, losses }: { wins: number; losses: number }) {
+  const total = wins + losses;
+  if (total === 0) return null;
+
+  const winRate = Math.round((wins / total) * 100);
+
+  return (
+    <div className="mt-1.5 flex items-center gap-1.5 px-0.5 text-[10px] font-semibold tabular-nums text-zinc-500">
+      <span className="text-emerald-700">{wins}W</span>
+      <span className="text-rose-600">{losses}L</span>
+      <span>·</span>
+      <span>{winRate}%</span>
     </div>
   );
 }

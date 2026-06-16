@@ -30,6 +30,8 @@ export type PlayerView = {
   championUrl: string | undefined;
   displayName: string;
   flexRank: string | null;
+  flexRankTier: string | null;
+  flexRankLP: number | null;
   gameCount: number;
   advisorTags: AdvisorPlayerTag[];
   advisorSummary: string | null;
@@ -40,6 +42,10 @@ export type PlayerView = {
   /** Bar width (0–100) for the score, relative to the highest score in this match. */
   scorePct: number;
   soloRank: string | null;
+  soloRankTier: string | null;
+  soloRankLP: number | null;
+  soloRankWins: number;
+  soloRankLosses: number;
   summonerLevel: number | null;
   recentStatsStatus: ChampSelectRecentStatsStatus;
   winCount: number;
@@ -123,6 +129,8 @@ export function playerView(
     championUrl: player?.championId ? imageUrls[player.championId] : undefined,
     displayName: player?.displayName ?? t("overlay.unselected"),
     flexRank: rankValue(flexRank, effectiveLanguage, t),
+    flexRankTier: flexRank?.isRanked && flexRank.tier ? flexRank.tier.toLowerCase() : null,
+    flexRankLP: flexRank?.isRanked ? (flexRank.leaguePoints ?? null) : null,
     gameCount,
     advisorTags: advisorPlayer?.tags ?? [],
     advisorSummary: advisorSummaryText(advisorPlayer),
@@ -132,6 +140,10 @@ export function playerView(
     score: playerScore(player),
     scorePct: 0,
     soloRank: rankValue(soloRank, effectiveLanguage, t),
+    soloRankTier: soloRank?.isRanked && soloRank.tier ? soloRank.tier.toLowerCase() : null,
+    soloRankLP: soloRank?.isRanked ? (soloRank.leaguePoints ?? null) : null,
+    soloRankWins: soloRank?.wins ?? 0,
+    soloRankLosses: soloRank?.losses ?? 0,
     summonerLevel: player?.summonerLevel ?? null,
     recentStatsStatus: player?.recentStatsStatus ?? "notRequested",
     winCount,
@@ -205,6 +217,11 @@ export function scoreWidth(score: number | null, maxScore: number) {
 
   const pct = Math.round((score / maxScore) * 100);
   return Math.max(8, Math.min(100, pct));
+}
+
+export function rankTierIconUrl(tier: string | null): string | null {
+  if (!tier) return null;
+  return `https://cdn.mobalytics.gg/assets/lol/images/rank-icon/summoner-tier/${tier}.png`;
 }
 
 export function rankValue(summary: RankedQueueSummary | undefined, language: EffectiveLanguage, t: T) {
