@@ -5,6 +5,8 @@ import { Metric, RefreshIcon } from "../components/common";
 import { formatTimestamp, formatLeaguePhase, type T } from "../utils/formatting";
 import type { ChampionMasteryEntry, KdaTag, RankedQueue, RankedQueueSummary, RecentChampionSummary } from "../backend/types";
 import type { TranslationKey } from "../i18n";
+import type { EffectiveLanguage } from "../i18n";
+import { rankTierLabel, rankTierIconUrl, romanToNumber } from "./selfHistoryOverlayUtils";
 
 const MASTERY_INITIAL_SHOW = 5;
 
@@ -13,6 +15,7 @@ export function Profile() {
     leagueSelfSnapshot,
     isLeagueClientLoading,
     refreshLeagueClient,
+    effectiveLanguage,
     t,
   } = useAppCore();
   const { leagueImages, loadLeagueChampionIcon, loadLeagueProfileIcon } = useLeagueAssets();
@@ -124,8 +127,8 @@ export function Profile() {
             </section>
 
             <section className="grid gap-4 md:grid-cols-2">
-              <RankedCard label={t("profile.soloDuo")} queue="soloDuo" summary={soloDuo} t={t} />
-              <RankedCard label={t("profile.flex")} queue="flex" summary={flex} t={t} />
+              <RankedCard effectiveLanguage={effectiveLanguage} label={t("profile.soloDuo")} queue="soloDuo" summary={soloDuo} t={t} />
+              <RankedCard effectiveLanguage={effectiveLanguage} label={t("profile.flex")} queue="flex" summary={flex} t={t} />
             </section>
 
             <section className="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-5 shadow-sm">
@@ -217,17 +220,51 @@ function ChampionCard({ champion, imageUrl, t }: { champion: RecentChampionSumma
   );
 }
 
-function RankedCard({ label, queue, summary, t }: { label: string; queue: RankedQueue; summary: RankedQueueSummary | undefined; t: (key: TranslationKey) => string }) {
+function RankedCard({
+  effectiveLanguage,
+  label,
+  queue,
+  summary,
+  t,
+}: {
+  effectiveLanguage: EffectiveLanguage;
+  label: string;
+  queue: RankedQueue;
+  summary: RankedQueueSummary | undefined;
+  t: (key: TranslationKey) => string;
+}) {
+  const tier = summary?.isRanked && summary.tier ? summary.tier : null;
+  const iconUrl = rankTierIconUrl(tier ? tier.toLowerCase() : null);
+  const tierLabel = tier ? rankTierLabel(tier, effectiveLanguage) : null;
+  const division = summary?.division ? ` ${romanToNumber(summary.division)}` : "";
+  const lp = tier && summary?.leaguePoints !== null && summary?.leaguePoints !== undefined
+    ? ` · ${summary.leaguePoints} LP`
+    : "";
+  const rankText = tierLabel ? `${tierLabel}${division}${lp}` : t("profile.unranked");
+
   return (
     <div className="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-5 shadow-sm">
       <p className="text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">{label}</p>
-      <p className="mt-2 text-2xl font-semibold text-zinc-950 dark:text-zinc-50">{formatRank(summary, t)}</p>
-      <div className="mt-5 grid gap-3 sm:grid-cols-3">
+
+      <div className="mt-3 flex items-center gap-4">
+        {iconUrl ? (
+          <img alt={tierLabel ?? ""} className="h-16 w-16 shrink-0 object-contain drop-shadow-sm" src={iconUrl} />
+        ) : (
+          <div className="h-16 w-16 shrink-0 rounded-full bg-zinc-100 dark:bg-zinc-800" />
+        )}
+        <div className="min-w-0">
+          <p className="text-xl font-semibold text-zinc-950 dark:text-zinc-50">{rankText}</p>
+          <p className="mt-0.5 text-sm text-zinc-500 dark:text-zinc-400">
+            {queue === "soloDuo" ? t("profile.rankedSolo") : t("profile.rankedFlex")}
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-3">
         <Metric label={t("profile.wins")} value={summary ? String(summary.wins) : "0"} />
         <Metric label={t("profile.losses")} value={summary ? String(summary.losses) : "0"} />
         <Metric label={t("profile.winRate")} value={summary ? formatWinRate(summary) : "0%"} />
       </div>
-      <p className="mt-4 text-sm text-zinc-500 dark:text-zinc-400">{queue === "soloDuo" ? t("profile.rankedSolo") : t("profile.rankedFlex")}</p>
     </div>
   );
 }
@@ -268,17 +305,6 @@ function StatePanel({ title, body }: { title: string; body: string }) {
       <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">{body}</p>
     </section>
   );
-}
-
-function formatRank(summary: RankedQueueSummary | undefined, t: (key: TranslationKey) => string) {
-  if (!summary || !summary.isRanked || !summary.tier) {
-    return t("profile.unranked");
-  }
-
-  const division = summary.division ? ` ${summary.division}` : "";
-  const lp = summary.leaguePoints === null ? "" : ` - ${summary.leaguePoints} LP`;
-
-  return `${summary.tier}${division}${lp}`;
 }
 
 function formatWinRate(summary: RankedQueueSummary) {
