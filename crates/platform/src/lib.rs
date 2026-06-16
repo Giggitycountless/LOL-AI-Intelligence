@@ -1484,10 +1484,20 @@ fn start_champ_select_hydration<R: Runtime + 'static>(
                 return;
             }
 
+            // Only mark the cache as fully hydrated when every known player's
+            // recent stats loaded successfully.  If any fetch failed (e.g. the
+            // LCU match-history endpoint wasn't ready yet at game-start) keep
+            // recent_limit at 0 so the platform cache allows a retry instead of
+            // locking out future callers for the rest of the game.
+            let cached_recent_limit = if champ_select_snapshot_has_complete_recent_stats(&snapshot) {
+                CHAMP_SELECT_HYDRATED_RECENT_LIMIT
+            } else {
+                CHAMP_SELECT_LIGHT_RECENT_LIMIT
+            };
             *lock_or_recover(&state.champ_select_cache) = Some(ChampSelectCacheEntry {
                 snapshot: snapshot.clone(),
                 cached_at: Instant::now(),
-                recent_limit: CHAMP_SELECT_HYDRATED_RECENT_LIMIT,
+                recent_limit: cached_recent_limit,
             });
             let mut hydration = lock_or_recover(state.champ_select_hydration.as_ref());
             if hydration
@@ -2506,10 +2516,18 @@ pub fn get_champ_select_snapshot(
         .champ_select_cache_misses
         .fetch_add(1, Ordering::Relaxed);
     let snapshot = build_champ_select_snapshot(state, recent_limit)?;
+    // Same completeness check as the hydrate-from-cache path: don't lock the
+    // cache at the requested limit when stats are missing, so the next caller
+    // can retry after the per-player failure TTL expires.
+    let cached_recent_limit = if champ_select_snapshot_has_complete_recent_stats(&snapshot) {
+        recent_limit
+    } else {
+        CHAMP_SELECT_LIGHT_RECENT_LIMIT
+    };
     *lock_or_recover(&state.champ_select_cache) = Some(ChampSelectCacheEntry {
         snapshot: snapshot.clone(),
         cached_at: Instant::now(),
-        recent_limit,
+        recent_limit: cached_recent_limit,
     });
 
     Ok(snapshot)

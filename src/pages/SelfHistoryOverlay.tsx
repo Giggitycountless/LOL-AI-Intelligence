@@ -106,8 +106,12 @@ export function SelfHistoryOverlay() {
     let wasCancelled = false;
     setInitialSnapshotStatus("loading");
     void refreshChampSelectSnapshot().then((didRefresh) => {
-      if (!wasCancelled) {
-        setInitialSnapshotStatus(didRefresh ? "ready" : "error");
+      if (!wasCancelled && !didRefresh) {
+        // Fetch failed entirely — surface an error immediately.
+        // If didRefresh is true but stats are absent, keep "loading" so the
+        // hasRecentStats effect can set "ready" once history arrives, and the
+        // 8-second timeout can surface "error" if it never does.
+        setInitialSnapshotStatus("error");
       }
     });
 
