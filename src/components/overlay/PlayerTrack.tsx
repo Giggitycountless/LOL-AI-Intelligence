@@ -3,7 +3,6 @@ import { memo, type MouseEvent } from "react";
 import type { PlayerView, TeamTone } from "../../pages/selfHistoryOverlayUtils";
 import {
   advisorTagClass,
-  rankTierIconUrl,
   recentStatsStatusMessage,
   resultClass,
 } from "../../pages/selfHistoryOverlayUtils";
@@ -14,12 +13,14 @@ import type { RecentMatchSummary } from "../../backend/types";
 export const PlayerTrack = memo(function PlayerTrack({
   onChampionSelect,
   player,
+  rankTierIcons,
   selectedChampionId,
   t,
   tone,
 }: {
   onChampionSelect: (event: MouseEvent, championId: number | null | undefined) => void;
   player: PlayerView;
+  rankTierIcons: Record<string, string>;
   selectedChampionId: number | null;
   t: T;
   tone: TeamTone;
@@ -57,17 +58,17 @@ export const PlayerTrack = memo(function PlayerTrack({
         />
         <div className="grid min-w-0 grid-rows-2 gap-1.5">
           <RankPill
+            iconUrl={player.soloRankTier ? (rankTierIcons[player.soloRankTier] ?? null) : null}
             label="S"
             lp={player.soloRankLP}
             prominent
-            tier={player.soloRankTier}
             title={t("overlay.rankUnavailable")}
             value={player.soloRank}
           />
           <RankPill
+            iconUrl={player.flexRankTier ? (rankTierIcons[player.flexRankTier] ?? null) : null}
             label="F"
             lp={player.flexRankLP}
-            tier={player.flexRankTier}
             title={t("overlay.rankUnavailable")}
             value={player.flexRank}
           />
@@ -219,21 +220,20 @@ function SmallChampionIcon({ championName, src }: { championName: string; src: s
 }
 
 function RankPill({
+  iconUrl,
   label,
   lp,
   prominent,
-  tier,
   title,
   value,
 }: {
+  iconUrl: string | null;
   label: string;
   lp: number | null;
   prominent?: boolean;
-  tier: string | null;
   title: string;
   value: string | null;
 }) {
-  const iconUrl = rankTierIconUrl(tier);
   const fullTitle = value
     ? lp !== null ? `${value} · ${lp} LP` : value
     : title;

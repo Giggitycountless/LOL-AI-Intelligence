@@ -6,7 +6,7 @@ import { formatTimestamp, formatLeaguePhase, type T } from "../utils/formatting"
 import type { ChampionMasteryEntry, KdaTag, RankedQueue, RankedQueueSummary, RecentChampionSummary } from "../backend/types";
 import type { TranslationKey } from "../i18n";
 import type { EffectiveLanguage } from "../i18n";
-import { rankTierLabel, rankTierIconUrl, romanToNumber } from "./selfHistoryOverlayUtils";
+import { rankTierLabel, romanToNumber } from "./selfHistoryOverlayUtils";
 
 const MASTERY_INITIAL_SHOW = 5;
 
@@ -18,7 +18,7 @@ export function Profile() {
     effectiveLanguage,
     t,
   } = useAppCore();
-  const { leagueImages, loadLeagueChampionIcon, loadLeagueProfileIcon } = useLeagueAssets();
+  const { leagueImages, loadLeagueChampionIcon, loadLeagueProfileIcon, loadLeagueRankTierIcon } = useLeagueAssets();
   const [masteryExpanded, setMasteryExpanded] = useState(false);
   const league = leagueSelfSnapshot;
   const summoner = league?.summoner ?? null;
@@ -33,6 +33,14 @@ export function Profile() {
   useEffect(() => {
     void loadLeagueProfileIcon(profileIconId);
   }, [loadLeagueProfileIcon, profileIconId]);
+
+  useEffect(() => {
+    for (const queue of [soloDuo, flex]) {
+      if (queue?.isRanked && queue.tier) {
+        void loadLeagueRankTierIcon(queue.tier.toLowerCase());
+      }
+    }
+  }, [loadLeagueRankTierIcon, soloDuo, flex]);
 
   useEffect(() => {
     for (const champion of topChampions) {
@@ -127,8 +135,8 @@ export function Profile() {
             </section>
 
             <section className="grid gap-4 md:grid-cols-2">
-              <RankedCard effectiveLanguage={effectiveLanguage} label={t("profile.soloDuo")} queue="soloDuo" summary={soloDuo} t={t} />
-              <RankedCard effectiveLanguage={effectiveLanguage} label={t("profile.flex")} queue="flex" summary={flex} t={t} />
+              <RankedCard effectiveLanguage={effectiveLanguage} label={t("profile.soloDuo")} queue="soloDuo" rankTierIcons={leagueImages.rankTierIcons} summary={soloDuo} t={t} />
+              <RankedCard effectiveLanguage={effectiveLanguage} label={t("profile.flex")} queue="flex" rankTierIcons={leagueImages.rankTierIcons} summary={flex} t={t} />
             </section>
 
             <section className="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-5 shadow-sm">
@@ -224,17 +232,20 @@ function RankedCard({
   effectiveLanguage,
   label,
   queue,
+  rankTierIcons,
   summary,
   t,
 }: {
   effectiveLanguage: EffectiveLanguage;
   label: string;
   queue: RankedQueue;
+  rankTierIcons: Record<string, string>;
   summary: RankedQueueSummary | undefined;
   t: (key: TranslationKey) => string;
 }) {
   const tier = summary?.isRanked && summary.tier ? summary.tier : null;
-  const iconUrl = rankTierIconUrl(tier ? tier.toLowerCase() : null);
+  const tierKey = tier ? tier.toLowerCase() : null;
+  const iconUrl = tierKey ? (rankTierIcons[tierKey] ?? null) : null;
   const tierLabel = tier ? rankTierLabel(tier, effectiveLanguage) : null;
   const division = summary?.division ? ` ${romanToNumber(summary.division)}` : "";
   const lp = tier && summary?.leaguePoints !== null && summary?.leaguePoints !== undefined
@@ -246,13 +257,15 @@ function RankedCard({
     <div className="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-5 shadow-sm">
       <p className="text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">{label}</p>
 
-      <div className="mt-3 flex items-center gap-4">
+      <div className="mt-3 flex flex-col items-center gap-2">
         {iconUrl ? (
-          <img alt={tierLabel ?? ""} className="h-16 w-16 shrink-0 object-contain drop-shadow-sm" src={iconUrl} />
+          <div className="h-36 w-36 shrink-0 overflow-hidden">
+            <img alt={tierLabel ?? ""} className="h-full w-full scale-[5.0] object-contain drop-shadow-sm" src={iconUrl} />
+          </div>
         ) : (
-          <div className="h-16 w-16 shrink-0 rounded-full bg-zinc-100 dark:bg-zinc-800" />
+          <div className="h-36 w-36 shrink-0 rounded-full bg-zinc-100 dark:bg-zinc-800" />
         )}
-        <div className="min-w-0">
+        <div className="text-center">
           <p className="text-xl font-semibold text-zinc-950 dark:text-zinc-50">{rankText}</p>
           <p className="mt-0.5 text-sm text-zinc-500 dark:text-zinc-400">
             {queue === "soloDuo" ? t("profile.rankedSolo") : t("profile.rankedFlex")}

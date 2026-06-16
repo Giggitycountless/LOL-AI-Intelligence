@@ -100,6 +100,10 @@ export function fetchLeagueChampionIcon(championId: number): Promise<LeagueImage
   });
 }
 
+export function fetchRankTierIcon(tier: string): Promise<LeagueImageAsset> {
+  return callBackend<LeagueImageAsset>("fetch_rank_tier_icon", { tier });
+}
+
 export function fetchLeagueChampionDetails(championId: number): Promise<LeagueChampionDetails> {
   return callBackend<LeagueChampionDetails>("get_league_champion_details", {
     input: { championId },

@@ -166,6 +166,7 @@ pub struct AppState {
     /// Champion ID locked in by the local player this session; None between sessions.
     pub last_locked_champion: Arc<Mutex<Option<i64>>>,
     cache_metrics: Arc<CacheMetrics>,
+    pub rank_icon_cache: Arc<Mutex<HashMap<String, LeagueImageAsset>>>,
 }
 
 fn lock_or_recover<'a, T>(mutex: &'a Mutex<T>) -> MutexGuard<'a, T> {
@@ -205,6 +206,7 @@ impl AppState {
             champ_select_pick_delay_token: Arc::new(Mutex::new(None)),
             last_locked_champion: Arc::new(Mutex::new(None)),
             cache_metrics: Arc::new(CacheMetrics::default()),
+            rank_icon_cache: Arc::new(Mutex::new(HashMap::new())),
         })
     }
 }
@@ -231,6 +233,7 @@ impl Clone for AppState {
             champ_select_pick_delay_token: Arc::clone(&self.champ_select_pick_delay_token),
             last_locked_champion: Arc::clone(&self.last_locked_champion),
             cache_metrics: Arc::clone(&self.cache_metrics),
+            rank_icon_cache: Arc::clone(&self.rank_icon_cache),
         }
     }
 }
@@ -695,6 +698,12 @@ pub struct LeagueProfileIconCommand {
 #[serde(rename_all = "camelCase")]
 pub struct LeagueChampionIconCommand {
     pub champion_id: i64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FetchRankTierIconCommand {
+    pub tier: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -2707,6 +2716,35 @@ pub fn get_league_champion_icon(
         },
     )
     .map_err(CommandError::from)
+}
+
+pub fn fetch_rank_tier_icon(
+    state: &AppState,
+    command: FetchRankTierIconCommand,
+) -> Result<LeagueImageAsset, CommandError> {
+    const VALID_TIERS: &[&str] = &[
+        "iron", "bronze", "silver", "gold", "platinum", "emerald", "diamond",
+        "master", "grandmaster", "challenger",
+    ];
+    let tier = command.tier.to_lowercase();
+    if !VALID_TIERS.contains(&tier.as_str()) {
+        return Err(CommandError::from(ApplicationError::Validation(
+            format!("Unknown rank tier: {tier}"),
+        )));
+    }
+    if let Some(cached) = lock_or_recover(&state.rank_icon_cache).get(&tier).cloned() {
+        return Ok(cached);
+    }
+    let url = format!(
+        "https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-static-assets/global/default/ranked-emblem/emblem-{tier}.png"
+    );
+    let asset = state
+        .league_client
+        .fetch_external_image_asset(&url)
+        .map_err(ApplicationError::from)
+        .map_err(CommandError::from)?;
+    lock_or_recover(&state.rank_icon_cache).insert(tier, asset.clone());
+    Ok(asset)
 }
 
 pub fn get_league_champion_details(

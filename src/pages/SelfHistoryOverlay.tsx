@@ -39,7 +39,7 @@ export function SelfHistoryOverlay() {
     refreshChampSelectAdvisorSnapshot,
     refreshLiveOverlaySnapshot,
   } = useAdvisor();
-  const { championDetailsById, leagueImages, loadLeagueChampionDetails } = useLeagueAssets();
+  const { championDetailsById, leagueImages, loadLeagueChampionDetails, loadLeagueRankTierIcon } = useLeagueAssets();
   const [selectedChampionId, setSelectedChampionId] = useState<number | null>(null);
   const [isChampionDetailsLoading, setIsChampionDetailsLoading] = useState(false);
   const [championDetailsError, setChampionDetailsError] = useState(false);
@@ -125,6 +125,20 @@ export function SelfHistoryOverlay() {
       setInitialSnapshotStatus("ready");
     }
   }, [hasRecentStats]);
+
+  useEffect(() => {
+    const tiers = new Set<string>();
+    for (const player of players) {
+      for (const queue of player.rankedQueues) {
+        if (queue.isRanked && queue.tier) {
+          tiers.add(queue.tier.toLowerCase());
+        }
+      }
+    }
+    for (const tier of tiers) {
+      void loadLeagueRankTierIcon(tier);
+    }
+  }, [players, loadLeagueRankTierIcon]);
 
   useEffect(() => {
     if (!isHistoryLoading) {
@@ -262,6 +276,7 @@ export function SelfHistoryOverlay() {
         <TeamBoard
           onChampionSelect={handleChampionSelect}
           players={model.enemies}
+          rankTierIcons={leagueImages.rankTierIcons}
           selectedChampionId={selectedChampionId}
           t={t}
           tone="enemy"
@@ -269,6 +284,7 @@ export function SelfHistoryOverlay() {
         <TeamBoard
           onChampionSelect={handleChampionSelect}
           players={model.allies}
+          rankTierIcons={leagueImages.rankTierIcons}
           selectedChampionId={selectedChampionId}
           t={t}
           tone="ally"
@@ -300,12 +316,14 @@ export function SelfHistoryOverlay() {
 const TeamBoard = memo(function TeamBoard({
   onChampionSelect,
   players,
+  rankTierIcons,
   selectedChampionId,
   t,
   tone,
 }: {
   onChampionSelect: (event: MouseEvent, championId: number | null | undefined) => void;
   players: PlayerView[];
+  rankTierIcons: Record<string, string>;
   selectedChampionId: number | null;
   t: T;
   tone: TeamTone;
@@ -334,6 +352,7 @@ const TeamBoard = memo(function TeamBoard({
             key={player.id}
             onChampionSelect={onChampionSelect}
             player={player}
+            rankTierIcons={rankTierIcons}
             selectedChampionId={selectedChampionId}
             t={t}
             tone={tone}

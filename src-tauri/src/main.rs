@@ -197,6 +197,14 @@ fn get_league_champion_details(
 }
 
 #[tauri::command(async)]
+fn fetch_rank_tier_icon(
+    state: State<'_, platform::AppState>,
+    tier: String,
+) -> Result<domain::LeagueImageAsset, platform::CommandError> {
+    platform::fetch_rank_tier_icon(state.inner(), platform::FetchRankTierIconCommand { tier })
+}
+
+#[tauri::command(async)]
 fn get_league_game_asset(
     state: State<'_, platform::AppState>,
     input: platform::LeagueGameAssetCommand,
@@ -734,7 +742,8 @@ fn main() {
             apply_rune_page,
             save_champion_rune_config,
             get_champion_rune_config,
-            delete_champion_rune_config
+            delete_champion_rune_config,
+            fetch_rank_tier_icon
         ])
         .run(tauri::generate_context!())
     {

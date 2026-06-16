@@ -219,11 +219,6 @@ export function scoreWidth(score: number | null, maxScore: number) {
   return Math.max(8, Math.min(100, pct));
 }
 
-export function rankTierIconUrl(tier: string | null): string | null {
-  if (!tier) return null;
-  return `https://cdn.mobalytics.gg/assets/lol/images/rank-icon/summoner-tier/${tier}.png`;
-}
-
 export function rankValue(summary: RankedQueueSummary | undefined, language: EffectiveLanguage, t: T) {
   if (!summary) {
     return null;

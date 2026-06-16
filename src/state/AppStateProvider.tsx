@@ -87,7 +87,7 @@ export function AppStateProvider({ children, mode = "main" }: { children: ReactN
 
   // ── Asset loader ──
   const [championDetailsById, setChampionDetailsById] = useState<Record<number, import("./types").LeagueChampionDetailsView>>({});
-  const [leagueImages, setLeagueImages] = useState<LeagueImageUrls>({ profileIcons: {}, championIcons: {}, gameAssets: {} });
+  const [leagueImages, setLeagueImages] = useState<LeagueImageUrls>({ profileIcons: {}, championIcons: {}, gameAssets: {}, rankTierIcons: {} });
   const assetLoader = useAssetLoader(setLeagueImages, setChampionDetailsById);
 
   // ── Data actions ──
@@ -464,6 +464,7 @@ export function AppStateProvider({ children, mode = "main" }: { children: ReactN
       loadLeagueChampionIcon: assetLoader.loadLeagueChampionIcon,
       loadLeagueChampionDetails: assetLoader.loadLeagueChampionDetails,
       loadLeagueGameAsset: assetLoader.loadLeagueGameAsset,
+      loadLeagueRankTierIcon: assetLoader.loadLeagueRankTierIcon,
     }),
     [
       championDetailsById,
@@ -472,6 +473,7 @@ export function AppStateProvider({ children, mode = "main" }: { children: ReactN
       assetLoader.loadLeagueChampionIcon,
       assetLoader.loadLeagueGameAsset,
       assetLoader.loadLeagueProfileIcon,
+      assetLoader.loadLeagueRankTierIcon,
     ],
   );
 

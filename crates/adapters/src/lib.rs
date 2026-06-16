@@ -537,6 +537,38 @@ impl LocalLeagueClient {
         })
     }
 
+    pub fn fetch_external_image_asset(&self, url: &str) -> Result<LeagueImageAsset, LeagueClientReadError> {
+        let client = crate::session::shared_lcu_http_client().map_err(|_| {
+            LeagueClientReadError::Integration("HTTP client unavailable".into())
+        })?;
+        crate::session::run_blocking(|| {
+            let response = client.get(url).send().map_err(|_| {
+                LeagueClientReadError::ClientUnavailable("External image request failed".into())
+            })?;
+            if !response.status().is_success() {
+                return Err(LeagueClientReadError::ClientUnavailable(format!(
+                    "External image fetch failed: status {}",
+                    response.status()
+                )));
+            }
+            let mime_type = response
+                .headers()
+                .get("content-type")
+                .and_then(|v| v.to_str().ok())
+                .filter(|v| v.starts_with("image/"))
+                .unwrap_or("image/png")
+                .to_string();
+            let bytes = response
+                .bytes()
+                .map_err(|_| LeagueClientReadError::Integration("External image body could not be read".into()))?
+                .to_vec();
+            if bytes.is_empty() {
+                return Err(LeagueClientReadError::Integration("External image was empty".into()));
+            }
+            Ok(LeagueImageAsset { mime_type, bytes })
+        })
+    }
+
     fn read_live_overlay_snapshot(&self) -> Result<LiveOverlaySnapshot, LeagueClientReadError> {
         let http_client = crate::session::shared_lcu_http_client().map_err(|_| {
             LeagueClientReadError::Integration(
