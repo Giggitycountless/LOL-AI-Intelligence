@@ -406,6 +406,7 @@ pub struct LeagueSelfSnapshot {
     pub ranked_queues: Vec<RankedQueueSummary>,
     pub recent_matches: Vec<RecentMatchSummary>,
     pub recent_performance: RecentPerformanceSummary,
+    pub champion_records: Vec<ChampionRecordSummary>,
     pub data_warnings: Vec<LeagueDataWarning>,
     pub refreshed_at: String,
 }
@@ -961,6 +962,19 @@ pub struct RecentPerformanceSummary {
 pub struct RecentChampionSummary {
     pub champion_id: Option<i64>,
     pub champion_name: String,
+    pub games: usize,
+}
+
+/// Per-champion win/loss tally aggregated from the player's recent match
+/// history. Used to enrich the mastery list with recent W/L/win-rate. Scope is
+/// only as deep as the fetched match window, so champions not played recently
+/// are simply absent (the UI shows them as "—").
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChampionRecordSummary {
+    pub champion_id: i64,
+    pub wins: usize,
+    pub losses: usize,
     pub games: usize,
 }
 

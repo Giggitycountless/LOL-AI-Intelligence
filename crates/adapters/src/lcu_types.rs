@@ -118,7 +118,8 @@ pub(crate) struct LcuPlayerRankedStats {
     pub(crate) queues: Vec<LcuRankedQueue>,
 }
 
-/// Response from `/lol-collections/v1/inventories/{summonerId}/champion-mastery/{championId}`.
+/// Response from `/lol-champion-mastery/v1/{puuid}/champion-mastery/{championId}`
+/// (single-champion mastery for one player).
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct LcuChampionMasteryEntry {

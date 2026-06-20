@@ -15,7 +15,8 @@ use domain::{
     DatabaseStatus,
     HealthReport, ImportLocalDataResult, KdaTag, LeagueChampionDetails, LeagueChampionSummary,
     LeagueClientStatus, LeagueDataSection, LeagueDataWarning, LeagueGameAsset, LeagueGameAssetKind,
-    LeagueImageAsset, LeagueSelfData, LeagueSelfSnapshot, LiveOverlaySnapshot, LocalActivityEntry,
+    ChampionRecordSummary, LeagueImageAsset, LeagueSelfData, LeagueSelfSnapshot, LiveOverlaySnapshot,
+    LocalActivityEntry,
     LocalDataExport, MatchResult, NewActivityEntry, ParticipantMetricLeader,
     ParticipantPublicProfile, ParticipantRecentStats, PlayerNoteSummary, PlayerNoteView,
     PostMatchComparison, PostMatchDetail, PostMatchParticipant, PostMatchTeam, PostMatchTeamTotals,
@@ -135,10 +136,12 @@ pub trait LeagueClientReader {
             .map(|puuid| (puuid.clone(), Vec::new()))
             .collect()
     }
+    /// Per-player champion mastery level. `entries` are `(puuid, champion_id)`;
+    /// the result is keyed by puuid.
     fn champion_mastery_batch(
         &self,
-        _entries: &[(i64, i64)],
-    ) -> HashMap<i64, Option<i64>> {
+        _entries: &[(String, i64)],
+    ) -> HashMap<String, Option<i64>> {
         HashMap::new()
     }
     fn champion_catalog(&self) -> Result<Vec<LeagueChampionSummary>, LeagueClientReadError>;
@@ -817,6 +820,7 @@ pub fn get_league_self_snapshot(
 
     Ok(LeagueSelfSnapshot {
         recent_performance: summarize_recent_performance(&data.recent_matches),
+        champion_records: summarize_champion_records(&data.recent_matches),
         status: data.status,
         summoner: data.summoner,
         ranked_queues: data.ranked_queues,
@@ -1843,6 +1847,41 @@ fn summarize_top_champions(matches: &[RecentMatchSummary]) -> Vec<RecentChampion
         .collect()
 }
 
+/// Aggregates win/loss per champion over the FULL match window provided (not
+/// capped at `PERFORMANCE_MATCH_COUNT`, unlike `summarize_top_champions`). The
+/// caller controls depth via the fetched `match_limit`; the Profile page asks
+/// for a wide window so mastery champions show a meaningful recent record.
+/// Matches with an unknown result still count toward `games` but not W/L.
+fn summarize_champion_records(matches: &[RecentMatchSummary]) -> Vec<ChampionRecordSummary> {
+    let mut records: Vec<ChampionRecordSummary> = Vec::new();
+
+    for match_summary in matches {
+        let Some(champion_id) = match_summary.champion_id else {
+            continue;
+        };
+        let record = match records.iter_mut().find(|r| r.champion_id == champion_id) {
+            Some(existing) => existing,
+            None => {
+                records.push(ChampionRecordSummary {
+                    champion_id,
+                    wins: 0,
+                    losses: 0,
+                    games: 0,
+                });
+                records.last_mut().expect("just pushed")
+            }
+        };
+        record.games += 1;
+        match match_summary.result {
+            MatchResult::Win => record.wins += 1,
+            MatchResult::Loss => record.losses += 1,
+            MatchResult::Unknown => {}
+        }
+    }
+
+    records
+}
+
 fn calculate_kda(kills: i64, deaths: i64, assists: i64) -> f64 {
     let contribution = (kills + assists) as f64;
 
@@ -2574,10 +2613,11 @@ pub fn get_champ_select_snapshot(
         HashMap::new()
     };
 
-    let mastery_by_summoner_id: HashMap<i64, Option<i64>> = if recent_limit > 0 {
-        let mastery_entries: Vec<(i64, i64)> = seeds
+    let mastery_by_puuid: HashMap<String, Option<i64>> = if recent_limit > 0 {
+        let mastery_entries: Vec<(String, i64)> = seeds
             .iter()
-            .filter_map(|seed| seed.champion_id.map(|cid| (seed.summoner_id, cid)))
+            .filter(|seed| !seed.puuid.is_empty())
+            .filter_map(|seed| seed.champion_id.map(|cid| (seed.puuid.clone(), cid)))
             .collect();
         if mastery_entries.is_empty() {
             HashMap::new()
@@ -2608,8 +2648,8 @@ pub fn get_champ_select_snapshot(
                 .get(seed.puuid.as_str())
                 .cloned()
                 .unwrap_or_default();
-            let mastery_level = mastery_by_summoner_id
-                .get(&seed.summoner_id)
+            let mastery_level = mastery_by_puuid
+                .get(seed.puuid.as_str())
                 .and_then(|v| *v);
 
             domain::ChampSelectPlayer {

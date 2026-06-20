@@ -1949,6 +1949,48 @@ fn sample_match(
     }
 }
 
+#[test]
+fn champion_records_aggregate_wins_losses_per_champion() {
+    let make = |champion_id: Option<i64>, result: MatchResult| RecentMatchSummary {
+        game_id: 0,
+        champion_id,
+        champion_name: "X".to_string(),
+        queue_name: None,
+        lane: None,
+        result,
+        kills: 0,
+        deaths: 0,
+        assists: 0,
+        kda: None,
+        played_at: None,
+        game_duration_seconds: None,
+    };
+
+    let matches = vec![
+        make(Some(103), MatchResult::Win),
+        make(Some(103), MatchResult::Loss),
+        make(Some(103), MatchResult::Win),
+        make(Some(64), MatchResult::Loss),
+        make(Some(64), MatchResult::Unknown),
+        make(None, MatchResult::Win), // dropped: no champion id
+    ];
+
+    let records = super::summarize_champion_records(&matches);
+
+    assert_eq!(records.len(), 2, "the match with no champion id is dropped");
+
+    let ahri = records.iter().find(|r| r.champion_id == 103).expect("ahri record");
+    assert_eq!(ahri.wins, 2);
+    assert_eq!(ahri.losses, 1);
+    assert_eq!(ahri.games, 3);
+
+    let lee = records.iter().find(|r| r.champion_id == 64).expect("lee record");
+    assert_eq!(lee.wins, 0);
+    assert_eq!(lee.losses, 1);
+    // Unknown results still count as a game played but not toward W/L.
+    assert_eq!(lee.games, 2);
+}
+
 fn sample_completed_match() -> LeagueCompletedMatch {
     LeagueCompletedMatch {
         game_id: 10,

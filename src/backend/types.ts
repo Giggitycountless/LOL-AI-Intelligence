@@ -442,6 +442,13 @@ export type RecentPerformanceSummary = {
   topChampions: RecentChampionSummary[];
 };
 
+export type ChampionRecordSummary = {
+  championId: number;
+  wins: number;
+  losses: number;
+  games: number;
+};
+
 export type LeagueDataWarning = {
   section: LeagueDataSection;
   message: string;
@@ -453,6 +460,7 @@ export type LeagueSelfSnapshot = {
   rankedQueues: RankedQueueSummary[];
   recentMatches: RecentMatchSummary[];
   recentPerformance: RecentPerformanceSummary;
+  championRecords: ChampionRecordSummary[];
   dataWarnings: LeagueDataWarning[];
   refreshedAt: string;
 };

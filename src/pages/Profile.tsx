@@ -1,9 +1,15 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { useAppCore, useLeagueAssets } from "../state/AppStateProvider";
 import { Metric, RefreshIcon } from "../components/common";
+import { fetchLeagueSelfSnapshot } from "../backend/leagueClient";
 import { formatTimestamp, formatLeaguePhase, type T } from "../utils/formatting";
-import type { ChampionMasteryEntry, KdaTag, RankedQueue, RankedQueueSummary, RecentChampionSummary } from "../backend/types";
+import type { ChampionMasteryEntry, ChampionRecordSummary, KdaTag, LeagueSelfSnapshot, RankedQueue, RankedQueueSummary, RecentChampionSummary } from "../backend/types";
+
+// The mastery list is lifetime-deep, but per-champion W/L can only come from
+// match history. Pull a wider window than the shared 6-game snapshot so recently
+// played mastery champions show a meaningful record.
+const RECORD_MATCH_WINDOW = 50;
 import type { TranslationKey } from "../i18n";
 import type { EffectiveLanguage } from "../i18n";
 import { rankTierLabel, romanToNumber } from "./selfHistoryOverlayUtils";
@@ -29,6 +35,39 @@ export function Profile() {
   const topChampions = league?.recentPerformance.topChampions ?? [];
   const topMastery = summoner?.topMastery ?? [];
   const visibleMastery = masteryExpanded ? topMastery : topMastery.slice(0, MASTERY_INITIAL_SHOW);
+
+  // Wider-window snapshot fetched only for per-champion W/L. Kept separate from
+  // the shared global snapshot so it doesn't disturb other surfaces. Falls back
+  // to the global snapshot's (shallow) records until it arrives.
+  const [recordSnapshot, setRecordSnapshot] = useState<LeagueSelfSnapshot | null>(null);
+  const hasSummoner = Boolean(summoner);
+  useEffect(() => {
+    if (!hasSummoner) {
+      setRecordSnapshot(null);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const snap = await fetchLeagueSelfSnapshot({ matchLimit: RECORD_MATCH_WINDOW });
+        if (!cancelled) setRecordSnapshot(snap);
+      } catch {
+        // Client offline/unavailable — keep falling back to the global snapshot.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [hasSummoner]);
+
+  const recordByChampion = useMemo(() => {
+    const records = recordSnapshot?.championRecords ?? league?.championRecords ?? [];
+    const map = new Map<number, ChampionRecordSummary>();
+    for (const record of records) {
+      map.set(record.championId, record);
+    }
+    return map;
+  }, [recordSnapshot, league]);
 
   useEffect(() => {
     void loadLeagueProfileIcon(profileIconId);
@@ -162,6 +201,7 @@ export function Profile() {
                       entry={entry}
                       imageUrl={leagueImages.championIcons[entry.championId]}
                       key={entry.championId}
+                      record={recordByChampion.get(entry.championId)}
                       t={t}
                     />
                   ))}
@@ -190,7 +230,10 @@ function HonorBadge({ level, t }: { level: number; t: T }) {
   );
 }
 
-function MasteryCard({ entry, imageUrl, t }: { entry: ChampionMasteryEntry; imageUrl: string | undefined; t: T }) {
+function MasteryCard({ entry, imageUrl, record, t }: { entry: ChampionMasteryEntry; imageUrl: string | undefined; record: ChampionRecordSummary | undefined; t: T }) {
+  const decided = record ? record.wins + record.losses : 0;
+  const winRate = decided > 0 ? Math.round((record!.wins / decided) * 100) : null;
+
   return (
     <div className="flex items-center gap-3 rounded-md border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 p-3">
       <LeagueImage alt={`${entry.championName} icon`} fallback={initials(entry.championName)} size="small" src={imageUrl} />
@@ -211,6 +254,17 @@ function MasteryCard({ entry, imageUrl, t }: { entry: ChampionMasteryEntry; imag
             {entry.masteryPoints.toLocaleString()} {t("profile.masteryPoints")}
           </span>
         </div>
+        {winRate !== null ? (
+          <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+            <span className="font-medium text-emerald-600 dark:text-emerald-400">{record!.wins} {t("profile.wins")}</span>
+            {" · "}
+            <span className="font-medium text-rose-600 dark:text-rose-400">{record!.losses} {t("profile.losses")}</span>
+            {" · "}
+            {winRate}% {t("profile.winRate")}
+          </p>
+        ) : (
+          <p className="mt-1 text-xs text-zinc-400 dark:text-zinc-500">—</p>
+        )}
       </div>
     </div>
   );

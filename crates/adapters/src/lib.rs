@@ -921,8 +921,8 @@ impl LeagueClientReader for LocalLeagueClient {
 
     fn champion_mastery_batch(
         &self,
-        entries: &[(i64, i64)],
-    ) -> HashMap<i64, Option<i64>> {
+        entries: &[(String, i64)],
+    ) -> HashMap<String, Option<i64>> {
         if entries.is_empty() {
             return HashMap::new();
         }
@@ -930,16 +930,19 @@ impl LeagueClientReader for LocalLeagueClient {
             SessionOpenResult::Ready(session) => session,
             SessionOpenResult::Status(_) => return HashMap::new(),
         };
+        // The legacy /lol-collections/.../{summonerId}/champion-mastery/{id} path
+        // 404s on current clients; the dedicated lol-champion-mastery plugin is
+        // puuid-based. See fetch_champion_mastery_list for the same migration.
         entries
             .par_iter()
-            .map(|(summoner_id, champion_id)| {
+            .map(|(puuid, champion_id)| {
                 let mastery_level = session
                     .get_json::<LcuChampionMasteryEntry>(
-                        format!("/lol-collections/v1/inventories/{summoner_id}/champion-mastery/{champion_id}").as_str(),
+                        format!("/lol-champion-mastery/v1/{puuid}/champion-mastery/{champion_id}").as_str(),
                     )
                     .ok()
                     .and_then(|entry| entry.champion_level);
-                (*summoner_id, mastery_level)
+                (puuid.clone(), mastery_level)
             })
             .collect()
     }
@@ -1326,13 +1329,10 @@ fn build_self_data(session: LcuSession, summoner: LcuSummoner, match_limit: i64)
     let matches_path = current_matches_path(match_limit);
     let matches_result = session.get_json::<LcuMatchHistoryResponse>(matches_path.as_str());
     let honor_result = session.get_json::<LcuHonorProfile>("/lol-honor-v2/v1/profile");
-    let mastery_result = summoner.puuid.as_deref()
-        .filter(|p| !p.is_empty())
-        .map(|puuid| {
-            session.get_json::<Vec<LcuChampionMastery>>(
-                format!("/lol-collections/v1/inventories/{puuid}/champion-mastery").as_str(),
-            )
-        });
+    // Tries the lol-champion-mastery plugin first, falling back through legacy
+    // paths; see fetch_champion_mastery_list. The old lol-collections path 404s
+    // on current clients.
+    let mastery_result = fetch_champion_mastery_list(&session, &summoner);
 
     compose_self_data(
         summoner,
@@ -1403,6 +1403,42 @@ fn compose_self_data(
         recent_matches,
         data_warnings: warnings,
     }
+}
+
+/// Fetches the full champion mastery list for the local player.
+///
+/// The legacy `/lol-collections/v1/inventories/{id}/champion-mastery` path 404s
+/// on current clients (including CN/Tencent). We try the dedicated
+/// `lol-champion-mastery` plugin first and fall back through the older paths,
+/// using the first endpoint that returns data. This is self-healing across
+/// client variants — no per-region branching needed — at the cost of a couple
+/// of wasted requests on clients that only support an older path.
+fn fetch_champion_mastery_list(
+    session: &LcuSession,
+    summoner: &LcuSummoner,
+) -> Option<Result<Vec<LcuChampionMastery>, LcuRequestError>> {
+    let puuid = summoner.puuid.as_deref().filter(|p| !p.is_empty());
+    let summoner_id = summoner.summoner_id.filter(|&id| id > 0);
+
+    // Ordered newest-plugin-first; legacy lol-collections paths last.
+    let mut candidates: Vec<String> =
+        vec!["/lol-champion-mastery/v1/local-player/champion-mastery".to_string()];
+    if let Some(puuid) = puuid {
+        candidates.push(format!("/lol-champion-mastery/v1/{puuid}/champion-mastery"));
+        candidates.push(format!("/lol-collections/v1/inventories/{puuid}/champion-mastery"));
+    }
+    if let Some(sid) = summoner_id {
+        candidates.push(format!("/lol-collections/v1/inventories/{sid}/champion-mastery"));
+    }
+
+    let mut last_error = None;
+    for path in &candidates {
+        match session.get_json::<Vec<LcuChampionMastery>>(path.as_str()) {
+            Ok(entries) => return Some(Ok(entries)),
+            Err(error) => last_error = Some(error),
+        }
+    }
+    last_error.map(Err)
 }
 
 fn map_mastery_entries(

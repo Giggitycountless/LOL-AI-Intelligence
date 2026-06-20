@@ -549,8 +549,8 @@ impl LeagueClientReader for CachedLeagueClientReader<'_> {
 
     fn champion_mastery_batch(
         &self,
-        entries: &[(i64, i64)],
-    ) -> std::collections::HashMap<i64, Option<i64>> {
+        entries: &[(String, i64)],
+    ) -> std::collections::HashMap<String, Option<i64>> {
         self.inner.champion_mastery_batch(entries)
     }
 }
@@ -3882,6 +3882,7 @@ mod tests {
                 recent_champions: vec!["Ahri".to_string()],
                 top_champions: Vec::new(),
             },
+            champion_records: Vec::new(),
             data_warnings: vec![LeagueDataWarning {
                 section: LeagueDataSection::Ranked,
                 message: "Ranked data is temporarily unavailable".to_string(),
