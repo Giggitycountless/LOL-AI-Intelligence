@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useId, useMemo, useState, type KeyboardEvent } from "react";
 
+import { openSelfHistoryOverlayWindow } from "../windows/selfHistoryOverlayWindow";
 import { fetchLeagueChampionCatalog } from "../backend/leagueClient";
 import type { AppLanguagePreference, AppThemePreference, AutoAcceptStatus, LeagueChampionSummary, SaveSettingsInput, StartupPage } from "../backend/types";
 import type { TranslationKey } from "../i18n";
@@ -395,6 +396,29 @@ export function Settings({ onOpenActivity }: { onOpenActivity: () => void }) {
               </button>
             </div>
           </form>
+        </section>
+
+        <section>
+          <div className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950 p-5 shadow-sm">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-base font-semibold text-amber-900 dark:text-amber-100">{t("settings.devTools")}</h2>
+                <p className="mt-1 text-sm text-amber-700 dark:text-amber-400">{t("settings.devToolsHint")}</p>
+              </div>
+              <span className="shrink-0 rounded-full border border-amber-300 dark:border-amber-700 bg-amber-100 dark:bg-amber-900 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-amber-700 dark:text-amber-400">
+                DEV
+              </span>
+            </div>
+            <div className="mt-4">
+              <button
+                type="button"
+                onClick={() => void openSelfHistoryOverlayWindow({ devMode: true })}
+                className="inline-flex h-10 items-center justify-center rounded-md border border-amber-300 dark:border-amber-700 bg-amber-100 dark:bg-amber-900 px-4 text-sm font-semibold text-amber-900 dark:text-amber-100 shadow-sm transition hover:bg-amber-200 dark:hover:bg-amber-800"
+              >
+                {t("settings.devOpenOverlay")}
+              </button>
+            </div>
+          </div>
         </section>
 
         <section className="grid gap-4 lg:grid-cols-2">

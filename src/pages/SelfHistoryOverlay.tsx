@@ -30,6 +30,12 @@ import {
 
 const HISTORY_LOAD_TIMEOUT_MS = 8000;
 
+function isDevModeOverlay() {
+  // Hash format: #/self-history-overlay?devMode=1
+  const query = window.location.hash.split("?")[1] ?? "";
+  return new URLSearchParams(query).get("devMode") === "1";
+}
+
 export function SelfHistoryOverlay() {
   const { effectiveLanguage, t } = useAppCore();
   const { champSelectSnapshot, refreshChampSelectSnapshot } = useChampSelect();
@@ -45,7 +51,8 @@ export function SelfHistoryOverlay() {
   const [championDetailsError, setChampionDetailsError] = useState(false);
   const [isRefreshingChampSelect, setIsRefreshingChampSelect] = useState(false);
   const [refreshFailed, setRefreshFailed] = useState(false);
-  const [isOverlayAllowed, setIsOverlayAllowed] = useState(false);
+  const devMode = isDevModeOverlay();
+  const [isOverlayAllowed, setIsOverlayAllowed] = useState(devMode);
   const [initialSnapshotStatus, setInitialSnapshotStatus] = useState<InitialSnapshotStatus>("loading");
   const players = champSelectSnapshot?.players ?? [];
   const hasPlayers = players.length > 0;
@@ -66,6 +73,10 @@ export function SelfHistoryOverlay() {
   );
 
   useEffect(() => {
+    if (devMode) {
+      return;
+    }
+
     let wasCancelled = false;
 
     void canOpenSelfHistoryOverlayWindow().then(async (canOpen) => {
@@ -87,7 +98,7 @@ export function SelfHistoryOverlay() {
     return () => {
       wasCancelled = true;
     };
-  }, []);
+  }, [devMode]);
 
   useEffect(() => {
     if (!refreshFailed) {
@@ -220,7 +231,7 @@ export function SelfHistoryOverlay() {
 
   if (!isOverlayAllowed) {
     return (
-      <main className="flex h-screen items-center justify-center bg-zinc-100 text-sm font-semibold text-zinc-500">
+      <main className="flex h-screen items-center justify-center bg-zinc-950 text-sm font-semibold text-zinc-500">
         {t("common.pending")}
       </main>
     );
@@ -228,24 +239,29 @@ export function SelfHistoryOverlay() {
 
   return (
     <main
-      className="relative flex h-screen flex-col overflow-hidden bg-zinc-100 p-2 text-zinc-700"
+      className="relative flex h-screen flex-col overflow-hidden bg-zinc-950 p-2 text-zinc-100"
       onClick={closeChampionDetails}
     >
       <header
-        className="mb-2 flex h-10 shrink-0 items-center justify-between rounded-lg border border-zinc-200 bg-white px-3 shadow-sm"
+        className="mb-2 flex h-10 shrink-0 items-center justify-between rounded-lg border border-zinc-700 bg-zinc-900 px-3 shadow-sm"
       >
         <div className="flex min-w-0 items-center gap-2" data-tauri-drag-region>
           <span className="h-2.5 w-2.5 rounded-full bg-rose-700" />
-          <p className="truncate text-xs font-semibold uppercase tracking-wide text-zinc-700" data-tauri-drag-region>
+          <p className="truncate text-xs font-semibold uppercase tracking-wide text-zinc-100" data-tauri-drag-region>
             {t("overlay.windowTitle")}
           </p>
+          {devMode && (
+            <span className="rounded-full border border-amber-600 bg-amber-900/60 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-400" data-tauri-drag-region>
+              DEV
+            </span>
+          )}
           <span className="hidden text-[11px] font-medium text-zinc-500 lg:inline" data-tauri-drag-region>
             {t("overlay.dragHint")}
           </span>
         </div>
         <div className="flex items-center gap-2" onClick={(event) => event.stopPropagation()}>
           {refreshFailed && (
-            <span className="rounded-md border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-700">
+            <span className="rounded-md border border-red-700 bg-red-950 px-2.5 py-1 text-xs font-semibold text-red-400">
               {t("overlay.refreshFailed")}
             </span>
           )}
@@ -292,7 +308,7 @@ export function SelfHistoryOverlay() {
       </div>
 
       {(players.length === 0 || isHistoryLoading || isHistoryUnavailable) && (
-        <div className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-lg border border-zinc-200 bg-white px-5 py-3 text-center text-sm font-semibold text-zinc-500 shadow-sm">
+        <div className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-lg border border-zinc-700 bg-zinc-900 px-5 py-3 text-center text-sm font-semibold text-zinc-400 shadow-sm">
           {initialSnapshotMessage(initialSnapshotStatus, t)}
         </div>
       )}
@@ -331,16 +347,16 @@ const TeamBoard = memo(function TeamBoard({
   return (
     <section
       className={[
-        "flex min-h-full flex-col gap-2 rounded-lg border bg-white p-2 shadow-sm",
-        tone === "ally" ? "border-emerald-200" : "border-rose-200",
+        "flex min-h-full flex-col gap-2 rounded-lg border bg-zinc-900 p-2 shadow-sm",
+        tone === "ally" ? "border-emerald-700" : "border-red-700",
       ].join(" ")}
     >
       <div className="flex items-center gap-1.5 px-0.5">
-        <span className={["h-2 w-2 rounded-full", tone === "ally" ? "bg-emerald-500" : "bg-rose-600"].join(" ")} />
+        <span className={["h-2 w-2 rounded-full", tone === "ally" ? "bg-emerald-400" : "bg-red-500"].join(" ")} />
         <span
           className={[
             "text-[11px] font-bold uppercase tracking-wide",
-            tone === "ally" ? "text-emerald-700" : "text-rose-700",
+            tone === "ally" ? "text-emerald-400" : "text-red-400",
           ].join(" ")}
         >
           {tone === "ally" ? t("overlay.allyTeam") : t("overlay.enemyTeam")}
@@ -380,9 +396,9 @@ function SummaryBar({
 
 function SummaryCard({ label, tone, value }: { label: string; tone: TeamTone; value: string }) {
   return (
-    <div className="rounded-lg border border-zinc-200 bg-white px-3 py-1.5 shadow-sm">
+    <div className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-1.5 shadow-sm">
       <p className="text-xs font-medium text-zinc-500">{label}</p>
-      <p className={["mt-0.5 text-base font-semibold tabular-nums", tone === "ally" ? "text-emerald-700" : "text-rose-700"].join(" ")}>
+      <p className={["mt-0.5 text-base font-semibold tabular-nums", tone === "ally" ? "text-emerald-400" : "text-red-400"].join(" ")}>
         {tone === "ally" ? "+" : "-"} {value}
       </p>
     </div>
@@ -410,12 +426,12 @@ function LiveOverlayBar({ snapshot, t }: { snapshot: LiveOverlaySnapshot | null;
 
 function LiveInfoCard({ label, tone, value }: { label: string; tone?: TeamTone; value: string }) {
   return (
-    <div className="min-w-0 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 shadow-sm">
+    <div className="min-w-0 rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-1.5 shadow-sm">
       <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">{label}</p>
       <p
         className={[
           "mt-0.5 truncate text-sm font-semibold tabular-nums",
-          tone === "ally" ? "text-emerald-700" : tone === "enemy" ? "text-rose-700" : "text-zinc-800",
+          tone === "ally" ? "text-emerald-400" : tone === "enemy" ? "text-red-400" : "text-zinc-100",
         ].join(" ")}
         title={value}
       >
@@ -441,7 +457,7 @@ function IconButton({
   return (
     <button
       aria-label={ariaLabel}
-      className="flex h-8 w-8 items-center justify-center rounded-md border border-zinc-300 bg-white text-zinc-600 transition hover:border-zinc-400 hover:bg-zinc-50 hover:text-rose-700 disabled:cursor-wait disabled:opacity-70"
+      className="flex h-8 w-8 items-center justify-center rounded-md border border-zinc-700 bg-zinc-800 text-zinc-400 transition hover:border-zinc-600 hover:bg-zinc-700 hover:text-red-400 disabled:cursor-wait disabled:opacity-70"
       disabled={disabled}
       onClick={onClick}
       title={title}
