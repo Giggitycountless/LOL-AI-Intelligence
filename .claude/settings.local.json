@@ -138,7 +138,15 @@
       "PowerShell(if \\(Test-Path \"$env:USERPROFILE\\\\Desktop\\\\mastery_debug.txt\"\\) { Remove-Item \"$env:USERPROFILE\\\\Desktop\\\\mastery_debug.txt\" -Force; \"removed\" } else { \"already gone\" })",
       "PowerShell(npx vite build 2>&1 | Select-Object -Last 20)",
       "Bash(cp src/styles.css /tmp/styles_fixed.css)",
-      "Bash(printf '@import \"tailwindcss\";\\\\n@variant dark \\(&:where\\(.dark, .dark *\\)\\);\\\\n@layer base { :root { color:#18181b; } }\\\\n')"
+      "Bash(printf '@import \"tailwindcss\";\\\\n@variant dark \\(&:where\\(.dark, .dark *\\)\\);\\\\n@layer base { :root { color:#18181b; } }\\\\n')",
+      "Bash(command -v sqlite3)",
+      "Bash(sqlite3 C:/Users/Ren/AppData/Roaming/com.local.lol-desktop-assistant/app.sqlite 'SELECT COUNT\\(*\\) FROM advisor_data_snapshots;')",
+      "Bash(sqlite3 -header -column C:/Users/Ren/AppData/Roaming/com.local.lol-desktop-assistant/app.sqlite 'SELECT id, source, patch, region, queue, tier, generated_at, imported_at FROM advisor_data_snapshots ORDER BY imported_at DESC, id DESC LIMIT 3;')",
+      "Bash(sed -n '/pub struct AdvisorRecord/,/^}/p' crates/domain/src/lib.rs)",
+      "Bash(sed -n '/pub struct RankedChampionStat/,/^}/p' crates/domain/src/lib.rs)",
+      "Bash(echo \"=== exit: $? ===\")",
+      "Bash(echo \"exit: $?\")",
+      "Bash(echo \"tsc exit: $?\")"
     ]
   }
 }
