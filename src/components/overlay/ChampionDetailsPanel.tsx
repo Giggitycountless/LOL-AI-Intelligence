@@ -25,24 +25,24 @@ export function ChampionDetailsPanel({
 }) {
   return (
     <aside
-      className="absolute right-2 top-12 z-20 flex max-h-[calc(100vh-3.5rem)] w-[42rem] max-w-[calc(100vw-1rem)] flex-col overflow-hidden rounded-xl border border-zinc-200 bg-zinc-50 shadow-xl"
+      className="absolute right-2 top-12 z-20 flex max-h-[calc(100vh-3.5rem)] w-[42rem] max-w-[calc(100vw-1rem)] flex-col overflow-hidden rounded-xl border border-zinc-700 bg-zinc-900 shadow-xl"
       onClick={(event) => event.stopPropagation()}
     >
       {/* Header */}
-      <div className="flex items-center gap-4 border-b border-zinc-200 bg-white px-4 py-3">
+      <div className="flex items-center gap-4 border-b border-zinc-700 bg-zinc-800 px-4 py-3">
         {details?.squarePortraitUrl ? (
           <img
             alt=""
-            className="h-14 w-14 shrink-0 rounded-lg border border-zinc-200 object-cover shadow-sm"
+            className="h-14 w-14 shrink-0 rounded-lg border border-zinc-700 object-cover shadow-sm"
             src={details.squarePortraitUrl}
           />
         ) : (
-          <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg border border-zinc-200 bg-zinc-100 text-base font-bold text-zinc-500">
+          <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg border border-zinc-700 bg-zinc-800 text-base font-bold text-zinc-400">
             {details ? initials(details.championName) : "?"}
           </div>
         )}
         <div className="min-w-0 flex-1">
-          <h2 className="truncate text-lg font-bold text-zinc-950 leading-tight">
+          <h2 className="truncate text-lg font-bold text-zinc-100 leading-tight">
             {details?.championName ?? t("overlay.abilities")}
           </h2>
           <p className="truncate text-xs text-zinc-400 mt-0.5">
@@ -51,7 +51,7 @@ export function ChampionDetailsPanel({
         </div>
         <button
           aria-label={t("overlay.close")}
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-zinc-200 bg-white text-zinc-400 transition hover:border-zinc-300 hover:bg-zinc-50 hover:text-zinc-700"
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-zinc-700 bg-zinc-800 text-zinc-400 transition hover:border-zinc-600 hover:bg-zinc-700 hover:text-zinc-200"
           onClick={onClose}
           title={t("overlay.close")}
           type="button"
@@ -63,12 +63,12 @@ export function ChampionDetailsPanel({
       {/* Body */}
       <div className="min-h-0 flex-1 overflow-auto p-3">
         {isLoading && (
-          <p className="rounded-lg bg-white px-4 py-3 text-sm font-medium text-zinc-400 text-center border border-zinc-200">
+          <p className="rounded-lg bg-zinc-800 px-4 py-3 text-sm font-medium text-zinc-400 text-center border border-zinc-700">
             {t("overlay.loadingAbilities")}
           </p>
         )}
         {hasError && !details && (
-          <p className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">
+          <p className="rounded-lg border border-red-700 bg-red-950 px-4 py-3 text-sm font-medium text-red-400">
             {t("overlay.abilitiesUnavailable")}
           </p>
         )}
@@ -95,24 +95,24 @@ const SLOT_BORDER: Record<string, string> = {
 };
 
 const SLOT_BADGE: Record<string, string> = {
-  Passive: "bg-zinc-100 text-zinc-500 border-zinc-200",
-  Q:       "bg-sky-50 text-sky-700 border-sky-200",
-  W:       "bg-emerald-50 text-emerald-700 border-emerald-200",
-  E:       "bg-amber-50 text-amber-700 border-amber-200",
-  R:       "bg-rose-50 text-rose-700 border-rose-200",
+  Passive: "bg-zinc-700 text-zinc-400 border-zinc-600",
+  Q:       "bg-sky-900/50 text-sky-400 border-sky-700",
+  W:       "bg-emerald-900/50 text-emerald-400 border-emerald-700",
+  E:       "bg-amber-900/50 text-amber-400 border-amber-700",
+  R:       "bg-red-900/50 text-red-400 border-red-700",
 };
 
 // Inline-span colors for parsed ability descriptions. Mirrors LoL's damage-type
 // conventions so cooldown/scaling text is scannable rather than a wall of grey.
 const SPAN_CLASS: Record<SpanKind, string> = {
-  text:       "text-zinc-600",
-  magic:      "font-semibold text-sky-700",
-  physical:   "font-semibold text-orange-700",
-  true:       "font-semibold text-zinc-900",
-  healing:    "font-semibold text-emerald-700",
-  status:     "font-semibold text-violet-700",
-  bold:       "font-semibold text-zinc-900",
-  unresolved: "font-semibold text-rose-600",
+  text:       "text-zinc-400",
+  magic:      "font-semibold text-sky-400",
+  physical:   "font-semibold text-orange-400",
+  true:       "font-semibold text-zinc-100",
+  healing:    "font-semibold text-emerald-400",
+  status:     "font-semibold text-violet-400",
+  bold:       "font-semibold text-zinc-100",
+  unresolved: "font-semibold text-red-400",
 };
 
 // ── Ability card ─────────────────────────────────────────────────────────────
@@ -134,18 +134,18 @@ const AbilityCard = memo(function AbilityCard({
 
   return (
     <section
-      className={`flex gap-3 rounded-lg border border-zinc-200 border-l-4 bg-white px-3 py-3 shadow-sm transition hover:border-zinc-300 hover:shadow ${borderColor}`}
+      className={`flex gap-3 rounded-lg border border-zinc-700 border-l-4 bg-zinc-800 px-3 py-3 shadow-sm transition hover:border-zinc-600 hover:shadow ${borderColor}`}
     >
       {/* Icon */}
       <div className="shrink-0">
         {ability.iconUrl ? (
           <img
             alt=""
-            className="h-12 w-12 rounded-lg border border-zinc-200 object-cover shadow-sm"
+            className="h-12 w-12 rounded-lg border border-zinc-700 object-cover shadow-sm"
             src={ability.iconUrl}
           />
         ) : (
-          <div className="flex h-12 w-12 items-center justify-center rounded-lg border border-zinc-200 bg-zinc-100 text-sm font-bold text-zinc-500">
+          <div className="flex h-12 w-12 items-center justify-center rounded-lg border border-zinc-700 bg-zinc-800 text-sm font-bold text-zinc-400">
             {slot}
           </div>
         )}
@@ -158,7 +158,7 @@ const AbilityCard = memo(function AbilityCard({
           <span className={`inline-flex h-5 items-center rounded border px-1.5 text-[10px] font-bold ${badgeColor}`}>
             {slot}
           </span>
-          <span className="truncate text-sm font-semibold text-zinc-900">
+          <span className="truncate text-sm font-semibold text-zinc-100">
             {ability.name}
           </span>
         </div>
@@ -201,13 +201,13 @@ function AbilityDescription({
   }
 
   return (
-    <div className="mt-2 space-y-1.5 border-t border-zinc-100 pt-2 text-xs leading-relaxed">
+    <div className="mt-2 space-y-1.5 border-t border-zinc-700 pt-2 text-xs leading-relaxed">
       {sections.map((section, sectionIndex) => (
         <div key={sectionIndex}>
           {section.lines.map((line, lineIndex) => (
             <p key={lineIndex}>
               {lineIndex === 0 && section.label && (
-                <span className="mr-1 inline-flex items-center rounded bg-zinc-100 px-1 py-px align-middle text-[10px] font-bold uppercase tracking-wide text-zinc-500">
+                <span className="mr-1 inline-flex items-center rounded bg-zinc-700 px-1 py-px align-middle text-[10px] font-bold uppercase tracking-wide text-zinc-400">
                   {section.label}
                 </span>
               )}
@@ -228,7 +228,7 @@ function Stat({ label, value }: { label: string; value: string }) {
   return (
     <p className="flex items-baseline gap-1 text-xs">
       <span className="text-zinc-400">{label}</span>
-      <span className="font-semibold tabular-nums text-zinc-800">{value}</span>
+      <span className="font-semibold tabular-nums text-zinc-100">{value}</span>
     </p>
   );
 }
