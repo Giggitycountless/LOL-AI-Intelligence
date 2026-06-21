@@ -1,5 +1,6 @@
 import type {
   AdvisorPlayerTag,
+  AdvisorPlayerTagKind,
   ChampSelectPlayer,
   ChampSelectAdvisorPlayer,
   ChampSelectRecentStatsStatus,
@@ -8,7 +9,7 @@ import type {
   RankedQueueSummary,
   RecentMatchSummary,
 } from "../backend/types";
-import type { EffectiveLanguage } from "../i18n";
+import type { EffectiveLanguage, TranslationKey } from "../i18n";
 import type { T } from "../utils/formatting";
 
 export const TEAM_SIZE = 5;
@@ -156,6 +157,26 @@ export function advisorSummaryText(player: ChampSelectAdvisorPlayer | undefined)
   }
 
   return player.matchupAdvice ?? player.advisor?.laneAdvice ?? player.advisor?.powerSpikes[0]?.description ?? null;
+}
+
+const ADVISOR_TAG_KEY: Record<AdvisorPlayerTagKind, TranslationKey> = {
+  oneTrick: "advisorTag.oneTrick",
+  lossStreak: "advisorTag.lossStreak",
+  strongPick: "advisorTag.strongPick",
+  lowWinRate: "advisorTag.lowWinRate",
+  stable: "advisorTag.stable",
+  spike: "advisorTag.spike",
+};
+
+/**
+ * Localize an advisor tag in the current UI language. The backend ships a
+ * stable `kind` plus an optional numeric `value` (loss-streak count, spike
+ * timing) so the label re-translates live when the language changes, rather
+ * than being baked into one language at fetch time.
+ */
+export function advisorTagLabel(tag: AdvisorPlayerTag, t: T): string {
+  const label = t(ADVISOR_TAG_KEY[tag.kind]);
+  return tag.value ? label.replace("{n}", tag.value) : label;
 }
 
 export function advisorTagClass(tone: AdvisorPlayerTag["tone"]) {

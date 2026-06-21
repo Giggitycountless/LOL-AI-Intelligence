@@ -2,6 +2,7 @@ import { memo, type MouseEvent } from "react";
 
 import type { PlayerView, TeamTone } from "../../pages/selfHistoryOverlayUtils";
 import {
+  advisorTagLabel,
   recentStatsStatusMessage,
 } from "../../pages/selfHistoryOverlayUtils";
 
@@ -120,9 +121,9 @@ export const PlayerTrack = memo(function PlayerTrack({
               {player.advisorTags.slice(0, 3).map((tag) => (
                 <span
                   className={["rounded px-2 py-1 text-[11px] font-bold", advisorTagClassDark(tag.tone)].join(" ")}
-                  key={`${player.id}-${tag.label}`}
+                  key={`${player.id}-${tag.kind}`}
                 >
-                  {tag.label}
+                  {advisorTagLabel(tag, t)}
                 </span>
               ))}
             </div>

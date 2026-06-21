@@ -1,5 +1,9 @@
 import { listen, type EventCallback } from "@tauri-apps/api/event";
 
+/// Broadcast when settings are saved, so other webviews (e.g. the overlay)
+/// re-pull the app snapshot and re-translate / re-theme live.
+export const SETTINGS_CHANGED_EVENT = "settings-changed";
+
 export function listenWithCleanup<T>(eventName: string, handler: EventCallback<T>) {
   let isDisposed = false;
   let unlisten: (() => void) | undefined;

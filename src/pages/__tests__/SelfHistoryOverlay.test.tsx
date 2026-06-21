@@ -49,6 +49,7 @@ const tMock = vi.fn((key: string) => {
     "overlay.unranked": "Unranked",
     "overlay.allyWins": "Ally Wins",
     "overlay.enemyWins": "Enemy Wins",
+    "advisorTag.strongPick": "Strong pick",
   };
   return labels[key] ?? key;
 });
@@ -239,7 +240,7 @@ describe("SelfHistoryOverlay", () => {
             team: "ally",
             recentStats: ally.recentStats,
             recentStatsStatus: "loaded",
-            tags: [{ label: "Strong pick", tone: "good" }],
+            tags: [{ kind: "strongPick", value: null, tone: "good" }],
             advisor: null,
             matchupAdvice: "Favorable into Champion 122: punish cooldowns.",
           },
