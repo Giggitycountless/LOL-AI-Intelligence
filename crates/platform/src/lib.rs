@@ -1852,15 +1852,21 @@ fn build_ai_prompt(
     tone: &str,
     language: domain::AppLanguagePreference,
 ) -> String {
-    let lang_line = match language {
-        domain::AppLanguagePreference::En => "Please reply in English.",
-        _ => "请用中文回复。",
-    };
+    let is_en = matches!(language, domain::AppLanguagePreference::En);
+    let lang_line = if is_en { "Please reply in English." } else { "请用中文回复。" };
 
-    let persona = match tone {
-        "rage" => "你是一个极度暴躁、毒舌刻薄的英雄联盟喷子。用最难听的话、最侮辱性的类比、最直白的嘲讽把玩家的每一个问题骂得体无完肤。可以叫他「铁憨憨」「狗脑子」「一坨」之类的，但每一条批评都必须有具体数据支撑，不能乱喷，要喷得有理有据、入木三分。",
-        "flatter" => "你是一个表面上在做客观专业分析、实际上在无死角拍马屁的英雄联盟教练。用严肃的分析语气和专业术语，把玩家每一个数据包装成天才之举，把败局解读成「策略性失误但执行层面展现了超凡意识」，让玩家读完感觉自己被认可、被肯定，完全没意识到你在拍马屁。",
-        _ => "你是一位英雄联盟教练，请根据以下玩家数据进行分析，给出简洁、实用的建议。",
+    let persona = if is_en {
+        match tone {
+            "rage" => "You are an extremely abrasive, foul-mouthed League of Legends flamer. Tear apart every one of the player's problems with the harshest words, the most insulting analogies, and the bluntest mockery — but every single criticism must be backed by concrete data. Don't flame baselessly; flame with cutting, well-founded precision.",
+            "flatter" => "You are a League of Legends coach who appears to deliver objective, professional analysis but is in fact shamelessly flattering the player at every turn. Use a serious analytical tone and professional jargon to package every stat as a stroke of genius, and reframe every defeat as 'a strategic misstep that nonetheless showcased extraordinary game sense', so the player finishes reading feeling validated and praised without ever realizing you were flattering them.",
+            _ => "You are a League of Legends coach. Analyze the player's data below and give concise, practical advice.",
+        }
+    } else {
+        match tone {
+            "rage" => "你是一个极度暴躁、毒舌刻薄的英雄联盟喷子。用最难听的话、最侮辱性的类比、最直白的嘲讽把玩家的每一个问题骂得体无完肤。可以叫他「铁憨憨」「狗脑子」「一坨」之类的，但每一条批评都必须有具体数据支撑，不能乱喷，要喷得有理有据、入木三分。",
+            "flatter" => "你是一个表面上在做客观专业分析、实际上在无死角拍马屁的英雄联盟教练。用严肃的分析语气和专业术语，把玩家每一个数据包装成天才之举，把败局解读成「策略性失误但执行层面展现了超凡意识」，让玩家读完感觉自己被认可、被肯定，完全没意识到你在拍马屁。",
+            _ => "你是一位英雄联盟教练，请根据以下玩家数据进行分析，给出简洁、实用的建议。",
+        }
     };
 
     // LCU lane values for each scope
@@ -1902,49 +1908,116 @@ fn build_ai_prompt(
     let mut champ_vec: Vec<_> = champ_count.into_iter().collect();
     champ_vec.sort_by(|a, b| b.1.cmp(&a.1));
     let top_champs: String = champ_vec.iter().take(5)
-        .map(|(n, c)| format!("{n}({c}场)")).collect::<Vec<_>>().join(", ");
+        .map(|(n, c)| if is_en { format!("{n} ({c} games)") } else { format!("{n}({c}场)") })
+        .collect::<Vec<_>>().join(", ");
 
     let ranked = snapshot.ranked_queues.iter()
         .find(|q| q.queue == domain::RankedQueue::SoloDuo);
     let rank_str = match ranked {
-        Some(r) if r.is_ranked => format!(
-            "{} {} {}LP（{}胜{}负）",
-            r.tier.as_deref().unwrap_or(""),
-            r.division.as_deref().unwrap_or(""),
-            r.league_points.unwrap_or(0),
-            r.wins, r.losses,
-        ),
-        _ => "未排名".into(),
+        Some(r) if r.is_ranked => {
+            let tier = r.tier.as_deref().unwrap_or("");
+            let division = r.division.as_deref().unwrap_or("");
+            let lp = r.league_points.unwrap_or(0);
+            if is_en {
+                format!("{} {} {}LP ({}W {}L)", tier, division, lp, r.wins, r.losses)
+            } else {
+                format!("{} {} {}LP（{}胜{}负）", tier, division, lp, r.wins, r.losses)
+            }
+        }
+        _ => if is_en { "Unranked".into() } else { "未排名".into() },
     };
 
-    let scope_label = match scope {
-        "top" => "上路", "jungle" => "打野", "middle" => "中路",
-        "bottom" => "下路", "support" => "辅助", _ => "全部",
+    let scope_label = if is_en {
+        match scope {
+            "top" => "Top", "jungle" => "Jungle", "middle" => "Mid",
+            "bottom" => "Bot", "support" => "Support", _ => "All roles",
+        }
+    } else {
+        match scope {
+            "top" => "上路", "jungle" => "打野", "middle" => "中路",
+            "bottom" => "下路", "support" => "辅助", _ => "全部",
+        }
     };
 
     let match_details: String = ranked_matches.iter().map(|m| {
-        let r = if m.result == domain::MatchResult::Win { "胜" } else { "败" };
-        let queue = m.queue_name.as_deref().unwrap_or("排位");
-        let lane_label = match m.lane.as_deref() {
-            Some("TOP")     => "上路",
-            Some("JUNGLE")  => "打野",
-            Some("MIDDLE")  => "中路",
-            Some("BOTTOM")  => "下路",
-            Some("UTILITY") => "辅助",
-            _               => "未知",
-        };
-        format!("{} {} {}/{}/{} [{} {}]", m.champion_name, r, m.kills, m.deaths, m.assists, queue, lane_label)
+        let win = m.result == domain::MatchResult::Win;
+        if is_en {
+            let r = if win { "W" } else { "L" };
+            let queue = m.queue_name.as_deref().unwrap_or("Ranked");
+            let lane_label = match m.lane.as_deref() {
+                Some("TOP")     => "Top",
+                Some("JUNGLE")  => "Jungle",
+                Some("MIDDLE")  => "Mid",
+                Some("BOTTOM")  => "Bot",
+                Some("UTILITY") => "Support",
+                _               => "Unknown",
+            };
+            format!("{} {} {}/{}/{} [{} {}]", m.champion_name, r, m.kills, m.deaths, m.assists, queue, lane_label)
+        } else {
+            let r = if win { "胜" } else { "败" };
+            let queue = m.queue_name.as_deref().unwrap_or("排位");
+            let lane_label = match m.lane.as_deref() {
+                Some("TOP")     => "上路",
+                Some("JUNGLE")  => "打野",
+                Some("MIDDLE")  => "中路",
+                Some("BOTTOM")  => "下路",
+                Some("UTILITY") => "辅助",
+                _               => "未知",
+            };
+            format!("{} {} {}/{}/{} [{} {}]", m.champion_name, r, m.kills, m.deaths, m.assists, queue, lane_label)
+        }
     }).collect::<Vec<_>>().join("\n");
 
     if total == 0 {
-        return format!(
+        return if is_en {
+            format!(
+"{lang_line}
+
+You are a League of Legends coach. The player currently has no usable ranked match records (no ranked games found within the last 100 matches). Please prompt the player to play some ranked games first so a meaningful analysis can be done. Rank: {rank_str}."
+            )
+        } else {
+            format!(
 "{lang_line}
 
 你是一位英雄联盟教练。当前玩家没有可用的排位对局记录（近100场内未找到排位赛）。请提示玩家先进行排位游戏，以便进行有意义的分析。段位：{rank_str}。"
-        );
+            )
+        };
     }
 
-    format!(
+    if is_en {
+        format!(
+"{lang_line}
+
+{persona} The data below contains ranked matches only (Solo/Duo + Flex).
+
+## Player info
+- Rank: {rank_str}
+- Analysis scope: {scope_label} (last {total} ranked games)
+- Win rate: {win_rate}%
+- Average KDA: {avg_kda}
+- Most-played champions: {top_champs}
+
+## Recent ranked match details
+{match_details}
+
+## Output format (follow strictly)
+
+**Strengths**
+(2-3 bullets, one per line, each naming something done well)
+
+**Weaknesses**
+(2-3 bullets, one per line, each naming a concrete issue to fix)
+
+**Top priority this stage**
+(1 single most important improvement, concrete and actionable)
+
+---
+
+**Detailed analysis**
+(3-5 paragraphs analyzing performance patterns, champion-pool choices, the gap to the current rank, etc.)"
+        )
+    } else {
+        format!(
 "{lang_line}
 
 {persona}数据仅包含排位对局（单双排 + 灵活组排）。
@@ -1974,7 +2047,8 @@ fn build_ai_prompt(
 
 **详细分析**
 （3-5段文字，深入分析表现规律、英雄池选择、与当前段位的差距等）"
-    )
+        )
+    }
 }
 
 /// Streams a single-game AI recap to the frontend via:
