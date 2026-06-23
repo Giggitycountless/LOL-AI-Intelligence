@@ -37,7 +37,7 @@ impl application::RuneRecommendationProvider for LocalLeagueClient {
 use constants::*;
 
 pub mod data_providers;
-pub use data_providers::{DispatchingRankedChampionProvider, RemoteAdvisorJsonProvider, RemoteRankedChampionJsonProvider, parse_advisor_snapshot_json, parse_ranked_champion_snapshot_json};
+pub use data_providers::{DispatchingRankedChampionProvider, LolPsAdvisorProvider, RemoteAdvisorJsonProvider, RemoteRankedChampionJsonProvider, parse_advisor_snapshot_json, parse_ranked_champion_snapshot_json};
 use data_providers::unix_timestamp_seconds;
 
 mod game_client_types;
@@ -639,6 +639,51 @@ impl LocalLeagueClient {
             .map_err(read_error_from_request)
     }
 
+    fn read_chat_me(&self) -> Result<domain::ChatMe, LeagueClientReadError> {
+        let session = match self.open_session() {
+            SessionOpenResult::Ready(session) => session,
+            SessionOpenResult::Status(status) => return Err(read_error_from_status(status)),
+        };
+
+        // The LCU payload has many more fields; ChatMe deserializes only the two
+        // we expose (serde ignores the rest).
+        session
+            .get_json::<domain::ChatMe>("/lol-chat/v1/me")
+            .map_err(read_error_from_request)
+    }
+
+    fn write_chat_status(
+        &self,
+        status_message: Option<&str>,
+        availability: Option<&str>,
+    ) -> Result<(), LeagueClientReadError> {
+        if status_message.is_none() && availability.is_none() {
+            return Ok(());
+        }
+
+        let session = match self.open_session() {
+            SessionOpenResult::Ready(session) => session,
+            SessionOpenResult::Status(status) => return Err(read_error_from_status(status)),
+        };
+
+        // PUT /lol-chat/v1/me merges the supplied keys into the current presence,
+        // so we only send the fields the caller wants to change.
+        let mut body = serde_json::Map::new();
+        if let Some(message) = status_message {
+            body.insert("statusMessage".to_string(), Value::String(message.to_string()));
+        }
+        if let Some(availability) = availability {
+            body.insert(
+                "availability".to_string(),
+                Value::String(availability.to_string()),
+            );
+        }
+
+        session
+            .put_json("/lol-chat/v1/me", &Value::Object(body))
+            .map_err(read_error_from_request)
+    }
+
     fn read_gameflow_session(
         &self,
         session: &LcuSession,
@@ -1154,6 +1199,18 @@ impl LeagueClientReader for LocalLeagueClient {
         session
             .post_empty("/lol-matchmaking/v1/ready-check/accept")
             .map_err(read_error_from_request)
+    }
+
+    fn chat_me(&self) -> Result<domain::ChatMe, LeagueClientReadError> {
+        self.read_chat_me()
+    }
+
+    fn set_chat_status(
+        &self,
+        status_message: Option<&str>,
+        availability: Option<&str>,
+    ) -> Result<(), LeagueClientReadError> {
+        self.write_chat_status(status_message, availability)
     }
 
     fn apply_rune_page(

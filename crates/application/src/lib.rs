@@ -8,7 +8,8 @@ use std::{
 
 use domain::{
     ActivityEntry, ActivityKind, AdvisorDataResponse, AdvisorDataSnapshot, AdvisorItemBuild,
-    AdvisorMatchup, AdvisorNamedRef, AdvisorPlayerTag, AdvisorPowerSpike, AdvisorRecord,
+    AdvisorMatchup, AdvisorNamedRef, AdvisorPlayerTag, AdvisorPlayerTagKind, AdvisorPowerSpike,
+    AdvisorRecord,
     AdvisorRunePage, AdvisorSkillOrder, AdvisorTagTone, AppLanguagePreference, AppSettings,
     AppSnapshot, AppThemePreference, ChampSelectAdvisorPlayer, ChampSelectAdvisorSnapshot,
     ChampSelectRecentStatsStatus, ChampionRuneConfig, ClearActivityResult, ClearPlayerNoteResult,
@@ -152,6 +153,12 @@ pub trait LeagueClientReader {
     fn gameflow_phase(&self) -> Result<String, LeagueClientReadError>;
     fn live_overlay(&self) -> Result<LiveOverlaySnapshot, LeagueClientReadError>;
     fn accept_ready_check(&self) -> Result<(), LeagueClientReadError>;
+    fn chat_me(&self) -> Result<domain::ChatMe, LeagueClientReadError>;
+    fn set_chat_status(
+        &self,
+        status_message: Option<&str>,
+        availability: Option<&str>,
+    ) -> Result<(), LeagueClientReadError>;
     fn apply_rune_page(
         &self,
         page: &domain::RunePage,
@@ -762,6 +769,49 @@ pub fn apply_specific_rune_page(
 ) -> Result<(), ApplicationError> {
     reader
         .apply_rune_page(&page, champion_name)
+        .map_err(ApplicationError::from)
+}
+
+/// The longest status message we will send to the client. League itself caps
+/// the field; this keeps us comfortably under any client-side limit.
+const MAX_STATUS_MESSAGE_LEN: usize = 100;
+
+pub fn get_chat_me(reader: &impl LeagueClientReader) -> Result<domain::ChatMe, ApplicationError> {
+    reader.chat_me().map_err(ApplicationError::from)
+}
+
+/// Updates the local player's chat presence. `status_message` of `Some("")`
+/// clears the signature; `None` leaves it untouched. `availability`, when
+/// present, must be one of `domain::CHAT_AVAILABILITIES`.
+pub fn set_chat_status(
+    reader: &impl LeagueClientReader,
+    status_message: Option<String>,
+    availability: Option<String>,
+) -> Result<(), ApplicationError> {
+    if status_message.is_none() && availability.is_none() {
+        return Err(ApplicationError::Validation(
+            "Nothing to update: provide a status message or availability".to_string(),
+        ));
+    }
+
+    if let Some(message) = status_message.as_ref()
+        && message.chars().count() > MAX_STATUS_MESSAGE_LEN
+    {
+        return Err(ApplicationError::Validation(format!(
+            "Status message must be at most {MAX_STATUS_MESSAGE_LEN} characters"
+        )));
+    }
+
+    if let Some(value) = availability.as_ref()
+        && !domain::CHAT_AVAILABILITIES.contains(&value.as_str())
+    {
+        return Err(ApplicationError::Validation(format!(
+            "Unknown availability '{value}'"
+        )));
+    }
+
+    reader
+        .set_chat_status(status_message.as_deref(), availability.as_deref())
         .map_err(ApplicationError::from)
 }
 
@@ -2008,7 +2058,8 @@ fn player_advisor_tags(
         }
         if counts.values().copied().max().unwrap_or(0) >= 3 {
             tags.push(AdvisorPlayerTag {
-                label: "One-trick".to_string(),
+                kind: AdvisorPlayerTagKind::OneTrick,
+                value: None,
                 tone: AdvisorTagTone::Good,
             });
         }
@@ -2021,28 +2072,31 @@ fn player_advisor_tags(
             .count();
         if loss_streak >= 3 {
             tags.push(AdvisorPlayerTag {
-                label: format!("{loss_streak} loss streak"),
+                kind: AdvisorPlayerTagKind::LossStreak,
+                value: Some(loss_streak.to_string()),
                 tone: AdvisorTagTone::Warn,
             });
         }
     }
 
     if let Some(advisor) = advisor {
-        let (label, tone) = if advisor.win_rate >= 52.0 || advisor.overall_score >= 55.0 {
-            ("Strong pick", AdvisorTagTone::Good)
+        let (kind, tone) = if advisor.win_rate >= 52.0 || advisor.overall_score >= 55.0 {
+            (AdvisorPlayerTagKind::StrongPick, AdvisorTagTone::Good)
         } else if advisor.win_rate < 49.0 {
-            ("Low WR", AdvisorTagTone::Warn)
+            (AdvisorPlayerTagKind::LowWinRate, AdvisorTagTone::Warn)
         } else {
-            ("Stable", AdvisorTagTone::Info)
+            (AdvisorPlayerTagKind::Stable, AdvisorTagTone::Info)
         };
         tags.push(AdvisorPlayerTag {
-            label: label.to_string(),
+            kind,
+            value: None,
             tone,
         });
 
         if let Some(spike) = advisor.power_spikes.first() {
             tags.push(AdvisorPlayerTag {
-                label: format!("Spike {}", spike.timing),
+                kind: AdvisorPlayerTagKind::Spike,
+                value: Some(spike.timing.clone()),
                 tone: AdvisorTagTone::Info,
             });
         }

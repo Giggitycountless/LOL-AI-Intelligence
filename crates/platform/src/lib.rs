@@ -12,7 +12,7 @@ use std::{
 
 use adapters::{
     DispatchingRankedChampionProvider, LcuSubscription, LcuWebSocketError,
-    LcuWebSocketEvent, LocalLeagueClient, RemoteAdvisorJsonProvider,
+    LcuWebSocketEvent, LocalLeagueClient, LolPsAdvisorProvider,
 };
 use application::{
     ActivityListInput, ActivityNoteInput, AdvisorDataInput, AdvisorDataRefreshInput,
@@ -149,7 +149,7 @@ pub struct AppState {
     store: SqliteStore,
     league_client: LocalLeagueClient,
     ranked_champion_provider: DispatchingRankedChampionProvider,
-    advisor_provider: RemoteAdvisorJsonProvider,
+    advisor_provider: LolPsAdvisorProvider,
     pub champ_select_cache: Arc<Mutex<Option<ChampSelectCacheEntry>>>,
     pub recent_stats_cache: Arc<Mutex<HashMap<String, RecentStatsCacheEntry>>>,
     pub summoner_id_cache: Arc<Mutex<HashMap<i64, SummonerCacheEntry>>>,
@@ -187,7 +187,7 @@ impl AppState {
             ranked_champion_provider: DispatchingRankedChampionProvider::new(
                 DEFAULT_RANKED_CHAMPION_DATA_URL,
             ),
-            advisor_provider: RemoteAdvisorJsonProvider::new(DEFAULT_ADVISOR_DATA_URL),
+            advisor_provider: LolPsAdvisorProvider::new(),
             champ_select_cache: Arc::new(Mutex::new(None)),
             recent_stats_cache: Arc::new(Mutex::new(HashMap::new())),
             summoner_id_cache: Arc::new(Mutex::new(HashMap::new())),
@@ -521,6 +521,18 @@ impl LeagueClientReader for CachedLeagueClientReader<'_> {
 
     fn accept_ready_check(&self) -> Result<(), LeagueClientReadError> {
         self.inner.accept_ready_check()
+    }
+
+    fn chat_me(&self) -> Result<domain::ChatMe, LeagueClientReadError> {
+        self.inner.chat_me()
+    }
+
+    fn set_chat_status(
+        &self,
+        status_message: Option<&str>,
+        availability: Option<&str>,
+    ) -> Result<(), LeagueClientReadError> {
+        self.inner.set_chat_status(status_message, availability)
     }
 
     fn apply_rune_page(
@@ -2667,6 +2679,45 @@ pub fn refresh_advisor_data(
     .map_err(CommandError::from)
 }
 
+/// Re-fetch the advisor snapshot from lol.ps if missing or older than this.
+const ADVISOR_REFRESH_MAX_AGE_SECS: u64 = 12 * 60 * 60;
+
+/// Populate the advisor snapshot store in the background on startup.
+///
+/// The champ-select overlay's meta tags (Strong pick / Low WR / Stable) read
+/// win/pick/ban from the latest stored advisor snapshot; with an empty store
+/// they fall back to bundled sample data. Nothing in the UI triggers an advisor
+/// refresh, so without this the store stays empty forever. Runs on its own
+/// thread (blocking HTTP, no async context) so it never delays startup, and
+/// skips the fetch when a recent snapshot already exists.
+pub fn refresh_advisor_data_in_background(state: AppState) {
+    std::thread::spawn(move || {
+        if let Ok(Some(existing)) = state.store.latest_advisor_snapshot() {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|elapsed| elapsed.as_secs())
+                .unwrap_or(0);
+            if let Ok(imported) = existing.imported_at.parse::<u64>() {
+                if now.saturating_sub(imported) < ADVISOR_REFRESH_MAX_AGE_SECS {
+                    return;
+                }
+            }
+        }
+
+        match application::refresh_advisor_data(
+            &state.store,
+            &state.advisor_provider,
+            AdvisorDataRefreshInput { url: None },
+            AdvisorDataInput { lane: None, champion_id: None },
+        ) {
+            Ok(_) => tracing::info!("advisor data refreshed from lol.ps on startup"),
+            Err(error) => {
+                tracing::warn!(?error, "advisor data background refresh failed")
+            }
+        }
+    });
+}
+
 pub fn get_champ_select_advisor_snapshot(
     state: &AppState,
     command: ChampSelectSnapshotCommand,
@@ -2880,6 +2931,31 @@ pub fn apply_rune_page(
         &state.league_client,
         command.page,
         &command.champion_name,
+    )
+    .map_err(CommandError::from)
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SetChatStatusCommand {
+    /// `Some("")` clears the signature; `None` leaves it untouched.
+    pub status_message: Option<String>,
+    /// One of `chat`, `away`, `dnd`, `offline`; `None` leaves it untouched.
+    pub availability: Option<String>,
+}
+
+pub fn get_chat_me(state: &AppState) -> Result<domain::ChatMe, CommandError> {
+    application::get_chat_me(&state.league_client).map_err(CommandError::from)
+}
+
+pub fn set_chat_status(
+    state: &AppState,
+    command: SetChatStatusCommand,
+) -> Result<(), CommandError> {
+    application::set_chat_status(
+        &state.league_client,
+        command.status_message,
+        command.availability,
     )
     .map_err(CommandError::from)
 }

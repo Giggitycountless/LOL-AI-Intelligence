@@ -762,8 +762,23 @@ pub struct ChampSelectAdvisorPlayer {
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AdvisorPlayerTag {
-    pub label: String,
+    pub kind: AdvisorPlayerTagKind,
+    /// Numeric detail for tags that carry one (loss-streak count, spike timing);
+    /// `None` for the rest. The frontend interpolates it into the localized
+    /// label, so the tag text follows the UI language.
+    pub value: Option<String>,
     pub tone: AdvisorTagTone,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum AdvisorPlayerTagKind {
+    OneTrick,
+    LossStreak,
+    StrongPick,
+    LowWinRate,
+    Stable,
+    Spike,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
@@ -1186,6 +1201,23 @@ pub struct RunePageSnapshot {
     pub saved_config: Option<ChampionRuneConfig>,
     pub auto_applied: bool,
 }
+
+/// The local player's chat presence as exposed by the League client at
+/// `/lol-chat/v1/me`. Both fields are optional because the client omits them
+/// before the player is fully logged in.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatMe {
+    /// Presence as seen by friends. One of `chat` (online), `away`, `dnd`
+    /// (busy), or `offline` (appear offline). Mirrors the LCU `availability`.
+    pub availability: Option<String>,
+    /// The free-text status message shown under the player's name.
+    pub status_message: Option<String>,
+}
+
+/// The set of chat-presence values the client accepts. Kept as a constant so
+/// the application layer can validate updates without depending on the adapter.
+pub const CHAT_AVAILABILITIES: [&str; 4] = ["chat", "away", "dnd", "offline"];
 
 #[cfg(test)]
 mod tests {

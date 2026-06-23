@@ -269,6 +269,21 @@ fn save_champion_rune_config(
 }
 
 #[tauri::command(async)]
+fn get_chat_me(
+    state: State<'_, platform::AppState>,
+) -> Result<domain::ChatMe, platform::CommandError> {
+    platform::get_chat_me(state.inner())
+}
+
+#[tauri::command(async)]
+fn set_chat_status(
+    state: State<'_, platform::AppState>,
+    input: platform::SetChatStatusCommand,
+) -> Result<(), platform::CommandError> {
+    platform::set_chat_status(state.inner(), input)
+}
+
+#[tauri::command(async)]
 fn get_champion_rune_config(
     state: State<'_, platform::AppState>,
     input: platform::GetRuneConfigCommand,
@@ -693,6 +708,7 @@ fn main() {
 
             let app_handle = app.handle().clone();
             let state = app.state::<platform::AppState>().inner().clone();
+            platform::refresh_advisor_data_in_background(state.clone());
             platform::start_league_event_service(app_handle, state);
 
             Ok(())
@@ -743,6 +759,8 @@ fn main() {
             save_champion_rune_config,
             get_champion_rune_config,
             delete_champion_rune_config,
+            get_chat_me,
+            set_chat_status,
             fetch_rank_tier_icon
         ])
         .run(tauri::generate_context!())
