@@ -12,7 +12,7 @@ use std::{
 
 use adapters::{
     DispatchingRankedChampionProvider, LcuSubscription, LcuWebSocketError,
-    LcuWebSocketEvent, LocalLeagueClient, RemoteAdvisorJsonProvider,
+    LcuWebSocketEvent, LocalLeagueClient, LolPsAdvisorProvider,
 };
 use application::{
     ActivityListInput, ActivityNoteInput, AdvisorDataInput, AdvisorDataRefreshInput,
@@ -149,7 +149,7 @@ pub struct AppState {
     store: SqliteStore,
     league_client: LocalLeagueClient,
     ranked_champion_provider: DispatchingRankedChampionProvider,
-    advisor_provider: RemoteAdvisorJsonProvider,
+    advisor_provider: LolPsAdvisorProvider,
     pub champ_select_cache: Arc<Mutex<Option<ChampSelectCacheEntry>>>,
     pub recent_stats_cache: Arc<Mutex<HashMap<String, RecentStatsCacheEntry>>>,
     pub summoner_id_cache: Arc<Mutex<HashMap<i64, SummonerCacheEntry>>>,
@@ -166,6 +166,7 @@ pub struct AppState {
     /// Champion ID locked in by the local player this session; None between sessions.
     pub last_locked_champion: Arc<Mutex<Option<i64>>>,
     cache_metrics: Arc<CacheMetrics>,
+    pub rank_icon_cache: Arc<Mutex<HashMap<String, LeagueImageAsset>>>,
 }
 
 fn lock_or_recover<'a, T>(mutex: &'a Mutex<T>) -> MutexGuard<'a, T> {
@@ -186,7 +187,7 @@ impl AppState {
             ranked_champion_provider: DispatchingRankedChampionProvider::new(
                 DEFAULT_RANKED_CHAMPION_DATA_URL,
             ),
-            advisor_provider: RemoteAdvisorJsonProvider::new(DEFAULT_ADVISOR_DATA_URL),
+            advisor_provider: LolPsAdvisorProvider::new(),
             champ_select_cache: Arc::new(Mutex::new(None)),
             recent_stats_cache: Arc::new(Mutex::new(HashMap::new())),
             summoner_id_cache: Arc::new(Mutex::new(HashMap::new())),
@@ -205,6 +206,7 @@ impl AppState {
             champ_select_pick_delay_token: Arc::new(Mutex::new(None)),
             last_locked_champion: Arc::new(Mutex::new(None)),
             cache_metrics: Arc::new(CacheMetrics::default()),
+            rank_icon_cache: Arc::new(Mutex::new(HashMap::new())),
         })
     }
 }
@@ -231,6 +233,7 @@ impl Clone for AppState {
             champ_select_pick_delay_token: Arc::clone(&self.champ_select_pick_delay_token),
             last_locked_champion: Arc::clone(&self.last_locked_champion),
             cache_metrics: Arc::clone(&self.cache_metrics),
+            rank_icon_cache: Arc::clone(&self.rank_icon_cache),
         }
     }
 }
@@ -520,6 +523,18 @@ impl LeagueClientReader for CachedLeagueClientReader<'_> {
         self.inner.accept_ready_check()
     }
 
+    fn chat_me(&self) -> Result<domain::ChatMe, LeagueClientReadError> {
+        self.inner.chat_me()
+    }
+
+    fn set_chat_status(
+        &self,
+        status_message: Option<&str>,
+        availability: Option<&str>,
+    ) -> Result<(), LeagueClientReadError> {
+        self.inner.set_chat_status(status_message, availability)
+    }
+
     fn apply_rune_page(
         &self,
         page: &domain::RunePage,
@@ -546,8 +561,8 @@ impl LeagueClientReader for CachedLeagueClientReader<'_> {
 
     fn champion_mastery_batch(
         &self,
-        entries: &[(i64, i64)],
-    ) -> std::collections::HashMap<i64, Option<i64>> {
+        entries: &[(String, i64)],
+    ) -> std::collections::HashMap<String, Option<i64>> {
         self.inner.champion_mastery_batch(entries)
     }
 }
@@ -695,6 +710,12 @@ pub struct LeagueProfileIconCommand {
 #[serde(rename_all = "camelCase")]
 pub struct LeagueChampionIconCommand {
     pub champion_id: i64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FetchRankTierIconCommand {
+    pub tier: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -1484,10 +1505,20 @@ fn start_champ_select_hydration<R: Runtime + 'static>(
                 return;
             }
 
+            // Only mark the cache as fully hydrated when every known player's
+            // recent stats loaded successfully.  If any fetch failed (e.g. the
+            // LCU match-history endpoint wasn't ready yet at game-start) keep
+            // recent_limit at 0 so the platform cache allows a retry instead of
+            // locking out future callers for the rest of the game.
+            let cached_recent_limit = if champ_select_snapshot_has_complete_recent_stats(&snapshot) {
+                CHAMP_SELECT_HYDRATED_RECENT_LIMIT
+            } else {
+                CHAMP_SELECT_LIGHT_RECENT_LIMIT
+            };
             *lock_or_recover(&state.champ_select_cache) = Some(ChampSelectCacheEntry {
                 snapshot: snapshot.clone(),
                 cached_at: Instant::now(),
-                recent_limit: CHAMP_SELECT_HYDRATED_RECENT_LIMIT,
+                recent_limit: cached_recent_limit,
             });
             let mut hydration = lock_or_recover(state.champ_select_hydration.as_ref());
             if hydration
@@ -2506,10 +2537,18 @@ pub fn get_champ_select_snapshot(
         .champ_select_cache_misses
         .fetch_add(1, Ordering::Relaxed);
     let snapshot = build_champ_select_snapshot(state, recent_limit)?;
+    // Same completeness check as the hydrate-from-cache path: don't lock the
+    // cache at the requested limit when stats are missing, so the next caller
+    // can retry after the per-player failure TTL expires.
+    let cached_recent_limit = if champ_select_snapshot_has_complete_recent_stats(&snapshot) {
+        recent_limit
+    } else {
+        CHAMP_SELECT_LIGHT_RECENT_LIMIT
+    };
     *lock_or_recover(&state.champ_select_cache) = Some(ChampSelectCacheEntry {
         snapshot: snapshot.clone(),
         cached_at: Instant::now(),
-        recent_limit,
+        recent_limit: cached_recent_limit,
     });
 
     Ok(snapshot)
@@ -2640,6 +2679,45 @@ pub fn refresh_advisor_data(
     .map_err(CommandError::from)
 }
 
+/// Re-fetch the advisor snapshot from lol.ps if missing or older than this.
+const ADVISOR_REFRESH_MAX_AGE_SECS: u64 = 12 * 60 * 60;
+
+/// Populate the advisor snapshot store in the background on startup.
+///
+/// The champ-select overlay's meta tags (Strong pick / Low WR / Stable) read
+/// win/pick/ban from the latest stored advisor snapshot; with an empty store
+/// they fall back to bundled sample data. Nothing in the UI triggers an advisor
+/// refresh, so without this the store stays empty forever. Runs on its own
+/// thread (blocking HTTP, no async context) so it never delays startup, and
+/// skips the fetch when a recent snapshot already exists.
+pub fn refresh_advisor_data_in_background(state: AppState) {
+    std::thread::spawn(move || {
+        if let Ok(Some(existing)) = state.store.latest_advisor_snapshot() {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|elapsed| elapsed.as_secs())
+                .unwrap_or(0);
+            if let Ok(imported) = existing.imported_at.parse::<u64>() {
+                if now.saturating_sub(imported) < ADVISOR_REFRESH_MAX_AGE_SECS {
+                    return;
+                }
+            }
+        }
+
+        match application::refresh_advisor_data(
+            &state.store,
+            &state.advisor_provider,
+            AdvisorDataRefreshInput { url: None },
+            AdvisorDataInput { lane: None, champion_id: None },
+        ) {
+            Ok(_) => tracing::info!("advisor data refreshed from lol.ps on startup"),
+            Err(error) => {
+                tracing::warn!(?error, "advisor data background refresh failed")
+            }
+        }
+    });
+}
+
 pub fn get_champ_select_advisor_snapshot(
     state: &AppState,
     command: ChampSelectSnapshotCommand,
@@ -2689,6 +2767,35 @@ pub fn get_league_champion_icon(
         },
     )
     .map_err(CommandError::from)
+}
+
+pub fn fetch_rank_tier_icon(
+    state: &AppState,
+    command: FetchRankTierIconCommand,
+) -> Result<LeagueImageAsset, CommandError> {
+    const VALID_TIERS: &[&str] = &[
+        "iron", "bronze", "silver", "gold", "platinum", "emerald", "diamond",
+        "master", "grandmaster", "challenger",
+    ];
+    let tier = command.tier.to_lowercase();
+    if !VALID_TIERS.contains(&tier.as_str()) {
+        return Err(CommandError::from(ApplicationError::Validation(
+            format!("Unknown rank tier: {tier}"),
+        )));
+    }
+    if let Some(cached) = lock_or_recover(&state.rank_icon_cache).get(&tier).cloned() {
+        return Ok(cached);
+    }
+    let url = format!(
+        "https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-static-assets/global/default/ranked-emblem/emblem-{tier}.png"
+    );
+    let asset = state
+        .league_client
+        .fetch_external_image_asset(&url)
+        .map_err(ApplicationError::from)
+        .map_err(CommandError::from)?;
+    lock_or_recover(&state.rank_icon_cache).insert(tier, asset.clone());
+    Ok(asset)
 }
 
 pub fn get_league_champion_details(
@@ -2824,6 +2931,31 @@ pub fn apply_rune_page(
         &state.league_client,
         command.page,
         &command.champion_name,
+    )
+    .map_err(CommandError::from)
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SetChatStatusCommand {
+    /// `Some("")` clears the signature; `None` leaves it untouched.
+    pub status_message: Option<String>,
+    /// One of `chat`, `away`, `dnd`, `offline`; `None` leaves it untouched.
+    pub availability: Option<String>,
+}
+
+pub fn get_chat_me(state: &AppState) -> Result<domain::ChatMe, CommandError> {
+    application::get_chat_me(&state.league_client).map_err(CommandError::from)
+}
+
+pub fn set_chat_status(
+    state: &AppState,
+    command: SetChatStatusCommand,
+) -> Result<(), CommandError> {
+    application::set_chat_status(
+        &state.league_client,
+        command.status_message,
+        command.availability,
     )
     .map_err(CommandError::from)
 }
@@ -3826,6 +3958,7 @@ mod tests {
                 recent_champions: vec!["Ahri".to_string()],
                 top_champions: Vec::new(),
             },
+            champion_records: Vec::new(),
             data_warnings: vec![LeagueDataWarning {
                 section: LeagueDataSection::Ranked,
                 message: "Ranked data is temporarily unavailable".to_string(),

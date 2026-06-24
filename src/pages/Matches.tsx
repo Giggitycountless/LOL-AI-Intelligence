@@ -110,7 +110,18 @@ function MatchCard({
           </p>
           <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">KDA {match.kda === null ? "n/a" : match.kda.toFixed(1)}</p>
         </div>
-        <span className="text-xs font-medium text-rose-600 dark:text-rose-400">{t("matches.openRecap")} →</span>
+        <span
+          className={[
+            "text-xs font-medium",
+            match.result === "win"
+              ? "text-emerald-600 dark:text-emerald-400"
+              : match.result === "loss"
+                ? "text-rose-600 dark:text-rose-400"
+                : "text-zinc-500 dark:text-zinc-400",
+          ].join(" ")}
+        >
+          {t("matches.openRecap")} →
+        </span>
       </div>
     </button>
   );

@@ -1,7 +1,7 @@
 use super::*;
 use domain::{
-    LeagueClientConnection, LeagueClientPhase, LeagueDataSection, LeagueDataWarning, MatchResult,
-    RunePage,
+    AdvisorPlayerTagKind, LeagueClientConnection, LeagueClientPhase, LeagueDataSection,
+    LeagueDataWarning, MatchResult, RunePage,
 };
 use std::{cell::RefCell, sync::Mutex};
 
@@ -149,6 +149,40 @@ fn ready_check_automation_treats_accept_error_as_success_when_phase_moves() {
 
     assert_eq!(reader.accept_ready_check_count(), 1);
     assert!(store.created_entries.borrow().is_empty());
+}
+
+#[test]
+fn set_chat_status_forwards_message_and_availability_to_reader() {
+    let reader = FakeLeagueClientReader::new(Vec::new());
+
+    set_chat_status(&reader, Some("gl hf".to_string()), Some("away".to_string()))
+        .expect("valid status update");
+
+    assert_eq!(
+        *reader.last_chat_status.lock().unwrap(),
+        Some((Some("gl hf".to_string()), Some("away".to_string())))
+    );
+}
+
+#[test]
+fn set_chat_status_rejects_unknown_availability() {
+    let reader = FakeLeagueClientReader::new(Vec::new());
+
+    let error = set_chat_status(&reader, None, Some("invisible".to_string()))
+        .expect_err("unknown availability should be rejected");
+
+    assert_eq!(error.code(), "validation");
+    assert!(reader.last_chat_status.lock().unwrap().is_none());
+}
+
+#[test]
+fn set_chat_status_requires_at_least_one_field() {
+    let reader = FakeLeagueClientReader::new(Vec::new());
+
+    let error =
+        set_chat_status(&reader, None, None).expect_err("empty update should be rejected");
+
+    assert_eq!(error.code(), "validation");
 }
 
 #[test]
@@ -681,8 +715,8 @@ fn champ_select_advisor_snapshot_adds_tags_and_matchup_advice() {
         .find(|player| player.display_name == "Ally")
         .expect("ally player exists");
 
-    assert!(ally.tags.iter().any(|tag| tag.label == "Strong pick"));
-    assert!(ally.tags.iter().any(|tag| tag.label.starts_with("Spike ")));
+    assert!(ally.tags.iter().any(|tag| tag.kind == AdvisorPlayerTagKind::StrongPick));
+    assert!(ally.tags.iter().any(|tag| tag.kind == AdvisorPlayerTagKind::Spike));
     assert!(
         ally.matchup_advice
             .as_deref()
@@ -717,9 +751,10 @@ fn player_advisor_tags_detect_one_trick_and_loss_streak() {
 
     let tags = player_advisor_tags(&Some(stats), Some(&advisor));
 
-    assert!(tags.iter().any(|tag| tag.label == "One-trick"));
-    assert!(tags.iter().any(|tag| tag.label == "4 loss streak"));
-    assert!(tags.iter().any(|tag| tag.label == "Strong pick"));
+    assert!(tags.iter().any(|tag| tag.kind == AdvisorPlayerTagKind::OneTrick));
+    assert!(tags.iter().any(|tag| tag.kind == AdvisorPlayerTagKind::LossStreak
+        && tag.value.as_deref() == Some("4")));
+    assert!(tags.iter().any(|tag| tag.kind == AdvisorPlayerTagKind::StrongPick));
 }
 
 #[test]
@@ -1562,6 +1597,7 @@ struct FakeLeagueClientReader {
     recent_stats_batch_calls: Mutex<Vec<Vec<String>>>,
     summoners_by_id: Vec<SummonerBatchEntry>,
     summoners_by_name: Vec<SummonerBatchEntry>,
+    last_chat_status: Mutex<Option<(Option<String>, Option<String>)>>,
 }
 
 impl FakeLeagueClientReader {
@@ -1600,6 +1636,7 @@ impl FakeLeagueClientReader {
             recent_stats_batch_calls: Mutex::new(Vec::new()),
             summoners_by_id: Vec::new(),
             summoners_by_name: Vec::new(),
+            last_chat_status: Mutex::new(None),
         }
     }
 
@@ -1634,6 +1671,7 @@ impl FakeLeagueClientReader {
             recent_stats_batch_calls: Mutex::new(Vec::new()),
             summoners_by_id: Vec::new(),
             summoners_by_name: Vec::new(),
+            last_chat_status: Mutex::new(None),
         }
     }
 
@@ -1894,6 +1932,25 @@ impl LeagueClientReader for FakeLeagueClientReader {
         Ok(())
     }
 
+    fn chat_me(&self) -> Result<domain::ChatMe, LeagueClientReadError> {
+        Ok(domain::ChatMe {
+            availability: Some("chat".to_string()),
+            status_message: Some("hello".to_string()),
+        })
+    }
+
+    fn set_chat_status(
+        &self,
+        status_message: Option<&str>,
+        availability: Option<&str>,
+    ) -> Result<(), LeagueClientReadError> {
+        *self.last_chat_status.lock().unwrap() = Some((
+            status_message.map(str::to_string),
+            availability.map(str::to_string),
+        ));
+        Ok(())
+    }
+
     fn apply_rune_page(
         &self,
         _page: &domain::RunePage,
@@ -1947,6 +2004,48 @@ fn sample_match(
         played_at: Some("2026-04-19T12:00:00Z".to_string()),
         game_duration_seconds: Some(1800),
     }
+}
+
+#[test]
+fn champion_records_aggregate_wins_losses_per_champion() {
+    let make = |champion_id: Option<i64>, result: MatchResult| RecentMatchSummary {
+        game_id: 0,
+        champion_id,
+        champion_name: "X".to_string(),
+        queue_name: None,
+        lane: None,
+        result,
+        kills: 0,
+        deaths: 0,
+        assists: 0,
+        kda: None,
+        played_at: None,
+        game_duration_seconds: None,
+    };
+
+    let matches = vec![
+        make(Some(103), MatchResult::Win),
+        make(Some(103), MatchResult::Loss),
+        make(Some(103), MatchResult::Win),
+        make(Some(64), MatchResult::Loss),
+        make(Some(64), MatchResult::Unknown),
+        make(None, MatchResult::Win), // dropped: no champion id
+    ];
+
+    let records = super::summarize_champion_records(&matches);
+
+    assert_eq!(records.len(), 2, "the match with no champion id is dropped");
+
+    let ahri = records.iter().find(|r| r.champion_id == 103).expect("ahri record");
+    assert_eq!(ahri.wins, 2);
+    assert_eq!(ahri.losses, 1);
+    assert_eq!(ahri.games, 3);
+
+    let lee = records.iter().find(|r| r.champion_id == 64).expect("lee record");
+    assert_eq!(lee.wins, 0);
+    assert_eq!(lee.losses, 1);
+    // Unknown results still count as a game played but not toward W/L.
+    assert_eq!(lee.games, 2);
 }
 
 fn sample_completed_match() -> LeagueCompletedMatch {

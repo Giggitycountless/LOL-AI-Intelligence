@@ -1,5 +1,6 @@
 import type {
   AdvisorPlayerTag,
+  AdvisorPlayerTagKind,
   ChampSelectPlayer,
   ChampSelectAdvisorPlayer,
   ChampSelectRecentStatsStatus,
@@ -8,7 +9,7 @@ import type {
   RankedQueueSummary,
   RecentMatchSummary,
 } from "../backend/types";
-import type { EffectiveLanguage } from "../i18n";
+import type { EffectiveLanguage, TranslationKey } from "../i18n";
 import type { T } from "../utils/formatting";
 
 export const TEAM_SIZE = 5;
@@ -30,6 +31,8 @@ export type PlayerView = {
   championUrl: string | undefined;
   displayName: string;
   flexRank: string | null;
+  flexRankTier: string | null;
+  flexRankLP: number | null;
   gameCount: number;
   advisorTags: AdvisorPlayerTag[];
   advisorSummary: string | null;
@@ -40,6 +43,10 @@ export type PlayerView = {
   /** Bar width (0–100) for the score, relative to the highest score in this match. */
   scorePct: number;
   soloRank: string | null;
+  soloRankTier: string | null;
+  soloRankLP: number | null;
+  soloRankWins: number;
+  soloRankLosses: number;
   summonerLevel: number | null;
   recentStatsStatus: ChampSelectRecentStatsStatus;
   winCount: number;
@@ -123,6 +130,8 @@ export function playerView(
     championUrl: player?.championId ? imageUrls[player.championId] : undefined,
     displayName: player?.displayName ?? t("overlay.unselected"),
     flexRank: rankValue(flexRank, effectiveLanguage, t),
+    flexRankTier: flexRank?.isRanked && flexRank.tier ? flexRank.tier.toLowerCase() : null,
+    flexRankLP: flexRank?.isRanked ? (flexRank.leaguePoints ?? null) : null,
     gameCount,
     advisorTags: advisorPlayer?.tags ?? [],
     advisorSummary: advisorSummaryText(advisorPlayer),
@@ -132,6 +141,10 @@ export function playerView(
     score: playerScore(player),
     scorePct: 0,
     soloRank: rankValue(soloRank, effectiveLanguage, t),
+    soloRankTier: soloRank?.isRanked && soloRank.tier ? soloRank.tier.toLowerCase() : null,
+    soloRankLP: soloRank?.isRanked ? (soloRank.leaguePoints ?? null) : null,
+    soloRankWins: soloRank?.wins ?? 0,
+    soloRankLosses: soloRank?.losses ?? 0,
     summonerLevel: player?.summonerLevel ?? null,
     recentStatsStatus: player?.recentStatsStatus ?? "notRequested",
     winCount,
@@ -144,6 +157,26 @@ export function advisorSummaryText(player: ChampSelectAdvisorPlayer | undefined)
   }
 
   return player.matchupAdvice ?? player.advisor?.laneAdvice ?? player.advisor?.powerSpikes[0]?.description ?? null;
+}
+
+const ADVISOR_TAG_KEY: Record<AdvisorPlayerTagKind, TranslationKey> = {
+  oneTrick: "advisorTag.oneTrick",
+  lossStreak: "advisorTag.lossStreak",
+  strongPick: "advisorTag.strongPick",
+  lowWinRate: "advisorTag.lowWinRate",
+  stable: "advisorTag.stable",
+  spike: "advisorTag.spike",
+};
+
+/**
+ * Localize an advisor tag in the current UI language. The backend ships a
+ * stable `kind` plus an optional numeric `value` (loss-streak count, spike
+ * timing) so the label re-translates live when the language changes, rather
+ * than being baked into one language at fetch time.
+ */
+export function advisorTagLabel(tag: AdvisorPlayerTag, t: T): string {
+  const label = t(ADVISOR_TAG_KEY[tag.kind]);
+  return tag.value ? label.replace("{n}", tag.value) : label;
 }
 
 export function advisorTagClass(tone: AdvisorPlayerTag["tone"]) {

@@ -3,9 +3,11 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
 import { PostMatchAnalysis } from "../components/PostMatchAnalysis";
+import { ChampionImage } from "../components/common";
 import { listenWithCleanup } from "../backend/events";
 import { isCommandError } from "../backend/commands";
 import { useAppCore, useLeagueAssets } from "../state/AppStateProvider";
+import { formatDuration, formatResult, formatTimestamp } from "../utils/formatting";
 import type { TranslationKey } from "../i18n";
 import {
   isMatchRecapSelection,
@@ -21,6 +23,18 @@ const tones: Array<{ id: RecapTone; labelKey: TranslationKey; className: string 
   { id: "rage",      labelKey: "recap.toneRage", className: "border-orange-300 dark:border-orange-700 text-orange-700 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-950 data-[active=true]:bg-orange-600 data-[active=true]:text-white data-[active=true]:border-orange-600" },
   { id: "flatter",   labelKey: "recap.toneFlatter", className: "border-pink-300 dark:border-pink-700 text-pink-700 dark:text-pink-400 hover:bg-pink-50 dark:hover:bg-pink-950 data-[active=true]:bg-pink-500 data-[active=true]:text-white data-[active=true]:border-pink-500" },
 ];
+
+const OVERVIEW_TONE = {
+  win: "border-emerald-300 bg-emerald-50 dark:border-emerald-700 dark:bg-emerald-950/60",
+  loss: "border-rose-300 bg-rose-50 dark:border-rose-700 dark:bg-rose-950/60",
+  unknown: "border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900",
+} as const;
+
+const OVERVIEW_TITLE_TONE = {
+  win: "text-emerald-800 dark:text-emerald-300",
+  loss: "text-rose-700 dark:text-rose-300",
+  unknown: "text-zinc-700 dark:text-zinc-300",
+} as const;
 
 export function MatchRecap({ initialSelection }: { initialSelection: MatchRecapSelection }) {
   const [selection, setSelection] = useState<MatchRecapSelection>(initialSelection);
@@ -164,11 +178,45 @@ export function MatchRecap({ initialSelection }: { initialSelection: MatchRecapS
   const activeToneEntry = tones.find((tone) => tone.id === activeTone);
   const activeToneLabel = activeTone && activeToneEntry ? t(activeToneEntry.labelKey) : "";
 
+  const self =
+    detail?.selfParticipantId != null
+      ? detail.teams.flatMap((team) => team.participants).find((p) => p.participantId === detail.selfParticipantId)
+      : undefined;
+  const overviewResult = self ? detail!.result : "unknown";
+
   return (
     <main className="min-h-0 flex-1 overflow-auto bg-zinc-50 dark:bg-zinc-950 px-6 py-6">
       <div className="flex w-full flex-col gap-5">
-        <header className="flex flex-wrap items-center gap-3">
-          <h1 className="text-2xl font-semibold text-zinc-950 dark:text-zinc-50">{t("recap.title")}</h1>
+        <header className={`flex flex-wrap items-center gap-4 rounded-xl border px-5 py-4 shadow-sm transition ${OVERVIEW_TONE[overviewResult]}`}>
+          {self ? (
+            <>
+              <ChampionImage
+                championName={self.championName}
+                imageUrl={self.championId ? leagueImages.championIcons[self.championId] : undefined}
+                size="lg"
+              />
+              <div className="min-w-0">
+                <p className={`text-xs font-semibold uppercase tracking-wide ${OVERVIEW_TITLE_TONE[overviewResult]}`}>
+                  {formatResult(overviewResult, t)} · {self.championName}
+                </p>
+                <p className="mt-0.5 truncate text-lg font-semibold text-zinc-950 dark:text-zinc-50">{self.displayName}</p>
+                <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-zinc-600 dark:text-zinc-400">
+                  <span className="font-semibold text-zinc-800 dark:text-zinc-200">
+                    {self.kills}/{self.deaths}/{self.assists}
+                  </span>
+                  <span>·</span>
+                  <span>{t("analysis.score")} {self.performanceScore.toFixed(1)}</span>
+                  {detail?.queueName && (<><span>·</span><span>{detail.queueName}</span></>)}
+                  <span>·</span>
+                  <span>{formatDuration(detail?.gameDurationSeconds ?? null, t)}</span>
+                  <span>·</span>
+                  <span>{formatTimestamp(detail?.playedAt, t)}</span>
+                </p>
+              </div>
+            </>
+          ) : (
+            <h1 className="text-2xl font-semibold text-zinc-950 dark:text-zinc-50">{t("recap.title")}</h1>
+          )}
           <div className="ml-auto flex flex-wrap gap-2">
             {tones.map((tone) => (
               <button

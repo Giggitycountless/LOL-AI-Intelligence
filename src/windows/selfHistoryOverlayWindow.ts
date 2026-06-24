@@ -15,22 +15,24 @@ export function destroySelfHistoryOverlayWindow() {
   return callBackend<void>("destroy_self_history_overlay_window").catch(() => undefined);
 }
 
-export async function openSelfHistoryOverlayWindow() {
+export async function openSelfHistoryOverlayWindow(options?: { devMode?: boolean }) {
   if (overlayOpenPromise) {
     return overlayOpenPromise;
   }
 
-  overlayOpenPromise = openSelfHistoryOverlayWindowOnce().finally(() => {
+  overlayOpenPromise = openSelfHistoryOverlayWindowOnce(options?.devMode ?? false).finally(() => {
     overlayOpenPromise = null;
   });
   return overlayOpenPromise;
 }
 
-async function openSelfHistoryOverlayWindowOnce() {
+async function openSelfHistoryOverlayWindowOnce(devMode: boolean) {
   try {
-    const canOpen = await canOpenSelfHistoryOverlayWindow();
-    if (!canOpen) {
-      return false;
+    if (!devMode) {
+      const canOpen = await canOpenSelfHistoryOverlayWindow();
+      if (!canOpen) {
+        return false;
+      }
     }
 
     const existing = await WebviewWindow.getByLabel(SELF_HISTORY_OVERLAY_WINDOW_LABEL);
@@ -51,7 +53,7 @@ async function openSelfHistoryOverlayWindowOnce() {
       minWidth: 1280,
       resizable: true,
       title: "Self History",
-      url: selfHistoryOverlayWindowUrl(),
+      url: selfHistoryOverlayWindowUrl(devMode),
       width: size.width,
     });
     void overlayWindow.once("tauri://error", () => {
@@ -64,10 +66,10 @@ async function openSelfHistoryOverlayWindowOnce() {
   }
 }
 
-export function selfHistoryOverlayWindowUrl() {
-  return "index.html#/self-history-overlay";
+export function selfHistoryOverlayWindowUrl(devMode = false) {
+  return devMode ? "index.html#/self-history-overlay?devMode=1" : "index.html#/self-history-overlay";
 }
 
 export function isSelfHistoryOverlayHash(hash: string) {
-  return hash === "#/self-history-overlay";
+  return hash === "#/self-history-overlay" || hash.startsWith("#/self-history-overlay?");
 }

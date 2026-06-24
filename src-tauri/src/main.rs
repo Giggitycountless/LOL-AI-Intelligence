@@ -197,6 +197,14 @@ fn get_league_champion_details(
 }
 
 #[tauri::command(async)]
+fn fetch_rank_tier_icon(
+    state: State<'_, platform::AppState>,
+    tier: String,
+) -> Result<domain::LeagueImageAsset, platform::CommandError> {
+    platform::fetch_rank_tier_icon(state.inner(), platform::FetchRankTierIconCommand { tier })
+}
+
+#[tauri::command(async)]
 fn get_league_game_asset(
     state: State<'_, platform::AppState>,
     input: platform::LeagueGameAssetCommand,
@@ -258,6 +266,21 @@ fn save_champion_rune_config(
     input: platform::SaveRuneConfigCommand,
 ) -> Result<domain::ChampionRuneConfig, platform::CommandError> {
     platform::save_champion_rune_config(state.inner(), input)
+}
+
+#[tauri::command(async)]
+fn get_chat_me(
+    state: State<'_, platform::AppState>,
+) -> Result<domain::ChatMe, platform::CommandError> {
+    platform::get_chat_me(state.inner())
+}
+
+#[tauri::command(async)]
+fn set_chat_status(
+    state: State<'_, platform::AppState>,
+    input: platform::SetChatStatusCommand,
+) -> Result<(), platform::CommandError> {
+    platform::set_chat_status(state.inner(), input)
 }
 
 #[tauri::command(async)]
@@ -685,6 +708,7 @@ fn main() {
 
             let app_handle = app.handle().clone();
             let state = app.state::<platform::AppState>().inner().clone();
+            platform::refresh_advisor_data_in_background(state.clone());
             platform::start_league_event_service(app_handle, state);
 
             Ok(())
@@ -734,7 +758,10 @@ fn main() {
             apply_rune_page,
             save_champion_rune_config,
             get_champion_rune_config,
-            delete_champion_rune_config
+            delete_champion_rune_config,
+            get_chat_me,
+            set_chat_status,
+            fetch_rank_tier_icon
         ])
         .run(tauri::generate_context!())
     {

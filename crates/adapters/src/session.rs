@@ -242,6 +242,29 @@ impl LcuSession {
         validate_lcu_status(response.status())
     }
 
+    pub(crate) fn put_json<T: Serialize>(
+        &self,
+        path: &str,
+        body: &T,
+    ) -> Result<(), LcuRequestError> {
+        let url = format!("https://{LOCAL_LCU_HOST}:{}{}", self.credentials.port, path);
+        let response = with_retry(
+            || {
+                self.http_client
+                    .put(url.as_str())
+                    .basic_auth("riot", Some(self.credentials.password.as_str()))
+                    .header(CONTENT_TYPE, "application/json")
+                    .json(body)
+                    .send()
+                    .map_err(|_| LcuRequestError::Unavailable)
+            },
+            3,
+            |e: &LcuRequestError| matches!(e, LcuRequestError::Unavailable),
+        )?;
+
+        validate_lcu_status(response.status())
+    }
+
     pub(crate) fn patch_json<T: Serialize>(
         &self,
         path: &str,

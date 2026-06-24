@@ -1,7 +1,6 @@
 use std::time::Duration;
 
 pub(crate) const DEFAULT_RANKED_CHAMPION_DATA_URL: &str = "https://raw.githubusercontent.com/Giggitycountless/LOL-Desktop-Assistant/main/data/ranked-champions/latest.json";
-pub(crate) const DEFAULT_ADVISOR_DATA_URL: &str = "https://raw.githubusercontent.com/Giggitycountless/LOL-Desktop-Assistant/main/data/advisor/latest.json";
 pub(crate) const CHAMP_SELECT_CACHE_TTL: Duration = Duration::from_secs(8);
 pub(crate) const RECENT_STATS_CACHE_TTL: Duration = Duration::from_secs(10 * 60);
 pub(crate) const RECENT_STATS_FAILURE_CACHE_TTL: Duration = Duration::from_secs(30);

@@ -993,6 +993,127 @@ impl application::RankedChampionDataProvider for LolPsKrProvider {
     }
 }
 
+// ── lol.ps advisor provider ──────────────────────────────────────────────────
+
+/// Advisor data backed by lol.ps KR. Reuses [`LolPsKrProvider`] to fetch the
+/// current-patch tierlist for every lane, then maps each ranked stat into an
+/// [`AdvisorRecord`]. lol.ps tierlist only carries win/pick/ban + champion name,
+/// so the richer advisor fields (runes, items, skill order, matchups, power
+/// spikes, advice) are left empty — downstream callers degrade gracefully and
+/// the meta-driven tags (Strong pick / Low WR / Stable) read from win_rate and
+/// overall_score, which are real.
+#[derive(Debug, Clone)]
+pub struct LolPsAdvisorProvider {
+    inner: LolPsKrProvider,
+}
+
+impl LolPsAdvisorProvider {
+    pub fn new() -> Self {
+        Self {
+            inner: LolPsKrProvider::new(),
+        }
+    }
+}
+
+impl Default for LolPsAdvisorProvider {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Emerald+ tier on lol.ps — matches what the KR ranked-champion path defaults
+/// to and the queue/tier metadata reported below.
+const LOLPS_ADVISOR_TIER: u32 = 2;
+
+fn advisor_record_from_ranked_stat(stat: RankedChampionStat) -> AdvisorRecord {
+    AdvisorRecord {
+        champion_id: stat.champion_id,
+        champion_name: stat.champion_name,
+        champion_alias: stat.champion_alias,
+        lane: stat.lane,
+        win_rate: stat.win_rate,
+        pick_rate: stat.pick_rate,
+        ban_rate: stat.ban_rate,
+        overall_score: stat.overall_score,
+        games: stat.games,
+        // lol.ps tierlist carries none of the following; leave empty so the UI
+        // and tag logic degrade gracefully rather than inventing data.
+        runes: AdvisorRunePage {
+            primary_style: String::new(),
+            primary_runes: Vec::new(),
+            secondary_style: String::new(),
+            secondary_runes: Vec::new(),
+            stat_shards: Vec::new(),
+        },
+        summoner_spells: Vec::new(),
+        skill_order: AdvisorSkillOrder {
+            max_order: Vec::new(),
+            early_order: Vec::new(),
+        },
+        item_build: AdvisorItemBuild {
+            starter: Vec::new(),
+            core: Vec::new(),
+            boots: Vec::new(),
+            late: Vec::new(),
+            situational: Vec::new(),
+        },
+        strong_against: Vec::new(),
+        weak_against: Vec::new(),
+        power_spikes: Vec::new(),
+        lane_advice: String::new(),
+        teamfight_advice: String::new(),
+    }
+}
+
+impl AdvisorDataProvider for LolPsAdvisorProvider {
+    fn fetch_advisor_snapshot(
+        &self,
+        _input: AdvisorDataRefreshInput,
+    ) -> Result<AdvisorDataSnapshot, RankedChampionDataError> {
+        const LANES: [RankedChampionLane; 5] = [
+            RankedChampionLane::Top,
+            RankedChampionLane::Jungle,
+            RankedChampionLane::Middle,
+            RankedChampionLane::Bottom,
+            RankedChampionLane::Support,
+        ];
+
+        let mut records: Vec<AdvisorRecord> = Vec::new();
+        for lane in LANES {
+            let input = RankedChampionRefreshInput {
+                url: None,
+                source: application::RankedChampionDataSource::KoreaKr,
+                champion_hints: Vec::new(),
+                tier: LOLPS_ADVISOR_TIER,
+                lane: Some(lane),
+                patch_version: None,
+            };
+            // Tolerate a single lane failing — keep whatever other lanes return.
+            if let Ok(snapshot) = self.inner.fetch_ranked_champion_snapshot(input) {
+                records.extend(snapshot.records.into_iter().map(advisor_record_from_ranked_stat));
+            }
+        }
+
+        if records.is_empty() {
+            return Err(RankedChampionDataError::Unavailable(
+                "lol.ps advisor data unavailable for all lanes".to_string(),
+            ));
+        }
+
+        Ok(AdvisorDataSnapshot {
+            source: "lol.ps-kr".to_string(),
+            patch: None,
+            region: Some("KR".to_string()),
+            queue: Some("RANKED_SOLO_5X5".to_string()),
+            tier: Some(lolps_tier_label(LOLPS_ADVISOR_TIER).to_string()),
+            generated_at: None,
+            // refresh_advisor_data overwrites this with the save timestamp.
+            imported_at: unix_timestamp_seconds(),
+            records,
+        })
+    }
+}
+
 // ── Dispatching provider ──────────────────────────────────────────────────────
 
 #[derive(Debug, Clone)]
@@ -1058,6 +1179,46 @@ mod tests {
     use super::*;
     use application::RankedChampionDataError;
     use domain::RankedChampionLane;
+
+    // ── advisor_record_from_ranked_stat ──────────────────────────────────
+
+    #[test]
+    fn advisor_record_passes_through_ranked_numbers_and_empties_rich_fields() {
+        let stat = RankedChampionStat {
+            champion_id: 86,
+            champion_name: "Garen".to_string(),
+            champion_alias: Some("Garen".to_string()),
+            lane: RankedChampionLane::Top,
+            win_rate: 52.1,
+            pick_rate: 6.8,
+            ban_rate: 7.5,
+            overall_score: 31.9,
+            games: 139_000,
+            wins: 0,
+            picks: 0,
+            bans: 0,
+        };
+
+        let record = advisor_record_from_ranked_stat(stat);
+
+        // Numeric/meta fields — the ones the overlay tags read — pass through.
+        assert_eq!(record.champion_id, 86);
+        assert_eq!(record.champion_name, "Garen");
+        assert_eq!(record.lane, RankedChampionLane::Top);
+        assert_eq!(record.win_rate, 52.1);
+        assert_eq!(record.overall_score, 31.9);
+        assert_eq!(record.games, 139_000);
+
+        // Rich fields lol.ps can't provide are left empty (no Spike tag, etc.).
+        assert!(record.power_spikes.is_empty());
+        assert!(record.summoner_spells.is_empty());
+        assert!(record.strong_against.is_empty());
+        assert!(record.weak_against.is_empty());
+        assert!(record.runes.primary_runes.is_empty());
+        assert!(record.item_build.core.is_empty());
+        assert!(record.skill_order.max_order.is_empty());
+        assert!(record.lane_advice.is_empty());
+    }
 
     // ── validate_rate ────────────────────────────────────────────────────
 

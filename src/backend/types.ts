@@ -122,6 +122,15 @@ export type RunePageSnapshot = {
   autoApplied: boolean;
 };
 
+/** Presence values the League client accepts for `/lol-chat/v1/me`. */
+export type ChatAvailability = "chat" | "away" | "dnd" | "offline";
+
+/** The local player's chat presence (signature + availability). */
+export type ChatMe = {
+  availability: string | null;
+  statusMessage: string | null;
+};
+
 export type ActivityEntry = {
   id: number;
   kind: ActivityKind;
@@ -324,8 +333,19 @@ export type AdvisorDataRefreshInput = AdvisorDataInput & {
 
 export type AdvisorTagTone = "good" | "warn" | "info";
 
+export type AdvisorPlayerTagKind =
+  | "oneTrick"
+  | "lossStreak"
+  | "strongPick"
+  | "lowWinRate"
+  | "stable"
+  | "spike";
+
 export type AdvisorPlayerTag = {
-  label: string;
+  kind: AdvisorPlayerTagKind;
+  // Numeric detail for tags that carry one (loss-streak count, spike timing);
+  // interpolated into the localized label via the {n} placeholder.
+  value?: string | null;
   tone: AdvisorTagTone;
 };
 
@@ -442,6 +462,13 @@ export type RecentPerformanceSummary = {
   topChampions: RecentChampionSummary[];
 };
 
+export type ChampionRecordSummary = {
+  championId: number;
+  wins: number;
+  losses: number;
+  games: number;
+};
+
 export type LeagueDataWarning = {
   section: LeagueDataSection;
   message: string;
@@ -453,6 +480,7 @@ export type LeagueSelfSnapshot = {
   rankedQueues: RankedQueueSummary[];
   recentMatches: RecentMatchSummary[];
   recentPerformance: RecentPerformanceSummary;
+  championRecords: ChampionRecordSummary[];
   dataWarnings: LeagueDataWarning[];
   refreshedAt: string;
 };

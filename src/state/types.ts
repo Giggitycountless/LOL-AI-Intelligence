@@ -35,6 +35,7 @@ export type LeagueImageUrls = {
   profileIcons: Record<number, string>;
   championIcons: Record<number, string>;
   gameAssets: Record<string, LeagueGameAssetView>;
+  rankTierIcons: Record<string, string>;
 };
 
 export type AppWindowMode = "main" | "overlay" | "participant" | "match-recap";
@@ -93,6 +94,7 @@ export type LeagueAssetsContextValue = {
   loadLeagueChampionIcon: (championId: number | null | undefined) => Promise<boolean>;
   loadLeagueChampionDetails: (championId: number | null | undefined) => Promise<boolean>;
   loadLeagueGameAsset: (kind: LeagueGameAssetKind, assetId: number | null | undefined) => Promise<boolean>;
+  loadLeagueRankTierIcon: (tier: string) => Promise<void>;
 };
 
 export type ChampSelectContextValue = {

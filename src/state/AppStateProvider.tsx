@@ -1,6 +1,8 @@
 import { startTransition, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { emit } from "@tauri-apps/api/event";
 
 import { clearActivityEntries, createActivityNote, listActivityEntries } from "../backend/activity";
+import { listenWithCleanup, SETTINGS_CHANGED_EVENT } from "../backend/events";
 import { exportLocalData, importLocalData } from "../backend/dataTools";
 import {
   fetchLeagueSelfSnapshot,
@@ -87,7 +89,7 @@ export function AppStateProvider({ children, mode = "main" }: { children: ReactN
 
   // ── Asset loader ──
   const [championDetailsById, setChampionDetailsById] = useState<Record<number, import("./types").LeagueChampionDetailsView>>({});
-  const [leagueImages, setLeagueImages] = useState<LeagueImageUrls>({ profileIcons: {}, championIcons: {}, gameAssets: {} });
+  const [leagueImages, setLeagueImages] = useState<LeagueImageUrls>({ profileIcons: {}, championIcons: {}, gameAssets: {}, rankTierIcons: {} });
   const assetLoader = useAssetLoader(setLeagueImages, setChampionDetailsById);
 
   // ── Data actions ──
@@ -226,6 +228,19 @@ export function AppStateProvider({ children, mode = "main" }: { children: ReactN
     return assetLoader.cleanup;
   }, [assetLoader.cleanup]);
 
+  // Non-main windows (e.g. the overlay) don't refresh on their own when the
+  // user changes settings in the main window. Listen for the save broadcast and
+  // re-pull the snapshot so language/theme stay in sync live. The main window
+  // already refreshes inline in saveSettingsAction, so it skips this.
+  useEffect(() => {
+    if (mode === "main") {
+      return;
+    }
+    return listenWithCleanup(SETTINGS_CHANGED_EVENT, () => {
+      void refresh();
+    });
+  }, [mode, refresh]);
+
   useAppEffects({
     mode,
     champSelectFingerprintRef,
@@ -246,6 +261,9 @@ export function AppStateProvider({ children, mode = "main" }: { children: ReactN
         // moment and shouldn't delay the user's feedback.
         setFeedback({ kind: "success", message: t("feedback.settingsSaved") });
         await refresh();
+        // Notify other webviews (overlay / aux windows) to re-pull settings so
+        // language and theme stay in sync without a reopen.
+        void emit(SETTINGS_CHANGED_EVENT);
         return true;
       } catch (caught: unknown) {
         setFeedback({ kind: "error", message: errorMessage(caught) });
@@ -464,6 +482,7 @@ export function AppStateProvider({ children, mode = "main" }: { children: ReactN
       loadLeagueChampionIcon: assetLoader.loadLeagueChampionIcon,
       loadLeagueChampionDetails: assetLoader.loadLeagueChampionDetails,
       loadLeagueGameAsset: assetLoader.loadLeagueGameAsset,
+      loadLeagueRankTierIcon: assetLoader.loadLeagueRankTierIcon,
     }),
     [
       championDetailsById,
@@ -472,6 +491,7 @@ export function AppStateProvider({ children, mode = "main" }: { children: ReactN
       assetLoader.loadLeagueChampionIcon,
       assetLoader.loadLeagueGameAsset,
       assetLoader.loadLeagueProfileIcon,
+      assetLoader.loadLeagueRankTierIcon,
     ],
   );
 

@@ -11,6 +11,8 @@ import type {
   ClearPlayerNoteInput,
   ClearPlayerNoteResult,
   AutoAcceptStatus,
+  ChatAvailability,
+  ChatMe,
   LeagueGameAsset,
   LeagueGameAssetKind,
   LeagueChampionDetails,
@@ -100,6 +102,10 @@ export function fetchLeagueChampionIcon(championId: number): Promise<LeagueImage
   });
 }
 
+export function fetchRankTierIcon(tier: string): Promise<LeagueImageAsset> {
+  return callBackend<LeagueImageAsset>("fetch_rank_tier_icon", { tier });
+}
+
 export function fetchLeagueChampionDetails(championId: number): Promise<LeagueChampionDetails> {
   return callBackend<LeagueChampionDetails>("get_league_champion_details", {
     input: { championId },
@@ -145,6 +151,19 @@ export function fetchRuneRecommendations(championId: number): Promise<RuneRecomm
 export function applyRunePage(championId: number, page: RunePage, championName: string): Promise<void> {
   return callBackend<void>("apply_rune_page", {
     input: { championId, page, championName },
+  });
+}
+
+export function fetchChatMe(): Promise<ChatMe> {
+  return callBackend<ChatMe>("get_chat_me");
+}
+
+export function setChatStatus(
+  statusMessage: string | null,
+  availability: ChatAvailability | null,
+): Promise<void> {
+  return callBackend<void>("set_chat_status", {
+    input: { statusMessage, availability },
   });
 }
 

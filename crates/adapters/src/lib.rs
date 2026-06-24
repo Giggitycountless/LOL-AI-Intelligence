@@ -37,7 +37,7 @@ impl application::RuneRecommendationProvider for LocalLeagueClient {
 use constants::*;
 
 pub mod data_providers;
-pub use data_providers::{DispatchingRankedChampionProvider, RemoteAdvisorJsonProvider, RemoteRankedChampionJsonProvider, parse_advisor_snapshot_json, parse_ranked_champion_snapshot_json};
+pub use data_providers::{DispatchingRankedChampionProvider, LolPsAdvisorProvider, RemoteAdvisorJsonProvider, RemoteRankedChampionJsonProvider, parse_advisor_snapshot_json, parse_ranked_champion_snapshot_json};
 use data_providers::unix_timestamp_seconds;
 
 mod game_client_types;
@@ -537,6 +537,38 @@ impl LocalLeagueClient {
         })
     }
 
+    pub fn fetch_external_image_asset(&self, url: &str) -> Result<LeagueImageAsset, LeagueClientReadError> {
+        let client = crate::session::shared_lcu_http_client().map_err(|_| {
+            LeagueClientReadError::Integration("HTTP client unavailable".into())
+        })?;
+        crate::session::run_blocking(|| {
+            let response = client.get(url).send().map_err(|_| {
+                LeagueClientReadError::ClientUnavailable("External image request failed".into())
+            })?;
+            if !response.status().is_success() {
+                return Err(LeagueClientReadError::ClientUnavailable(format!(
+                    "External image fetch failed: status {}",
+                    response.status()
+                )));
+            }
+            let mime_type = response
+                .headers()
+                .get("content-type")
+                .and_then(|v| v.to_str().ok())
+                .filter(|v| v.starts_with("image/"))
+                .unwrap_or("image/png")
+                .to_string();
+            let bytes = response
+                .bytes()
+                .map_err(|_| LeagueClientReadError::Integration("External image body could not be read".into()))?
+                .to_vec();
+            if bytes.is_empty() {
+                return Err(LeagueClientReadError::Integration("External image was empty".into()));
+            }
+            Ok(LeagueImageAsset { mime_type, bytes })
+        })
+    }
+
     fn read_live_overlay_snapshot(&self) -> Result<LiveOverlaySnapshot, LeagueClientReadError> {
         let http_client = crate::session::shared_lcu_http_client().map_err(|_| {
             LeagueClientReadError::Integration(
@@ -604,6 +636,51 @@ impl LocalLeagueClient {
         // LCU expects the page wrapped in an array
         session
             .post_json("/lol-perks/v1/pages", &[create])
+            .map_err(read_error_from_request)
+    }
+
+    fn read_chat_me(&self) -> Result<domain::ChatMe, LeagueClientReadError> {
+        let session = match self.open_session() {
+            SessionOpenResult::Ready(session) => session,
+            SessionOpenResult::Status(status) => return Err(read_error_from_status(status)),
+        };
+
+        // The LCU payload has many more fields; ChatMe deserializes only the two
+        // we expose (serde ignores the rest).
+        session
+            .get_json::<domain::ChatMe>("/lol-chat/v1/me")
+            .map_err(read_error_from_request)
+    }
+
+    fn write_chat_status(
+        &self,
+        status_message: Option<&str>,
+        availability: Option<&str>,
+    ) -> Result<(), LeagueClientReadError> {
+        if status_message.is_none() && availability.is_none() {
+            return Ok(());
+        }
+
+        let session = match self.open_session() {
+            SessionOpenResult::Ready(session) => session,
+            SessionOpenResult::Status(status) => return Err(read_error_from_status(status)),
+        };
+
+        // PUT /lol-chat/v1/me merges the supplied keys into the current presence,
+        // so we only send the fields the caller wants to change.
+        let mut body = serde_json::Map::new();
+        if let Some(message) = status_message {
+            body.insert("statusMessage".to_string(), Value::String(message.to_string()));
+        }
+        if let Some(availability) = availability {
+            body.insert(
+                "availability".to_string(),
+                Value::String(availability.to_string()),
+            );
+        }
+
+        session
+            .put_json("/lol-chat/v1/me", &Value::Object(body))
             .map_err(read_error_from_request)
     }
 
@@ -889,8 +966,8 @@ impl LeagueClientReader for LocalLeagueClient {
 
     fn champion_mastery_batch(
         &self,
-        entries: &[(i64, i64)],
-    ) -> HashMap<i64, Option<i64>> {
+        entries: &[(String, i64)],
+    ) -> HashMap<String, Option<i64>> {
         if entries.is_empty() {
             return HashMap::new();
         }
@@ -898,16 +975,19 @@ impl LeagueClientReader for LocalLeagueClient {
             SessionOpenResult::Ready(session) => session,
             SessionOpenResult::Status(_) => return HashMap::new(),
         };
+        // The legacy /lol-collections/.../{summonerId}/champion-mastery/{id} path
+        // 404s on current clients; the dedicated lol-champion-mastery plugin is
+        // puuid-based. See fetch_champion_mastery_list for the same migration.
         entries
             .par_iter()
-            .map(|(summoner_id, champion_id)| {
+            .map(|(puuid, champion_id)| {
                 let mastery_level = session
                     .get_json::<LcuChampionMasteryEntry>(
-                        format!("/lol-collections/v1/inventories/{summoner_id}/champion-mastery/{champion_id}").as_str(),
+                        format!("/lol-champion-mastery/v1/{puuid}/champion-mastery/{champion_id}").as_str(),
                     )
                     .ok()
                     .and_then(|entry| entry.champion_level);
-                (*summoner_id, mastery_level)
+                (puuid.clone(), mastery_level)
             })
             .collect()
     }
@@ -1121,6 +1201,18 @@ impl LeagueClientReader for LocalLeagueClient {
             .map_err(read_error_from_request)
     }
 
+    fn chat_me(&self) -> Result<domain::ChatMe, LeagueClientReadError> {
+        self.read_chat_me()
+    }
+
+    fn set_chat_status(
+        &self,
+        status_message: Option<&str>,
+        availability: Option<&str>,
+    ) -> Result<(), LeagueClientReadError> {
+        self.write_chat_status(status_message, availability)
+    }
+
     fn apply_rune_page(
         &self,
         page: &domain::RunePage,
@@ -1294,13 +1386,10 @@ fn build_self_data(session: LcuSession, summoner: LcuSummoner, match_limit: i64)
     let matches_path = current_matches_path(match_limit);
     let matches_result = session.get_json::<LcuMatchHistoryResponse>(matches_path.as_str());
     let honor_result = session.get_json::<LcuHonorProfile>("/lol-honor-v2/v1/profile");
-    let mastery_result = summoner.puuid.as_deref()
-        .filter(|p| !p.is_empty())
-        .map(|puuid| {
-            session.get_json::<Vec<LcuChampionMastery>>(
-                format!("/lol-collections/v1/inventories/{puuid}/champion-mastery").as_str(),
-            )
-        });
+    // Tries the lol-champion-mastery plugin first, falling back through legacy
+    // paths; see fetch_champion_mastery_list. The old lol-collections path 404s
+    // on current clients.
+    let mastery_result = fetch_champion_mastery_list(&session, &summoner);
 
     compose_self_data(
         summoner,
@@ -1371,6 +1460,42 @@ fn compose_self_data(
         recent_matches,
         data_warnings: warnings,
     }
+}
+
+/// Fetches the full champion mastery list for the local player.
+///
+/// The legacy `/lol-collections/v1/inventories/{id}/champion-mastery` path 404s
+/// on current clients (including CN/Tencent). We try the dedicated
+/// `lol-champion-mastery` plugin first and fall back through the older paths,
+/// using the first endpoint that returns data. This is self-healing across
+/// client variants — no per-region branching needed — at the cost of a couple
+/// of wasted requests on clients that only support an older path.
+fn fetch_champion_mastery_list(
+    session: &LcuSession,
+    summoner: &LcuSummoner,
+) -> Option<Result<Vec<LcuChampionMastery>, LcuRequestError>> {
+    let puuid = summoner.puuid.as_deref().filter(|p| !p.is_empty());
+    let summoner_id = summoner.summoner_id.filter(|&id| id > 0);
+
+    // Ordered newest-plugin-first; legacy lol-collections paths last.
+    let mut candidates: Vec<String> =
+        vec!["/lol-champion-mastery/v1/local-player/champion-mastery".to_string()];
+    if let Some(puuid) = puuid {
+        candidates.push(format!("/lol-champion-mastery/v1/{puuid}/champion-mastery"));
+        candidates.push(format!("/lol-collections/v1/inventories/{puuid}/champion-mastery"));
+    }
+    if let Some(sid) = summoner_id {
+        candidates.push(format!("/lol-collections/v1/inventories/{sid}/champion-mastery"));
+    }
+
+    let mut last_error = None;
+    for path in &candidates {
+        match session.get_json::<Vec<LcuChampionMastery>>(path.as_str()) {
+            Ok(entries) => return Some(Ok(entries)),
+            Err(error) => last_error = Some(error),
+        }
+    }
+    last_error.map(Err)
 }
 
 fn map_mastery_entries(

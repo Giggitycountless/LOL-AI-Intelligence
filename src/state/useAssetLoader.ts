@@ -1,6 +1,6 @@
 import { useCallback, useRef, type Dispatch, type SetStateAction } from "react";
 
-import { fetchLeagueChampionDetails, fetchLeagueChampionIcon, fetchLeagueGameAsset, fetchLeagueProfileIcon } from "../backend/leagueClient";
+import { fetchLeagueChampionDetails, fetchLeagueChampionIcon, fetchLeagueGameAsset, fetchLeagueProfileIcon, fetchRankTierIcon } from "../backend/leagueClient";
 import type { LeagueChampionDetails, LeagueGameAssetKind, LeagueImageAsset } from "../backend/types";
 import type { LeagueChampionDetailsView, LeagueGameAssetView, LeagueChampionAbilityView, LeagueImageUrls } from "./types";
 import { imageAssetUrl } from "./utils";
@@ -8,11 +8,13 @@ import { imageAssetUrl } from "./utils";
 const ASSET_LOAD_CONCURRENCY = 4;
 const ASSET_LOAD_DELAY_MS = 16;
 
+const inFlightRankIcons = new Map<string, Promise<void>>();
+
 export function useAssetLoader(
   setLeagueImages: Dispatch<SetStateAction<LeagueImageUrls>>,
   setChampionDetailsById: Dispatch<SetStateAction<Record<number, LeagueChampionDetailsView>>>,
 ) {
-  const imageUrlsRef = useRef<LeagueImageUrls>({ profileIcons: {}, championIcons: {}, gameAssets: {} });
+  const imageUrlsRef = useRef<LeagueImageUrls>({ profileIcons: {}, championIcons: {}, gameAssets: {}, rankTierIcons: {} });
   const championDetailsRef = useRef<Record<number, LeagueChampionDetailsView>>({});
   const pendingImageKeysRef = useRef(new Set<string>());
   const assetQueueRef = useRef<Array<() => void>>([]);
@@ -202,11 +204,34 @@ export function useAssetLoader(
     }
   }, [setChampionDetailsById]);
 
+  const loadLeagueRankTierIconAction = useCallback((tier: string): Promise<void> => {
+    const key = tier.toLowerCase();
+    if (imageUrlsRef.current.rankTierIcons[key]) return Promise.resolve();
+    const existing = inFlightRankIcons.get(key);
+    if (existing) return existing;
+    const promise = fetchRankTierIcon(key)
+      .then((asset) => {
+        const url = imageAssetUrl(asset);
+        imageUrlsRef.current = {
+          ...imageUrlsRef.current,
+          rankTierIcons: { ...imageUrlsRef.current.rankTierIcons, [key]: url },
+        };
+        scheduleLeagueImagesUpdate();
+      })
+      .catch(() => { /* ignore — icon simply won't show */ })
+      .finally(() => { inFlightRankIcons.delete(key); });
+    inFlightRankIcons.set(key, promise);
+    return promise;
+  }, [scheduleLeagueImagesUpdate]);
+
   const cleanup = useCallback(() => {
     for (const url of Object.values(imageUrlsRef.current.profileIcons)) {
       URL.revokeObjectURL(url);
     }
     for (const url of Object.values(imageUrlsRef.current.championIcons)) {
+      URL.revokeObjectURL(url);
+    }
+    for (const url of Object.values(imageUrlsRef.current.rankTierIcons)) {
       URL.revokeObjectURL(url);
     }
     for (const asset of Object.values(imageUrlsRef.current.gameAssets)) {
@@ -236,6 +261,7 @@ export function useAssetLoader(
     loadLeagueChampionIcon: loadLeagueChampionIconAction,
     loadLeagueGameAsset: loadLeagueGameAssetAction,
     loadLeagueProfileIcon: loadLeagueProfileIconAction,
+    loadLeagueRankTierIcon: loadLeagueRankTierIconAction,
     cleanup,
     imageUrlsRef,
   };
