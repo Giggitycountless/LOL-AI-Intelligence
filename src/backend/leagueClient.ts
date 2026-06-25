@@ -189,8 +189,14 @@ export function fetchAiConfig(): Promise<import("./types").AiConfig> {
   return callBackend<import("./types").AiConfig>("get_ai_config");
 }
 
-export function fetchAiAnalysis(scope: string): Promise<import("./types").AiAnalysisCache | null> {
-  return callBackend<import("./types").AiAnalysisCache | null>("get_ai_analysis", { scope });
+export function fetchAiAnalysis(
+  scope: string,
+  tone: string,
+): Promise<import("./types").AiAnalysisCache | null> {
+  // Cache is keyed per (scope, tone) — must match the backend's `{scope}:{tone}` key.
+  return callBackend<import("./types").AiAnalysisCache | null>("get_ai_analysis", {
+    scope: `${scope}:${tone}`,
+  });
 }
 
 export function saveAiAnalysis(scope: string, resultText: string, gameCount: number): Promise<void> {

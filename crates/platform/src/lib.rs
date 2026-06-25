@@ -1764,7 +1764,8 @@ pub fn run_ai_analysis<R: tauri::Runtime>(
     let store = state.store.clone();
     let app_handle = app.clone();
 
-    let cache_key = scope.clone();
+    // Cache per (scope, tone) so switching tone re-analyzes instead of reusing a stale result.
+    let cache_key = format!("{scope}:{tone}");
     std::thread::spawn(move || {
         let result = stream_ai_chunks(
             &app_handle,
