@@ -1829,10 +1829,29 @@ fn stream_ai_chunks<R: tauri::Runtime>(
 
     for line_result in reader.lines() {
         let line = line_result.map_err(|e| e.to_string())?;
-        let Some(data) = line.strip_prefix("data: ") else { continue };
-        if data.trim() == "[DONE]" { break; }
-        if let Ok(value) = serde_json::from_str::<serde_json::Value>(data) {
-            if let Some(content) = value["choices"][0]["delta"]["content"].as_str() {
+        // Accept both "data: {...}" and "data:{...}" (some gateways omit the space).
+        let Some(data) = line.strip_prefix("data:") else { continue };
+        let data = data.trim();
+        if data.is_empty() { continue; }
+        if data == "[DONE]" { break; }
+        let Ok(value) = serde_json::from_str::<serde_json::Value>(data) else { continue };
+
+        // Surface mid-stream API errors instead of silently ending with empty output.
+        if let Some(err) = value.get("error") {
+            let msg = err.get("message").and_then(|m| m.as_str()).unwrap_or("未知错误");
+            return Err(format!("API 流式错误: {msg}"));
+        }
+
+        let delta = &value["choices"][0]["delta"];
+        // Reasoning models (DeepSeek-R1 等) 把思考过程放在 reasoning_content，最终答案放在 content。
+        // 思考内容只实时展示、不写入缓存，避免污染保存下来的分析结论。
+        if let Some(reasoning) = delta["reasoning_content"].as_str() {
+            if !reasoning.is_empty() {
+                let _ = app.emit(chunk_event.as_str(), reasoning.to_string());
+            }
+        }
+        if let Some(content) = delta["content"].as_str() {
+            if !content.is_empty() {
                 full_text.push_str(content);
                 let _ = app.emit(chunk_event.as_str(), content.to_string());
             }
