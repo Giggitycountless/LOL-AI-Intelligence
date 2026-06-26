@@ -22,6 +22,7 @@ use domain::{
     ParticipantPublicProfile, ParticipantRecentStats, PlayerNoteSummary, PlayerNoteView,
     PostMatchComparison, PostMatchDetail, PostMatchParticipant, PostMatchTeam, PostMatchTeamTotals,
     RankedChampionDataSnapshot, RankedChampionDataStatus, RankedChampionLane, RankedChampionSort,
+    PlaystyleMatchStat, PlaystyleProfile, PlaystyleTag, PlaystyleTagKind, PlaystyleTone,
     RankedChampionStat, RankedChampionStatsResponse, RankedQueueSummary, RecentChampionSummary, RecentMatchSummary,
     RecentPerformanceSummary, RunePage, ServiceStatus, SettingsValues, StartupPage,
 };
@@ -96,6 +97,15 @@ pub trait AppStore {
 pub trait LeagueClientReader {
     fn status(&self) -> Result<LeagueClientStatus, LeagueClientReadError>;
     fn self_data(&self, match_limit: i64) -> Result<LeagueSelfData, LeagueClientReadError>;
+    /// Per-game stats for the local player over a recent-match window, used to
+    /// derive playstyle tags. Defaults to empty so non-LCU readers compile.
+    fn self_playstyle_matches(
+        &self,
+        limit: i64,
+    ) -> Result<Vec<PlaystyleMatchStat>, LeagueClientReadError> {
+        let _ = limit;
+        Ok(Vec::new())
+    }
     fn profile_icon(&self, profile_icon_id: i64)
     -> Result<LeagueImageAsset, LeagueClientReadError>;
     fn champion_icon(&self, champion_id: i64) -> Result<LeagueImageAsset, LeagueClientReadError>;
@@ -878,6 +888,453 @@ pub fn get_league_self_snapshot(
         data_warnings: data.data_warnings,
         refreshed_at: unix_timestamp_seconds(),
     })
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct PlaystyleProfileInput {
+    pub limit: Option<i64>,
+}
+
+pub fn get_playstyle_profile(
+    reader: &impl LeagueClientReader,
+    input: PlaystyleProfileInput,
+) -> Result<PlaystyleProfile, ApplicationError> {
+    let limit = normalize_match_limit(input.limit.unwrap_or(PLAYSTYLE_MATCH_LIMIT))?;
+    let matches = reader
+        .self_playstyle_matches(limit)
+        .map_err(ApplicationError::from)?;
+    Ok(compute_playstyle_profile(&matches))
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum RoleCategory {
+    Top,
+    Jungle,
+    Mid,
+    Bot,
+    Support,
+    Unknown,
+}
+
+fn role_category(role: Option<&str>) -> RoleCategory {
+    match role.unwrap_or("").to_ascii_uppercase().as_str() {
+        "TOP" => RoleCategory::Top,
+        "JUNGLE" => RoleCategory::Jungle,
+        "MIDDLE" | "MID" => RoleCategory::Mid,
+        "BOTTOM" | "BOT" => RoleCategory::Bot,
+        "UTILITY" | "SUPPORT" => RoleCategory::Support,
+        _ => RoleCategory::Unknown,
+    }
+}
+
+fn playstyle_tag(
+    kind: PlaystyleTagKind,
+    tone: PlaystyleTone,
+    value: Option<String>,
+) -> PlaystyleTag {
+    PlaystyleTag { kind, tone, value }
+}
+
+/// Derive playstyle tags from a recent-match window. Pure and deterministic so
+/// it can be unit-tested with fixtures. Thresholds are role-aware where the role
+/// fundamentally shifts the baseline (CS, vision, damage). `matches` must be
+/// ordered newest-first so the current win/loss streak reads correctly.
+pub fn compute_playstyle_profile(matches: &[PlaystyleMatchStat]) -> PlaystyleProfile {
+    let games = matches.len();
+    if games < PLAYSTYLE_MIN_GAMES {
+        return PlaystyleProfile {
+            games_analyzed: games as i64,
+            tags: Vec::new(),
+        };
+    }
+
+    let n = games as f64;
+    let mut minutes_total = 0.0;
+    let mut cs_total = 0.0;
+    let mut dmg_total = 0.0;
+    let mut dmg_taken_total = 0.0;
+    let mut obj_total = 0.0;
+    let mut turret_total = 0.0;
+    let mut vision_total = 0.0;
+    let mut kills_total = 0.0;
+    let mut deaths_total = 0.0;
+    let mut assists_total = 0.0;
+    let mut kp_sum = 0.0;
+    let mut multikill_total = 0.0;
+    let mut spree_total = 0.0;
+    let mut wards_total = 0.0;
+    let mut control_wards_total = 0.0;
+    let mut time_dead_total = 0.0;
+    let mut first_blood_count = 0.0;
+    let mut first_tower_count = 0.0;
+
+    let mut champ_counts: HashMap<i64, usize> = HashMap::new();
+    let mut role_counts: HashMap<RoleCategory, usize> = HashMap::new();
+
+    for game in matches {
+        let minutes = (game.duration_seconds.max(1) as f64) / 60.0;
+        minutes_total += minutes;
+        cs_total += game.cs as f64;
+        dmg_total += game.damage_to_champions as f64;
+        dmg_taken_total += game.damage_taken as f64;
+        obj_total += game.damage_to_objectives as f64;
+        turret_total += game.damage_to_turrets as f64;
+        vision_total += game.vision_score as f64;
+        kills_total += game.kills as f64;
+        deaths_total += game.deaths as f64;
+        assists_total += game.assists as f64;
+        multikill_total += game.multikills as f64;
+        spree_total += game.largest_killing_spree as f64;
+        wards_total += game.wards_placed as f64;
+        control_wards_total += game.control_wards_bought as f64;
+        time_dead_total += game.time_spent_dead_seconds as f64;
+        if game.first_blood {
+            first_blood_count += 1.0;
+        }
+        if game.first_tower {
+            first_tower_count += 1.0;
+        }
+        kp_sum += ((game.kills + game.assists) as f64) / (game.team_kills.max(1) as f64);
+        if let Some(champion_id) = game.champion_id {
+            *champ_counts.entry(champion_id).or_default() += 1;
+        }
+        *role_counts
+            .entry(role_category(game.role.as_deref()))
+            .or_default() += 1;
+    }
+
+    let cspm = cs_total / minutes_total.max(1.0);
+    let dpm = dmg_total / minutes_total.max(1.0);
+    let dtpm = dmg_taken_total / minutes_total.max(1.0);
+    let vision_avg = vision_total / n;
+    let kills_avg = kills_total / n;
+    let deaths_avg = deaths_total / n;
+    let assists_avg = assists_total / n;
+    let kp_avg = kp_sum / n;
+    let obj_avg = obj_total / n;
+    let turret_avg = turret_total / n;
+    let multikill_avg = multikill_total / n;
+    let spree_avg = spree_total / n;
+    let wards_avg = wards_total / n;
+    let control_wards_avg = control_wards_total / n;
+    let time_dead_avg = time_dead_total / n;
+    let first_blood_rate = first_blood_count / n;
+    let first_tower_rate = first_tower_count / n;
+
+    let (main_role, main_role_games) = role_counts
+        .iter()
+        .filter(|(role, _)| **role != RoleCategory::Unknown)
+        .max_by_key(|(_, count)| **count)
+        .map(|(role, count)| (*role, *count))
+        .unwrap_or((RoleCategory::Unknown, 0));
+    let distinct_roles = role_counts
+        .iter()
+        .filter(|(role, count)| **role != RoleCategory::Unknown && (**count as f64 / n) >= 0.15)
+        .count();
+
+    let distinct_champs = champ_counts.len();
+    let top_champ_games = champ_counts.values().copied().max().unwrap_or(0);
+
+    // Current streak, walking from the newest game until the result flips.
+    let streak_win = matches.first().map(|game| game.win).unwrap_or(false);
+    let mut streak = 0;
+    for game in matches {
+        if game.win == streak_win {
+            streak += 1;
+        } else {
+            break;
+        }
+    }
+
+    let is_carry_role = matches!(
+        main_role,
+        RoleCategory::Mid | RoleCategory::Bot | RoleCategory::Top
+    );
+    let mut tags: Vec<PlaystyleTag> = Vec::new();
+
+    // — Combat / damage —
+    let damage_dealer = main_role != RoleCategory::Support
+        && match main_role {
+            RoleCategory::Mid | RoleCategory::Bot => dpm >= 650.0,
+            RoleCategory::Top => dpm >= 520.0,
+            RoleCategory::Jungle => dpm >= 480.0,
+            _ => dpm >= 600.0,
+        };
+    if damage_dealer {
+        tags.push(playstyle_tag(
+            PlaystyleTagKind::DamageDealer,
+            PlaystyleTone::Good,
+            None,
+        ));
+    }
+    if damage_dealer && deaths_avg >= 6.0 {
+        tags.push(playstyle_tag(
+            PlaystyleTagKind::GlassCannon,
+            PlaystyleTone::Warn,
+            None,
+        ));
+    }
+    if !damage_dealer
+        && dtpm >= 950.0
+        && matches!(
+            main_role,
+            RoleCategory::Top | RoleCategory::Jungle | RoleCategory::Support
+        )
+    {
+        tags.push(playstyle_tag(
+            PlaystyleTagKind::Frontline,
+            PlaystyleTone::Info,
+            None,
+        ));
+    }
+    let duelist = spree_avg >= 5.0 || multikill_avg >= 1.2;
+    if duelist {
+        tags.push(playstyle_tag(
+            PlaystyleTagKind::Duelist,
+            PlaystyleTone::Good,
+            None,
+        ));
+    }
+    // Bad Duelist: dies in skirmishes and never gets a spree going. Mutually
+    // exclusive with Duelist via the spree gap (>=5 vs <=2).
+    if !duelist && deaths_avg >= 6.0 && spree_avg <= 2.0 && kills_avg < deaths_avg {
+        tags.push(playstyle_tag(
+            PlaystyleTagKind::BadDuelist,
+            PlaystyleTone::Warn,
+            None,
+        ));
+    }
+    if kp_avg >= 0.62 && kills_avg >= 7.0 {
+        tags.push(playstyle_tag(
+            PlaystyleTagKind::PublicEnemy,
+            PlaystyleTone::Info,
+            None,
+        ));
+    }
+    // Hungry for Blood: snowballs early kills into a heavy kill count.
+    if kills_avg >= 8.0 && first_blood_rate >= 0.3 {
+        tags.push(playstyle_tag(
+            PlaystyleTagKind::HungryForBlood,
+            PlaystyleTone::Good,
+            None,
+        ));
+    }
+    // Ready to Rumble: consistently part of the first blood / first tower.
+    if first_blood_rate >= 0.35 || first_tower_rate >= 0.45 {
+        tags.push(playstyle_tag(
+            PlaystyleTagKind::ReadyToRumble,
+            PlaystyleTone::Good,
+            None,
+        ));
+    }
+
+    // — Survivability —
+    if deaths_avg <= 3.5 {
+        tags.push(playstyle_tag(
+            PlaystyleTagKind::SafePlayer,
+            PlaystyleTone::Good,
+            None,
+        ));
+    } else if deaths_avg >= 7.5 {
+        tags.push(playstyle_tag(
+            PlaystyleTagKind::RiskTaker,
+            PlaystyleTone::Warn,
+            None,
+        ));
+    }
+    // Already Dead: spends an eternity on the grey screen (~5 min/game).
+    if time_dead_avg >= 300.0 {
+        tags.push(playstyle_tag(
+            PlaystyleTagKind::AlreadyDead,
+            PlaystyleTone::Warn,
+            None,
+        ));
+    }
+    // Escapist: thrown into fights (high participation) yet rarely dies.
+    if deaths_avg <= 3.0 && kp_avg >= 0.5 {
+        tags.push(playstyle_tag(
+            PlaystyleTagKind::Escapist,
+            PlaystyleTone::Good,
+            None,
+        ));
+    }
+
+    // — Economy / lane —
+    let farmer = match main_role {
+        RoleCategory::Jungle => cspm >= 6.0,
+        RoleCategory::Support => false,
+        _ => cspm >= 7.2,
+    };
+    if farmer {
+        tags.push(playstyle_tag(
+            PlaystyleTagKind::Farmer,
+            PlaystyleTone::Good,
+            None,
+        ));
+    }
+    // Farmingphobia: neglects CS in a role where farming matters. Mutually
+    // exclusive with Farmer via the CS gap.
+    let farmingphobia = match main_role {
+        RoleCategory::Support | RoleCategory::Unknown => false,
+        RoleCategory::Jungle => cspm <= 3.5,
+        _ => cspm <= 4.5,
+    };
+    if farmingphobia {
+        tags.push(playstyle_tag(
+            PlaystyleTagKind::Farmingphobia,
+            PlaystyleTone::Warn,
+            None,
+        ));
+    }
+    let solid_laner = is_carry_role && cspm >= 7.0 && deaths_avg <= 4.0;
+    if solid_laner {
+        tags.push(playstyle_tag(
+            PlaystyleTagKind::SolidLaner,
+            PlaystyleTone::Good,
+            None,
+        ));
+    }
+    // Lacking Laner: weak, death-prone laning. Gap vs Solid Laner on both axes.
+    if is_carry_role && cspm <= 5.0 && deaths_avg >= 5.0 {
+        tags.push(playstyle_tag(
+            PlaystyleTagKind::LackingLaner,
+            PlaystyleTone::Warn,
+            None,
+        ));
+    }
+
+    // — Vision / tempo —
+    let vision_focused = match main_role {
+        RoleCategory::Support => vision_avg >= 40.0,
+        RoleCategory::Jungle => vision_avg >= 28.0,
+        _ => vision_avg >= 24.0,
+    };
+    if vision_focused {
+        tags.push(playstyle_tag(
+            PlaystyleTagKind::VisionFocused,
+            PlaystyleTone::Good,
+            None,
+        ));
+    }
+    // Visionless: poor overall vision contribution. Role-aware gap vs Vision Focused.
+    let visionless = match main_role {
+        RoleCategory::Support => vision_avg <= 25.0,
+        RoleCategory::Jungle => vision_avg <= 15.0,
+        _ => vision_avg <= 12.0,
+    };
+    if visionless {
+        tags.push(playstyle_tag(
+            PlaystyleTagKind::Visionless,
+            PlaystyleTone::Warn,
+            None,
+        ));
+    }
+    // Early Blindness: barely sets up wards (distinct from low vision score).
+    // Supports place far more wards, so they're judged by Visionless instead.
+    if !visionless && main_role != RoleCategory::Support && wards_avg <= 7.0 {
+        tags.push(playstyle_tag(
+            PlaystyleTagKind::EarlyBlindness,
+            PlaystyleTone::Warn,
+            None,
+        ));
+    }
+    // No Early Pinks: skimps on control wards.
+    if control_wards_avg <= 1.0 {
+        tags.push(playstyle_tag(
+            PlaystyleTagKind::NoEarlyPinks,
+            PlaystyleTone::Warn,
+            None,
+        ));
+    }
+    if kp_avg >= 0.55 && assists_avg >= kills_avg {
+        tags.push(playstyle_tag(
+            PlaystyleTagKind::Playmaker,
+            PlaystyleTone::Good,
+            None,
+        ));
+    }
+    if kp_avg >= 0.55
+        && cspm <= 6.0
+        && matches!(main_role, RoleCategory::Mid | RoleCategory::Jungle)
+    {
+        tags.push(playstyle_tag(
+            PlaystyleTagKind::Roamer,
+            PlaystyleTone::Info,
+            None,
+        ));
+    }
+
+    // — Objectives —
+    if obj_avg >= 11_000.0 {
+        tags.push(playstyle_tag(
+            PlaystyleTagKind::ObjectiveFocused,
+            PlaystyleTone::Info,
+            None,
+        ));
+    }
+    let split_pusher = turret_avg >= 3_500.0 && kp_avg <= 0.5;
+    if split_pusher {
+        tags.push(playstyle_tag(
+            PlaystyleTagKind::SplitPusher,
+            PlaystyleTone::Info,
+            None,
+        ));
+    }
+    // Turret Friend: heavy turret damage while still grouping (not a splitpusher).
+    if !split_pusher && turret_avg >= 3_500.0 {
+        tags.push(playstyle_tag(
+            PlaystyleTagKind::TurretFriend,
+            PlaystyleTone::Info,
+            None,
+        ));
+    }
+
+    // — Champion pool / role —
+    let top_share = top_champ_games as f64 / n;
+    if top_share >= 0.5 && distinct_champs <= 4 {
+        tags.push(playstyle_tag(
+            PlaystyleTagKind::OneTrick,
+            PlaystyleTone::Info,
+            None,
+        ));
+    } else if distinct_champs >= 10 {
+        tags.push(playstyle_tag(
+            PlaystyleTagKind::Generalist,
+            PlaystyleTone::Info,
+            None,
+        ));
+    }
+    if (main_role_games as f64 / n) >= 0.7 {
+        tags.push(playstyle_tag(
+            PlaystyleTagKind::Specialist,
+            PlaystyleTone::Info,
+            None,
+        ));
+    } else if distinct_roles >= 3 {
+        tags.push(playstyle_tag(PlaystyleTagKind::Fill, PlaystyleTone::Info, None));
+    }
+
+    // — Current form —
+    if streak >= 3 {
+        if streak_win {
+            tags.push(playstyle_tag(
+                PlaystyleTagKind::OnFire,
+                PlaystyleTone::Good,
+                Some(streak.to_string()),
+            ));
+        } else {
+            tags.push(playstyle_tag(
+                PlaystyleTagKind::ColdStreak,
+                PlaystyleTone::Warn,
+                Some(streak.to_string()),
+            ));
+        }
+    }
+
+    PlaystyleProfile {
+        games_analyzed: games as i64,
+        tags,
+    }
 }
 
 pub fn get_ranked_champion_stats(input: RankedChampionStatsInput) -> RankedChampionStatsResponse {

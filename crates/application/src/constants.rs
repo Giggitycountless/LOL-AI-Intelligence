@@ -6,6 +6,10 @@ pub(crate) const MAX_ACTIVITY_TITLE_LEN: usize = 120;
 pub(crate) const MAX_ACTIVITY_BODY_LEN: usize = 4_000;
 pub(crate) const DEFAULT_MATCH_LIMIT: i64 = 6;
 pub(crate) const MAX_MATCH_LIMIT: i64 = 100;
+/// Recent-match window analyzed to derive playstyle tags on the Profile page.
+pub(crate) const PLAYSTYLE_MATCH_LIMIT: i64 = 50;
+/// Below this many analyzed games the playstyle profile is too noisy to trust.
+pub(crate) const PLAYSTYLE_MIN_GAMES: usize = 5;
 pub(crate) const DEFAULT_PUBLIC_RECENT_LIMIT: i64 = 6;
 pub(crate) const PERFORMANCE_MATCH_COUNT: usize = 6;
 pub(crate) const HIGH_KDA_THRESHOLD: f64 = 9.0;
