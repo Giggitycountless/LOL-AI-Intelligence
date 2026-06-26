@@ -993,6 +993,102 @@ pub struct ChampionRecordSummary {
     pub games: usize,
 }
 
+/// One recent game's stats for the local player, extracted from match history.
+/// Feeds `compute_playstyle_profile`, which derives the playstyle tags shown on
+/// the Profile page. Games are ordered newest-first so streaks read correctly.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlaystyleMatchStat {
+    pub champion_id: Option<i64>,
+    /// Normalized lane/role: TOP / JUNGLE / MIDDLE / BOTTOM / UTILITY / NONE.
+    pub role: Option<String>,
+    pub win: bool,
+    pub duration_seconds: i64,
+    pub kills: i64,
+    pub deaths: i64,
+    pub assists: i64,
+    /// Total kills by the player's team (for kill-participation).
+    pub team_kills: i64,
+    pub cs: i64,
+    pub gold: i64,
+    pub damage_to_champions: i64,
+    pub damage_taken: i64,
+    pub damage_to_objectives: i64,
+    pub damage_to_turrets: i64,
+    pub vision_score: i64,
+    pub wards_placed: i64,
+    pub control_wards_bought: i64,
+    /// Count of double/triple/quadra/penta kills in the game.
+    pub multikills: i64,
+    pub largest_killing_spree: i64,
+    pub first_blood: bool,
+    pub first_tower: bool,
+    pub time_spent_dead_seconds: i64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PlaystyleTagKind {
+    DamageDealer,
+    GlassCannon,
+    Frontline,
+    Duelist,
+    PublicEnemy,
+    SafePlayer,
+    RiskTaker,
+    Farmer,
+    SolidLaner,
+    VisionFocused,
+    Playmaker,
+    Roamer,
+    ObjectiveFocused,
+    SplitPusher,
+    OneTrick,
+    Generalist,
+    Specialist,
+    Fill,
+    OnFire,
+    ColdStreak,
+    // — Negative / situational counterparts —
+    LackingLaner,
+    BadDuelist,
+    Visionless,
+    Farmingphobia,
+    AlreadyDead,
+    Escapist,
+    HungryForBlood,
+    ReadyToRumble,
+    TurretFriend,
+    NoEarlyPinks,
+    EarlyBlindness,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PlaystyleTone {
+    Good,
+    Warn,
+    Info,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlaystyleTag {
+    pub kind: PlaystyleTagKind,
+    pub tone: PlaystyleTone,
+    /// Optional numeric detail (e.g. streak length) the frontend splices into
+    /// the localized label.
+    pub value: Option<String>,
+}
+
+/// The player's playstyle fingerprint, derived from a recent-match window.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlaystyleProfile {
+    pub games_analyzed: i64,
+    pub tags: Vec<PlaystyleTag>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PostMatchDetail {
