@@ -45,14 +45,14 @@ export function Advisor({ onOpenSettings }: { onOpenSettings: () => void }) {
     snapshot?.settings.aiModel,
   );
 
-  // Load cached result when scope changes
+  // Load cached result when scope or tone changes
   useEffect(() => {
     setCached(null);
     setError(null);
-    void fetchAiAnalysis(scope).then((result) => {
+    void fetchAiAnalysis(scope, tone).then((result) => {
       setCached(result);
     }).catch(() => null);
-  }, [scope]);
+  }, [scope, tone]);
 
   // Get current game count to detect new games since last analysis
   useEffect(() => {
@@ -98,7 +98,7 @@ export function Advisor({ onOpenSettings }: { onOpenSettings: () => void }) {
           setIsAnalyzing(false);
           stopListeners();
           // Reload the cached version from backend to get accurate gameCount
-          void fetchAiAnalysis(scope).then((r) => { if (r) setCached(r); }).catch(() => null);
+          void fetchAiAnalysis(scope, tone).then((r) => { if (r) setCached(r); }).catch(() => null);
         }),
         listen<string>("ai-analysis-error", (event) => {
           setError(event.payload);
