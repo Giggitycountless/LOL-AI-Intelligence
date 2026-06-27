@@ -482,7 +482,7 @@ function RankedCard({
       <div className="mt-3 flex flex-col items-center gap-2">
         {iconUrl ? (
           <div className="h-36 w-36 shrink-0 overflow-hidden">
-            <img alt={tierLabel ?? ""} className="h-full w-full scale-[5.0] object-contain drop-shadow-sm" src={iconUrl} />
+            <img alt={tierLabel ?? ""} className="h-full w-full scale-[4.5] object-contain drop-shadow-sm" src={iconUrl} />
           </div>
         ) : (
           <div className="h-36 w-36 shrink-0 rounded-full bg-zinc-100 dark:bg-zinc-800" />
