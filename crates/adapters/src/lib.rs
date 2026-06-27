@@ -213,6 +213,22 @@ impl LocalLeagueClient {
         build_self_data(session, summoner, match_limit)
     }
 
+    fn read_self_playstyle_matches(&self, limit: i64) -> Vec<domain::PlaystyleMatchStat> {
+        let session = match self.open_session() {
+            SessionOpenResult::Ready(session) => session,
+            SessionOpenResult::Status(_) => return Vec::new(),
+        };
+        let summoner = match session.get_json::<LcuSummoner>("/lol-summoner/v1/current-summoner") {
+            Ok(value) => value,
+            Err(_) => return Vec::new(),
+        };
+        let matches_path = current_matches_path(limit);
+        match session.get_json::<LcuMatchHistoryResponse>(matches_path.as_str()) {
+            Ok(history) => map_playstyle_matches(history, &summoner),
+            Err(_) => Vec::new(),
+        }
+    }
+
     fn read_profile_icon(
         &self,
         profile_icon_id: i64,
@@ -894,6 +910,13 @@ impl LeagueClientReader for LocalLeagueClient {
 
     fn self_data(&self, match_limit: i64) -> Result<LeagueSelfData, LeagueClientReadError> {
         Ok(self.read_self_data(match_limit))
+    }
+
+    fn self_playstyle_matches(
+        &self,
+        limit: i64,
+    ) -> Result<Vec<domain::PlaystyleMatchStat>, LeagueClientReadError> {
+        Ok(self.read_self_playstyle_matches(limit))
     }
 
     fn profile_icon(
@@ -2006,6 +2029,103 @@ fn map_summoner_batch_entry(summoner: LcuSummonerBatch) -> Option<SummonerBatchE
 
 
 
+
+fn map_playstyle_matches(
+    history: LcuMatchHistoryResponse,
+    summoner: &LcuSummoner,
+) -> Vec<domain::PlaystyleMatchStat> {
+    history
+        .games
+        .map(|games| {
+            games
+                .games
+                .into_iter()
+                .filter_map(|game| playstyle_match_from_game(&game, summoner))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn playstyle_match_from_game(
+    game: &LcuGame,
+    summoner: &LcuSummoner,
+) -> Option<domain::PlaystyleMatchStat> {
+    let participant_id = game
+        .participant_identities
+        .iter()
+        .find_map(|identity| match &identity.player {
+            Some(player) if summoner.matches_player(player) => identity.participant_id,
+            _ => None,
+        })?;
+    let participant = game
+        .participants
+        .iter()
+        .find(|participant| participant.participant_id == Some(participant_id))?;
+    let stats = participant.stats.as_ref()?;
+
+    let team_kills: i64 = game
+        .participants
+        .iter()
+        .filter(|other| other.team_id == participant.team_id)
+        .filter_map(|other| other.stats.as_ref())
+        .map(|other| other.kills.unwrap_or(0))
+        .sum();
+
+    let multikills = stats.double_kills.unwrap_or(0)
+        + stats.triple_kills.unwrap_or(0)
+        + stats.quadra_kills.unwrap_or(0)
+        + stats.penta_kills.unwrap_or(0);
+
+    let role = participant
+        .timeline
+        .as_ref()
+        .and_then(|timeline| normalize_playstyle_role(timeline.role.as_deref(), timeline.lane.as_deref()));
+
+    Some(domain::PlaystyleMatchStat {
+        champion_id: participant.champion_id,
+        role,
+        win: matches!(stats.win, Some(true)),
+        duration_seconds: game.game_duration.unwrap_or(0),
+        kills: stats.kills.unwrap_or(0),
+        deaths: stats.deaths.unwrap_or(0),
+        assists: stats.assists.unwrap_or(0),
+        team_kills,
+        cs: stats.total_minions_killed.unwrap_or(0) + stats.neutral_minions_killed.unwrap_or(0),
+        gold: stats.gold_earned.unwrap_or(0),
+        damage_to_champions: stats.total_damage_dealt_to_champions.unwrap_or(0),
+        damage_taken: stats.total_damage_taken.unwrap_or(0),
+        damage_to_objectives: stats.damage_dealt_to_objectives.unwrap_or(0),
+        damage_to_turrets: stats.damage_dealt_to_turrets.unwrap_or(0),
+        vision_score: stats.vision_score.unwrap_or(0),
+        wards_placed: stats.wards_placed.unwrap_or(0),
+        control_wards_bought: stats.vision_wards_bought_in_game.unwrap_or(0),
+        multikills,
+        largest_killing_spree: stats.largest_killing_spree.unwrap_or(0),
+        first_blood: stats.first_blood_kill.unwrap_or(false)
+            || stats.first_blood_assist.unwrap_or(false),
+        first_tower: stats.first_tower_kill.unwrap_or(false)
+            || stats.first_tower_assist.unwrap_or(false),
+        time_spent_dead_seconds: stats.total_time_spent_dead.unwrap_or(0),
+    })
+}
+
+/// Collapse LCU role/lane into the canonical token `compute_playstyle_profile`
+/// expects. Support is keyed off the role field (`DUO_SUPPORT`); every other
+/// position comes from the lane.
+fn normalize_playstyle_role(role: Option<&str>, lane: Option<&str>) -> Option<String> {
+    if role.is_some_and(|role| role.eq_ignore_ascii_case("DUO_SUPPORT")) {
+        return Some("UTILITY".to_string());
+    }
+    let lane = non_empty(lane)?;
+    let normalized = match lane.to_ascii_uppercase().as_str() {
+        "TOP" => "TOP",
+        "JUNGLE" => "JUNGLE",
+        "MIDDLE" | "MID" => "MIDDLE",
+        "BOTTOM" | "BOT" => "BOTTOM",
+        _ => return None,
+    };
+    Some(normalized.to_string())
+}
 
 fn map_recent_matches(
     history: LcuMatchHistoryResponse,

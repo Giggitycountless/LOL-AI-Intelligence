@@ -203,6 +203,56 @@ export type RankedQueueSummary = {
   isRanked: boolean;
 };
 
+export type PlaystyleTagKind =
+  | "damageDealer"
+  | "glassCannon"
+  | "frontline"
+  | "duelist"
+  | "publicEnemy"
+  | "safePlayer"
+  | "riskTaker"
+  | "farmer"
+  | "solidLaner"
+  | "visionFocused"
+  | "playmaker"
+  | "roamer"
+  | "objectiveFocused"
+  | "splitPusher"
+  | "oneTrick"
+  | "generalist"
+  | "specialist"
+  | "fill"
+  | "onFire"
+  | "coldStreak"
+  | "lackingLaner"
+  | "badDuelist"
+  | "visionless"
+  | "farmingphobia"
+  | "alreadyDead"
+  | "escapist"
+  | "hungryForBlood"
+  | "readyToRumble"
+  | "turretFriend"
+  | "noEarlyPinks"
+  | "earlyBlindness";
+
+export type PlaystyleTone = "good" | "warn" | "info";
+
+export type PlaystyleTag = {
+  kind: PlaystyleTagKind;
+  tone: PlaystyleTone;
+  value: string | null;
+};
+
+export type PlaystyleProfile = {
+  gamesAnalyzed: number;
+  tags: PlaystyleTag[];
+};
+
+export type PlaystyleProfileInput = {
+  limit?: number;
+};
+
 export type RankedChampionStat = {
   championId: number;
   championName: string;

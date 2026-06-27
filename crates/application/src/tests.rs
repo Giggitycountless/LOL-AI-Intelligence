@@ -2266,3 +2266,139 @@ fn diagnose_recent_stats_reports_no_result_when_batch_is_missing_entry() {
     assert!(diagnosis.should_log_to_stderr());
     assert!(diagnosis.log_phrase().contains("NO_RESULT"));
 }
+
+fn playstyle_match(
+    champion_id: i64,
+    role: &str,
+    win: bool,
+) -> domain::PlaystyleMatchStat {
+    domain::PlaystyleMatchStat {
+        champion_id: Some(champion_id),
+        role: Some(role.to_string()),
+        win,
+        duration_seconds: 1_800, // 30 min
+        kills: 5,
+        deaths: 3,
+        assists: 7,
+        team_kills: 30,
+        cs: 180,
+        gold: 12_000,
+        damage_to_champions: 18_000,
+        damage_taken: 20_000,
+        damage_to_objectives: 5_000,
+        damage_to_turrets: 1_000,
+        vision_score: 20,
+        wards_placed: 12,
+        control_wards_bought: 3,
+        multikills: 0,
+        largest_killing_spree: 2,
+        first_blood: false,
+        first_tower: false,
+        time_spent_dead_seconds: 120,
+    }
+}
+
+fn has_tag(profile: &domain::PlaystyleProfile, kind: domain::PlaystyleTagKind) -> bool {
+    profile.tags.iter().any(|tag| tag.kind == kind)
+}
+
+#[test]
+fn playstyle_profile_is_empty_below_minimum_games() {
+    let matches: Vec<_> = (0..3).map(|_| playstyle_match(1, "MIDDLE", true)).collect();
+    let profile = compute_playstyle_profile(&matches);
+    assert_eq!(profile.games_analyzed, 3);
+    assert!(profile.tags.is_empty());
+}
+
+#[test]
+fn playstyle_profile_tags_a_farming_carry_mid() {
+    // High CS, high damage, low deaths, one champion, on a win streak.
+    let matches: Vec<_> = (0..20)
+        .map(|_| {
+            let mut game = playstyle_match(1, "MIDDLE", true);
+            game.cs = 260; // ~8.7 cs/min
+            game.damage_to_champions = 24_000; // ~800 dpm
+            game.deaths = 2;
+            game.largest_killing_spree = 6;
+            game
+        })
+        .collect();
+    let profile = compute_playstyle_profile(&matches);
+
+    assert_eq!(profile.games_analyzed, 20);
+    assert!(has_tag(&profile, domain::PlaystyleTagKind::DamageDealer));
+    assert!(has_tag(&profile, domain::PlaystyleTagKind::Farmer));
+    assert!(has_tag(&profile, domain::PlaystyleTagKind::SolidLaner));
+    assert!(has_tag(&profile, domain::PlaystyleTagKind::SafePlayer));
+    assert!(has_tag(&profile, domain::PlaystyleTagKind::Duelist));
+    assert!(has_tag(&profile, domain::PlaystyleTagKind::OneTrick));
+    assert!(has_tag(&profile, domain::PlaystyleTagKind::Specialist));
+    assert!(has_tag(&profile, domain::PlaystyleTagKind::OnFire));
+    // A carry mid is not a frontline tank.
+    assert!(!has_tag(&profile, domain::PlaystyleTagKind::Frontline));
+}
+
+#[test]
+fn playstyle_profile_tags_a_vision_support() {
+    // Support: no CS, high vision, high assists, loss streak.
+    let matches: Vec<_> = (0..20)
+        .map(|_| {
+            let mut game = playstyle_match(2, "UTILITY", false);
+            game.cs = 30;
+            game.vision_score = 55;
+            game.kills = 1;
+            game.assists = 18;
+            game.deaths = 5;
+            game.damage_to_champions = 8_000;
+            game.largest_killing_spree = 1;
+            game
+        })
+        .collect();
+    let profile = compute_playstyle_profile(&matches);
+
+    assert!(has_tag(&profile, domain::PlaystyleTagKind::VisionFocused));
+    assert!(has_tag(&profile, domain::PlaystyleTagKind::Playmaker));
+    assert!(has_tag(&profile, domain::PlaystyleTagKind::ColdStreak));
+    // Supports never qualify as farmers or damage dealers.
+    assert!(!has_tag(&profile, domain::PlaystyleTagKind::Farmer));
+    assert!(!has_tag(&profile, domain::PlaystyleTagKind::DamageDealer));
+}
+
+#[test]
+fn playstyle_profile_tags_a_struggling_mid_and_stays_consistent() {
+    // Low CS, high deaths, no vision, no pinks, long time dead.
+    let matches: Vec<_> = (0..20)
+        .map(|_| {
+            let mut game = playstyle_match(3, "MIDDLE", false);
+            game.cs = 120; // 4.0 cs/min
+            game.kills = 2;
+            game.deaths = 8;
+            game.assists = 4;
+            game.damage_to_champions = 9_000; // ~300 dpm, not a damage dealer
+            game.vision_score = 8;
+            game.control_wards_bought = 0;
+            game.time_spent_dead_seconds = 320;
+            game.largest_killing_spree = 1;
+            game
+        })
+        .collect();
+    let profile = compute_playstyle_profile(&matches);
+
+    assert!(has_tag(&profile, domain::PlaystyleTagKind::LackingLaner));
+    assert!(has_tag(&profile, domain::PlaystyleTagKind::Farmingphobia));
+    assert!(has_tag(&profile, domain::PlaystyleTagKind::BadDuelist));
+    assert!(has_tag(&profile, domain::PlaystyleTagKind::RiskTaker));
+    assert!(has_tag(&profile, domain::PlaystyleTagKind::AlreadyDead));
+    assert!(has_tag(&profile, domain::PlaystyleTagKind::Visionless));
+    assert!(has_tag(&profile, domain::PlaystyleTagKind::NoEarlyPinks));
+
+    // "要合理": a tag and its positive counterpart must never both appear.
+    assert!(!has_tag(&profile, domain::PlaystyleTagKind::Farmer));
+    assert!(!has_tag(&profile, domain::PlaystyleTagKind::SolidLaner));
+    assert!(!has_tag(&profile, domain::PlaystyleTagKind::Duelist));
+    assert!(!has_tag(&profile, domain::PlaystyleTagKind::VisionFocused));
+    assert!(!has_tag(&profile, domain::PlaystyleTagKind::SafePlayer));
+    assert!(!has_tag(&profile, domain::PlaystyleTagKind::Escapist));
+    // Visionless already covers the low-vision case, so don't also stack Early Blindness.
+    assert!(!has_tag(&profile, domain::PlaystyleTagKind::EarlyBlindness));
+}

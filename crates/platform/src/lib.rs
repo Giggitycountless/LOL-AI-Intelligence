@@ -665,6 +665,12 @@ pub struct LeagueSelfSnapshotCommand {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct PlaystyleProfileCommand {
+    pub limit: Option<i64>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ChampSelectSnapshotCommand {
     pub recent_limit: Option<i64>,
 }
@@ -2582,6 +2588,20 @@ pub fn get_league_self_snapshot(
     )
     .map_err(CommandError::from)
     .map_err(|e| e.with_source("get_league_self_snapshot"))
+}
+
+pub fn get_playstyle_profile(
+    state: &AppState,
+    command: PlaystyleProfileCommand,
+) -> Result<domain::PlaystyleProfile, CommandError> {
+    application::get_playstyle_profile(
+        &state.league_client,
+        application::PlaystyleProfileInput {
+            limit: command.limit,
+        },
+    )
+    .map_err(CommandError::from)
+    .map_err(|e| e.with_source("get_playstyle_profile"))
 }
 
 pub fn get_champ_select_snapshot(

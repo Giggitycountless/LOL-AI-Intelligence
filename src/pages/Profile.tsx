@@ -2,9 +2,10 @@ import { useEffect, useMemo, useState } from "react";
 
 import { useAppCore, useLeagueAssets } from "../state/AppStateProvider";
 import { Metric, RefreshIcon } from "../components/common";
-import { fetchChatMe, fetchLeagueSelfSnapshot, setChatStatus } from "../backend/leagueClient";
+import { PlaystyleTags } from "../components/PlaystyleTags";
+import { fetchChatMe, fetchLeagueSelfSnapshot, fetchPlaystyleProfile, setChatStatus } from "../backend/leagueClient";
 import { formatTimestamp, formatLeaguePhase, type T } from "../utils/formatting";
-import type { ChampionMasteryEntry, ChampionRecordSummary, ChatAvailability, KdaTag, LeagueSelfSnapshot, RankedQueue, RankedQueueSummary, RecentChampionSummary } from "../backend/types";
+import type { ChampionMasteryEntry, ChampionRecordSummary, ChatAvailability, KdaTag, LeagueSelfSnapshot, PlaystyleProfile, RankedQueue, RankedQueueSummary, RecentChampionSummary } from "../backend/types";
 
 // The mastery list is lifetime-deep, but per-champion W/L can only come from
 // match history. Pull a wider window than the shared 6-game snapshot so recently
@@ -179,6 +180,8 @@ export function Profile() {
               <RankedCard effectiveLanguage={effectiveLanguage} label={t("profile.soloDuo")} queue="soloDuo" rankTierIcons={leagueImages.rankTierIcons} summary={soloDuo} t={t} />
               <RankedCard effectiveLanguage={effectiveLanguage} label={t("profile.flex")} queue="flex" rankTierIcons={leagueImages.rankTierIcons} summary={flex} t={t} />
             </section>
+
+            <PlaystyleCard enabled={hasSummoner} refreshedAt={league.refreshedAt} t={t} />
 
             <section className="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-5 shadow-sm">
               <div className="flex items-center justify-between gap-3">
@@ -405,6 +408,45 @@ function ChampionCard({ champion, imageUrl, t }: { champion: RecentChampionSumma
         <p className="mt-1 text-xs font-medium text-zinc-500 dark:text-zinc-400">{champion.games} {t("participant.recentMatches")}</p>
       </div>
     </div>
+  );
+}
+
+function PlaystyleCard({ enabled, refreshedAt, t }: { enabled: boolean; refreshedAt: string; t: T }) {
+  const [profile, setProfile] = useState<PlaystyleProfile | null>(null);
+
+  useEffect(() => {
+    if (!enabled) {
+      setProfile(null);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const result = await fetchPlaystyleProfile();
+        if (!cancelled) setProfile(result);
+      } catch {
+        if (!cancelled) setProfile(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [enabled, refreshedAt]);
+
+  const subtitle = profile && profile.gamesAnalyzed > 0
+    ? t("profile.playstyle.subtitle").replace("{n}", String(profile.gamesAnalyzed))
+    : null;
+
+  return (
+    <section className="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-5 shadow-sm">
+      <div>
+        <h2 className="text-base font-semibold text-zinc-950 dark:text-zinc-50">{t("profile.playstyle.title")}</h2>
+        {subtitle && <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">{subtitle}</p>}
+      </div>
+      <div className="mt-4">
+        <PlaystyleTags profile={profile} t={t} />
+      </div>
+    </section>
   );
 }
 
