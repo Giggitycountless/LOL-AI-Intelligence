@@ -25,6 +25,8 @@ import type {
   ParticipantPublicProfile,
   ParticipantPublicProfileInput,
   PlayerNoteView,
+  PlaystyleProfile,
+  PlaystyleProfileInput,
   PostMatchDetail,
   RankedChampionRefreshInput,
   RankedChampionStatsInput,
@@ -46,6 +48,12 @@ export function fetchLeagueChampionCatalog(): Promise<LeagueChampionSummary[]> {
 
 export function fetchLeagueSelfSnapshot(input: LeagueSelfSnapshotInput = { matchLimit: 6 }): Promise<LeagueSelfSnapshot> {
   return callBackend<LeagueSelfSnapshot>("get_league_self_snapshot", {
+    input,
+  });
+}
+
+export function fetchPlaystyleProfile(input: PlaystyleProfileInput = {}): Promise<PlaystyleProfile> {
+  return callBackend<PlaystyleProfile>("get_playstyle_profile", {
     input,
   });
 }
