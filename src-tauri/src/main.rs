@@ -118,6 +118,14 @@ fn get_league_self_snapshot(
 }
 
 #[tauri::command(async)]
+fn get_playstyle_profile(
+    state: State<'_, platform::AppState>,
+    input: platform::PlaystyleProfileCommand,
+) -> Result<domain::PlaystyleProfile, platform::CommandError> {
+    platform::get_playstyle_profile(state.inner(), input)
+}
+
+#[tauri::command(async)]
 fn get_champ_select_snapshot(
     state: State<'_, platform::AppState>,
     input: platform::ChampSelectSnapshotCommand,
@@ -730,6 +738,7 @@ fn main() {
             destroy_self_history_overlay_window,
             get_league_champion_catalog,
             get_league_self_snapshot,
+            get_playstyle_profile,
             get_champ_select_snapshot,
             get_ranked_champion_stats,
             refresh_ranked_champion_stats,
