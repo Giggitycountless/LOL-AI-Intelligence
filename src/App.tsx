@@ -9,6 +9,7 @@ import { MatchRecap } from "./pages/MatchRecap";
 import { ParticipantProfileWindow } from "./pages/ParticipantProfileWindow";
 import { PostGameNotesWindowRoot } from "./pages/PostGameNotesWindow";
 import { Profile } from "./pages/Profile";
+import { PlayerSearch } from "./pages/PlayerSearch";
 import { Advisor } from "./pages/Advisor";
 import { ChatPresets } from "./pages/ChatPresets";
 import { RankedChampions } from "./pages/RankedChampions";
@@ -26,9 +27,9 @@ import { isPostGameNotesHash, openPostGameNotesWindow } from "./windows/postGame
 
 // Activity is still a navigable page (reached from Settings) even though it is no longer
 // a StartupPage option, so it is listed explicitly here.
-type Page = StartupPage | "profile" | "matches" | "ranked" | "advisor" | "rune" | "chat" | "activity";
+type Page = StartupPage | "profile" | "searchPlayer" | "matches" | "ranked" | "advisor" | "rune" | "chat" | "activity";
 
-const PERSISTENT_PAGES = new Set<Page>(["matches", "ranked", "activity"]);
+const PERSISTENT_PAGES = new Set<Page>(["searchPlayer", "matches", "ranked", "activity"]);
 
 type NavItem = { id: Page; labelKey: TranslationKey; icon: IconName; group?: TranslationKey; live?: boolean };
 
@@ -37,6 +38,7 @@ type NavItem = { id: Page; labelKey: TranslationKey; icon: IconName; group?: Tra
 const pages: NavItem[] = [
   { id: "dashboard", labelKey: "nav.dashboard", icon: "dashboard" },
   { id: "profile", labelKey: "nav.profile", icon: "profile", group: "nav.groupYou" },
+  { id: "searchPlayer", labelKey: "nav.searchPlayer", icon: "searchPlayer", group: "nav.groupYou" },
   { id: "matches", labelKey: "nav.matches", icon: "matches", group: "nav.groupYou" },
   { id: "ranked", labelKey: "nav.ranked", icon: "ranked", group: "nav.groupYou" },
   { id: "advisor", labelKey: "nav.advisor", icon: "advisor", group: "nav.groupCoach" },
@@ -49,6 +51,7 @@ const pages: NavItem[] = [
 const PAGE_LABELS: Record<Page, TranslationKey> = {
   dashboard: "nav.dashboard",
   profile: "nav.profile",
+  searchPlayer: "nav.searchPlayer",
   matches: "nav.matches",
   advisor: "nav.advisor",
   ranked: "nav.ranked",
@@ -295,6 +298,7 @@ export function AppShell() {
         )}
         {activePage === "dashboard" && <Dashboard onOpenSettings={() => navigateTo("settings", { isUserInitiated: true })} />}
         {activePage === "profile" && <Profile />}
+        {mountedPages.has("searchPlayer") && <div className={activePage === "searchPlayer" ? "" : "hidden"}><PlayerSearch /></div>}
         {mountedPages.has("matches") && <div className={activePage === "matches" ? "" : "hidden"}><Matches /></div>}
         {activePage === "advisor" && <Advisor onOpenSettings={() => navigateTo("settings", { isUserInitiated: true })} />}
         {mountedPages.has("ranked") && <div className={activePage === "ranked" ? "" : "hidden"}><RankedChampions /></div>}
@@ -311,13 +315,15 @@ export function AppShell() {
   );
 }
 
-type IconName = "dashboard" | "profile" | "matches" | "advisor" | "ranked" | "rune" | "chat" | "activity" | "settings";
+type IconName = "dashboard" | "profile" | "searchPlayer" | "matches" | "advisor" | "ranked" | "rune" | "chat" | "activity" | "settings";
 
 function Icon({ name }: { name: IconName }) {
   const paths: Record<IconName, string> = {
     dashboard: "M4 13h6V4H4v9Zm0 7h6v-5H4v5Zm10 0h6v-9h-6v9Zm0-11h6V4h-6v5Z",
     profile:
       "M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm-8 8a8 8 0 0 1 16 0v1H4v-1Z",
+    searchPlayer:
+      "M10 2a8 8 0 1 0 4.9 14.32l5.39 5.38 1.41-1.41-5.38-5.39A8 8 0 0 0 10 2Zm0 2a6 6 0 1 1 0 12 6 6 0 0 1 0-12Z",
     matches:
       "M5 4h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Zm2 4v3h4V8H7Zm0 5v3h4v-3H7Zm6-5v2h4V8h-4Zm0 5v2h4v-2h-4Z",
     advisor:
