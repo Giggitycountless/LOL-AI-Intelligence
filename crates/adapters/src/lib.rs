@@ -961,6 +961,39 @@ impl LeagueClientReader for LocalLeagueClient {
         self.read_participant_recent_stats_batch(player_puuids, limit)
     }
 
+    fn search_player(
+        &self,
+        query: &str,
+        match_limit: i64,
+    ) -> Result<Option<domain::PlayerSearchData>, LeagueClientReadError> {
+        let session = match self.open_session() {
+            SessionOpenResult::Ready(session) => session,
+            SessionOpenResult::Status(status) => return Err(read_error_from_status(status)),
+        };
+
+        let Some(summoner) = resolve_summoner_by_name(&session, query) else {
+            return Ok(None);
+        };
+        let Some(puuid) = summoner
+            .puuid
+            .clone()
+            .filter(|p| !p.is_empty() && is_safe_lcu_path_id(p))
+        else {
+            return Ok(None);
+        };
+
+        let self_data = build_player_data(&session, &summoner, match_limit);
+        let playstyle_matches = session
+            .get_json::<LcuMatchHistoryResponse>(puuid_matches_path(&puuid, match_limit).as_str())
+            .map(|history| map_playstyle_matches_for_puuid(history, &puuid))
+            .unwrap_or_default();
+
+        Ok(Some(domain::PlayerSearchData {
+            self_data,
+            playstyle_matches,
+        }))
+    }
+
     fn participant_ranked_stats_batch(
         &self,
         puuids: &[String],
@@ -1414,14 +1447,113 @@ fn build_self_data(session: LcuSession, summoner: LcuSummoner, match_limit: i64)
     // on current clients.
     let mastery_result = fetch_champion_mastery_list(&session, &summoner);
 
+    let honor_level = honor_result.ok().and_then(|h| h.honor_level);
     compose_self_data(
         summoner,
         champion_names_result,
         ranked_result,
         matches_result,
-        honor_result,
+        honor_level,
         mastery_result,
     )
+}
+
+/// Builds a profile snapshot for an arbitrary player identified by their puuid,
+/// mirroring [`build_self_data`] but swapping the "current summoner" endpoints
+/// for their by-puuid equivalents:
+/// - ranked: `/lol-ranked/v2/ranked-stats/{puuid}` (vs `current-ranked-stats`)
+/// - matches: `puuid_matches_path` (vs `current_matches_path`)
+/// - honor: skipped — `/lol-honor-v2/v1/profile` only exposes the local user.
+///
+/// Champion-name and mastery lookups are already puuid/summoner driven, so they
+/// are reused unchanged.
+/// Resolves a free-text query (summoner name or Riot ID `gameName#tagLine`) to a
+/// full [`LcuSummoner`] via the by-name endpoints. When given a Riot ID we also
+/// retry with just the game name, since the `?name=` endpoint matches on the
+/// game name rather than the full tagged id. Returns the first hit that carries
+/// a puuid.
+fn resolve_summoner_by_name(session: &LcuSession, query: &str) -> Option<LcuSummoner> {
+    let trimmed = query.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    let mut names = vec![trimmed.to_string()];
+    if let Some((game_name, _tag)) = trimmed.split_once('#') {
+        let game_name = game_name.trim();
+        if !game_name.is_empty() && game_name != trimmed {
+            names.push(game_name.to_string());
+        }
+    }
+
+    for name in names {
+        let encoded = percent_encode_path_value(&name);
+        for path in [
+            format!("/lol-summoner/v1/summoners?name={encoded}"),
+            format!("/lol-summoner/v2/summoners?name={encoded}"),
+        ] {
+            if let Ok(summoner) = session.get_json::<LcuSummoner>(path.as_str())
+                && summoner.puuid.as_deref().is_some_and(|p| !p.is_empty())
+            {
+                return Some(summoner);
+            }
+        }
+    }
+
+    None
+}
+
+fn build_player_data(session: &LcuSession, summoner: &LcuSummoner, match_limit: i64) -> LeagueSelfData {
+    let champion_names_result = session
+        .get_json::<Vec<LcuChampionSummary>>("/lol-game-data/assets/v1/champion-summary.json");
+    let puuid = summoner.puuid.clone().unwrap_or_default();
+    let ranked_result = fetch_player_ranked_queues(session, &puuid);
+    let matches_path = puuid_matches_path(&puuid, match_limit);
+    let matches_result = session.get_json::<LcuMatchHistoryResponse>(matches_path.as_str());
+    // Use the puuid-scoped mastery endpoint directly. fetch_champion_mastery_list
+    // tries `/lol-champion-mastery/v1/local-player/...` first, which would return
+    // the *local* user's mastery, not the searched player's.
+    let mastery_result = (!puuid.is_empty()).then(|| {
+        session.get_json::<Vec<LcuChampionMastery>>(
+            format!("/lol-champion-mastery/v1/{puuid}/champion-mastery").as_str(),
+        )
+    });
+
+    compose_player_data(
+        summoner.clone(),
+        &puuid,
+        champion_names_result,
+        ranked_result,
+        matches_result,
+        mastery_result,
+    )
+}
+
+/// Best-effort ranked-queue lookup for an arbitrary player. The by-puuid ranked
+/// endpoint path varies across client variants, so we try the v2 plugin first
+/// and fall back to v1, using the first response that carries queues.
+fn fetch_player_ranked_queues(
+    session: &LcuSession,
+    puuid: &str,
+) -> Result<Vec<LcuRankedQueue>, LcuRequestError> {
+    let mut saw_empty = false;
+    let mut last_error = None;
+    for path in [
+        format!("/lol-ranked/v2/ranked-stats/{puuid}"),
+        format!("/lol-ranked/v1/ranked-stats/{puuid}"),
+    ] {
+        match session.get_json::<LcuPlayerRankedStats>(path.as_str()) {
+            Ok(stats) if !stats.queues.is_empty() => return Ok(stats.queues),
+            Ok(_) => saw_empty = true,
+            Err(error) => last_error = Some(error),
+        }
+    }
+
+    if saw_empty {
+        Ok(Vec::new())
+    } else {
+        Err(last_error.unwrap_or(LcuRequestError::Unavailable))
+    }
 }
 
 fn compose_self_data(
@@ -1429,7 +1561,7 @@ fn compose_self_data(
     champion_names_result: Result<Vec<LcuChampionSummary>, LcuRequestError>,
     ranked_result: Result<LcuRankedStats, LcuRequestError>,
     matches_result: Result<LcuMatchHistoryResponse, LcuRequestError>,
-    honor_result: Result<LcuHonorProfile, LcuRequestError>,
+    honor_level: Option<i64>,
     mastery_result: Option<Result<Vec<LcuChampionMastery>, LcuRequestError>>,
 ) -> LeagueSelfData {
     let mut warnings = Vec::new();
@@ -1464,7 +1596,6 @@ fn compose_self_data(
         }
     };
 
-    let honor_level = honor_result.ok().and_then(|h| h.honor_level);
     let top_mastery = mastery_result
         .and_then(|r| r.ok())
         .map(|entries| map_mastery_entries(entries, &champion_names))
@@ -1479,6 +1610,73 @@ fn compose_self_data(
     LeagueSelfData {
         status,
         summoner: Some(summoner.profile(honor_level, top_mastery)),
+        ranked_queues,
+        recent_matches,
+        data_warnings: warnings,
+    }
+}
+
+/// Like [`compose_self_data`] but for a searched player: ranked stats arrive as
+/// a pre-extracted queue list (from the by-puuid endpoint) and there is no honor
+/// profile available, so `honor_level` is always `None`.
+fn compose_player_data(
+    summoner: LcuSummoner,
+    player_puuid: &str,
+    champion_names_result: Result<Vec<LcuChampionSummary>, LcuRequestError>,
+    ranked_result: Result<Vec<LcuRankedQueue>, LcuRequestError>,
+    matches_result: Result<LcuMatchHistoryResponse, LcuRequestError>,
+    mastery_result: Option<Result<Vec<LcuChampionMastery>, LcuRequestError>>,
+) -> LeagueSelfData {
+    let mut warnings = Vec::new();
+    let champion_names = match champion_names_result {
+        Ok(champions) => champion_name_map(champions),
+        Err(error) => {
+            warnings.push(data_warning(
+                LeagueDataSection::Champions,
+                section_error_message("Champion names", error),
+            ));
+            HashMap::new()
+        }
+    };
+    let ranked_queues = match ranked_result {
+        Ok(queues) => map_lcu_queues(queues),
+        Err(error) => {
+            warnings.push(data_warning(
+                LeagueDataSection::Ranked,
+                section_error_message("Ranked data", error),
+            ));
+            Vec::new()
+        }
+    };
+    let recent_matches = match matches_result {
+        // Match the participant strictly by puuid: a searched player's match
+        // history identities are not reliably keyed by summoner/account id, so
+        // the summoner-identity mapper used for the local user often matches
+        // nothing here. This mirrors read_participant_recent_stats_with_session.
+        Ok(history) => map_recent_matches_for_puuid(history, player_puuid, &champion_names),
+        Err(error) => {
+            warnings.push(data_warning(
+                LeagueDataSection::Matches,
+                section_error_message("Recent matches", error),
+            ));
+            Vec::new()
+        }
+    };
+
+    let top_mastery = mastery_result
+        .and_then(|r| r.ok())
+        .map(|entries| map_mastery_entries(entries, &champion_names))
+        .unwrap_or_default();
+
+    let status = if warnings.is_empty() {
+        connected_status()
+    } else {
+        partial_data_status()
+    };
+
+    LeagueSelfData {
+        status,
+        summoner: Some(summoner.profile(None, top_mastery)),
         ranked_queues,
         recent_matches,
         data_warnings: warnings,
@@ -2046,6 +2244,24 @@ fn map_playstyle_matches(
         .unwrap_or_default()
 }
 
+/// Playstyle window for an arbitrary player, matching participants strictly by
+/// puuid (the searched player's history is not reliably keyed by summoner id).
+fn map_playstyle_matches_for_puuid(
+    history: LcuMatchHistoryResponse,
+    player_puuid: &str,
+) -> Vec<domain::PlaystyleMatchStat> {
+    history
+        .games
+        .map(|games| {
+            games
+                .games
+                .into_iter()
+                .filter_map(|game| playstyle_match_from_game_for_puuid(&game, player_puuid))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 fn playstyle_match_from_game(
     game: &LcuGame,
     summoner: &LcuSummoner,
@@ -2062,7 +2278,35 @@ fn playstyle_match_from_game(
         .iter()
         .find(|participant| participant.participant_id == Some(participant_id))?;
     let stats = participant.stats.as_ref()?;
+    Some(playstyle_stat_from_participant(game, participant, stats))
+}
 
+fn playstyle_match_from_game_for_puuid(
+    game: &LcuGame,
+    player_puuid: &str,
+) -> Option<domain::PlaystyleMatchStat> {
+    let participant_id = game
+        .participant_identities
+        .iter()
+        .find_map(|identity| match &identity.player {
+            Some(player) if strings_match(Some(player_puuid), player.puuid.as_deref()) => {
+                identity.participant_id
+            }
+            _ => None,
+        })?;
+    let participant = game
+        .participants
+        .iter()
+        .find(|participant| participant.participant_id == Some(participant_id))?;
+    let stats = participant.stats.as_ref()?;
+    Some(playstyle_stat_from_participant(game, participant, stats))
+}
+
+fn playstyle_stat_from_participant(
+    game: &LcuGame,
+    participant: &LcuParticipant,
+    stats: &LcuParticipantStats,
+) -> domain::PlaystyleMatchStat {
     let team_kills: i64 = game
         .participants
         .iter()
@@ -2081,7 +2325,7 @@ fn playstyle_match_from_game(
         .as_ref()
         .and_then(|timeline| normalize_playstyle_role(timeline.role.as_deref(), timeline.lane.as_deref()));
 
-    Some(domain::PlaystyleMatchStat {
+    domain::PlaystyleMatchStat {
         champion_id: participant.champion_id,
         role,
         win: matches!(stats.win, Some(true)),
@@ -2106,7 +2350,7 @@ fn playstyle_match_from_game(
         first_tower: stats.first_tower_kill.unwrap_or(false)
             || stats.first_tower_assist.unwrap_or(false),
         time_spent_dead_seconds: stats.total_time_spent_dead.unwrap_or(0),
-    })
+    }
 }
 
 /// Collapse LCU role/lane into the canonical token `compute_playstyle_profile`
@@ -3613,7 +3857,7 @@ mod tests {
             }]),
             Err(LcuRequestError::Unavailable),
             Ok(empty_match_history()),
-            Err(LcuRequestError::Unavailable),
+            None,
             None,
         );
 
@@ -3630,7 +3874,7 @@ mod tests {
             Err(LcuRequestError::Unexpected),
             Ok(LcuRankedStats { queues: Vec::new() }),
             Err(LcuRequestError::Unexpected),
-            Err(LcuRequestError::Unavailable),
+            None,
             None,
         );
 
