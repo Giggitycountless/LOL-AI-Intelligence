@@ -421,6 +421,35 @@ pub struct LeagueSelfData {
     pub data_warnings: Vec<LeagueDataWarning>,
 }
 
+/// Full profile snapshot for an arbitrary searched player (not the local user).
+/// Mirrors [`LeagueSelfSnapshot`] but adds the playstyle fingerprint and a
+/// `found` flag so the frontend can distinguish "no such summoner" from an
+/// empty-but-valid profile. The personalization/chat-status fields are
+/// intentionally absent — those are only meaningful for the local user.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlayerProfileSnapshot {
+    pub found: bool,
+    pub status: LeagueClientStatus,
+    pub summoner: Option<CurrentSummonerProfile>,
+    pub ranked_queues: Vec<RankedQueueSummary>,
+    pub recent_matches: Vec<RecentMatchSummary>,
+    pub recent_performance: RecentPerformanceSummary,
+    pub champion_records: Vec<ChampionRecordSummary>,
+    pub playstyle: PlaystyleProfile,
+    pub data_warnings: Vec<LeagueDataWarning>,
+    pub refreshed_at: String,
+}
+
+/// Internal aggregate returned by `LeagueClientReader::search_player`: the same
+/// shape used for the local snapshot, plus the richer per-game stats needed to
+/// derive playstyle tags for the searched player.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PlayerSearchData {
+    pub self_data: LeagueSelfData,
+    pub playstyle_matches: Vec<PlaystyleMatchStat>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LeagueDataWarning {

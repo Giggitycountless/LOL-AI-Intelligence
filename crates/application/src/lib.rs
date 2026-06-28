@@ -20,6 +20,7 @@ use domain::{
     LocalActivityEntry,
     LocalDataExport, MatchResult, NewActivityEntry, ParticipantMetricLeader,
     ParticipantPublicProfile, ParticipantRecentStats, PlayerNoteSummary, PlayerNoteView,
+    PlayerProfileSnapshot, PlayerSearchData,
     PostMatchComparison, PostMatchDetail, PostMatchParticipant, PostMatchTeam, PostMatchTeamTotals,
     RankedChampionDataSnapshot, RankedChampionDataStatus, RankedChampionLane, RankedChampionSort,
     PlaystyleMatchStat, PlaystyleProfile, PlaystyleTag, PlaystyleTagKind, PlaystyleTone,
@@ -154,6 +155,17 @@ pub trait LeagueClientReader {
         _entries: &[(String, i64)],
     ) -> HashMap<String, Option<i64>> {
         HashMap::new()
+    }
+    /// Resolves a free-text query (summoner name or Riot ID) to a full profile
+    /// snapshot for that player. `Ok(None)` means the client is reachable but no
+    /// such summoner was found. Defaults to `Ok(None)` so non-LCU readers compile.
+    fn search_player(
+        &self,
+        query: &str,
+        match_limit: i64,
+    ) -> Result<Option<PlayerSearchData>, LeagueClientReadError> {
+        let _ = (query, match_limit);
+        Ok(None)
     }
     fn champion_catalog(&self) -> Result<Vec<LeagueChampionSummary>, LeagueClientReadError>;
     fn champion_details(
@@ -904,6 +916,77 @@ pub fn get_playstyle_profile(
         .self_playstyle_matches(limit)
         .map_err(ApplicationError::from)?;
     Ok(compute_playstyle_profile(&matches))
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct PlayerSearchInput {
+    pub query: String,
+    pub match_limit: Option<i64>,
+}
+
+/// Searches for an arbitrary player by summoner name / Riot ID and assembles a
+/// profile snapshot mirroring the local user's. Derives recent performance,
+/// per-champion records and playstyle tags from the same pure helpers used for
+/// the self snapshot, so the frontend can reuse the Profile layout verbatim.
+pub fn search_player_profile(
+    reader: &impl LeagueClientReader,
+    input: PlayerSearchInput,
+) -> Result<PlayerProfileSnapshot, ApplicationError> {
+    let query = input.query.trim().to_string();
+    if query.is_empty() {
+        return Err(ApplicationError::Validation(
+            "Search query must not be empty".to_string(),
+        ));
+    }
+    let match_limit = normalize_match_limit(input.match_limit.unwrap_or(PLAYSTYLE_MATCH_LIMIT))?;
+
+    match reader
+        .search_player(&query, match_limit)
+        .map_err(ApplicationError::from)?
+    {
+        None => Ok(player_not_found_snapshot()),
+        Some(data) => {
+            let PlayerSearchData {
+                self_data,
+                playstyle_matches,
+            } = data;
+            Ok(PlayerProfileSnapshot {
+                found: true,
+                recent_performance: summarize_recent_performance(&self_data.recent_matches),
+                champion_records: summarize_champion_records(&self_data.recent_matches),
+                playstyle: compute_playstyle_profile(&playstyle_matches),
+                status: self_data.status,
+                summoner: self_data.summoner,
+                ranked_queues: self_data.ranked_queues,
+                recent_matches: self_data.recent_matches,
+                data_warnings: self_data.data_warnings,
+                refreshed_at: unix_timestamp_seconds(),
+            })
+        }
+    }
+}
+
+/// A reachable-client-but-no-such-summoner result. `found: false` lets the
+/// frontend show a distinct "player not found" state.
+fn player_not_found_snapshot() -> PlayerProfileSnapshot {
+    PlayerProfileSnapshot {
+        found: false,
+        status: LeagueClientStatus {
+            is_running: true,
+            lockfile_found: true,
+            connection: domain::LeagueClientConnection::Connected,
+            phase: domain::LeagueClientPhase::Connected,
+            message: None,
+        },
+        summoner: None,
+        ranked_queues: Vec::new(),
+        recent_matches: Vec::new(),
+        recent_performance: summarize_recent_performance(&[]),
+        champion_records: summarize_champion_records(&[]),
+        playstyle: compute_playstyle_profile(&[]),
+        data_warnings: Vec::new(),
+        refreshed_at: unix_timestamp_seconds(),
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

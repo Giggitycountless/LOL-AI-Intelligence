@@ -126,6 +126,14 @@ fn get_playstyle_profile(
 }
 
 #[tauri::command(async)]
+fn search_player_profile(
+    state: State<'_, platform::AppState>,
+    input: platform::PlayerSearchCommand,
+) -> Result<domain::PlayerProfileSnapshot, platform::CommandError> {
+    platform::search_player_profile(state.inner(), input)
+}
+
+#[tauri::command(async)]
 fn get_champ_select_snapshot(
     state: State<'_, platform::AppState>,
     input: platform::ChampSelectSnapshotCommand,
@@ -739,6 +747,7 @@ fn main() {
             get_league_champion_catalog,
             get_league_self_snapshot,
             get_playstyle_profile,
+            search_player_profile,
             get_champ_select_snapshot,
             get_ranked_champion_stats,
             refresh_ranked_champion_stats,
