@@ -25,6 +25,8 @@ import type {
   ParticipantPublicProfile,
   ParticipantPublicProfileInput,
   PlayerNoteView,
+  PlayerProfileSnapshot,
+  PlayerSearchInput,
   PlaystyleProfile,
   PlaystyleProfileInput,
   PostMatchDetail,
@@ -54,6 +56,12 @@ export function fetchLeagueSelfSnapshot(input: LeagueSelfSnapshotInput = { match
 
 export function fetchPlaystyleProfile(input: PlaystyleProfileInput = {}): Promise<PlaystyleProfile> {
   return callBackend<PlaystyleProfile>("get_playstyle_profile", {
+    input,
+  });
+}
+
+export function searchPlayerProfile(input: PlayerSearchInput): Promise<PlayerProfileSnapshot> {
+  return callBackend<PlayerProfileSnapshot>("search_player_profile", {
     input,
   });
 }

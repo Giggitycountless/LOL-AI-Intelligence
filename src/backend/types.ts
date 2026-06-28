@@ -539,6 +539,24 @@ export type LeagueSelfSnapshotInput = {
   matchLimit?: number;
 };
 
+export type PlayerProfileSnapshot = {
+  found: boolean;
+  status: LeagueClientStatus;
+  summoner: CurrentSummonerProfile | null;
+  rankedQueues: RankedQueueSummary[];
+  recentMatches: RecentMatchSummary[];
+  recentPerformance: RecentPerformanceSummary;
+  championRecords: ChampionRecordSummary[];
+  playstyle: PlaystyleProfile;
+  dataWarnings: LeagueDataWarning[];
+  refreshedAt: string;
+};
+
+export type PlayerSearchInput = {
+  query: string;
+  matchLimit?: number;
+};
+
 export type LeagueChampionSummary = {
   championId: number;
   championName: string;
