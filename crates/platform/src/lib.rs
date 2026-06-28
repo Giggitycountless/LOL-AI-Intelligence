@@ -263,6 +263,14 @@ impl LeagueClientReader for CachedLeagueClientReader<'_> {
         self.inner.self_data(match_limit)
     }
 
+    fn search_player(
+        &self,
+        query: &str,
+        match_limit: i64,
+    ) -> Result<Option<domain::PlayerSearchData>, LeagueClientReadError> {
+        self.inner.search_player(query, match_limit)
+    }
+
     fn profile_icon(
         &self,
         profile_icon_id: i64,
@@ -667,6 +675,13 @@ pub struct LeagueSelfSnapshotCommand {
 #[serde(rename_all = "camelCase")]
 pub struct PlaystyleProfileCommand {
     pub limit: Option<i64>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlayerSearchCommand {
+    pub query: String,
+    pub match_limit: Option<i64>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -2588,6 +2603,21 @@ pub fn get_league_self_snapshot(
     )
     .map_err(CommandError::from)
     .map_err(|e| e.with_source("get_league_self_snapshot"))
+}
+
+pub fn search_player_profile(
+    state: &AppState,
+    command: PlayerSearchCommand,
+) -> Result<domain::PlayerProfileSnapshot, CommandError> {
+    application::search_player_profile(
+        &state.league_client,
+        application::PlayerSearchInput {
+            query: command.query,
+            match_limit: command.match_limit,
+        },
+    )
+    .map_err(CommandError::from)
+    .map_err(|e| e.with_source("search_player_profile"))
 }
 
 pub fn get_playstyle_profile(

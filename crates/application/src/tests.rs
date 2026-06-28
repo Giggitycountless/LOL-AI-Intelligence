@@ -326,6 +326,63 @@ fn league_self_snapshot_defaults_to_six_matches_and_summarizes_performance() {
 }
 
 #[test]
+fn search_player_profile_returns_found_snapshot_with_derived_summaries() {
+    let reader = FakeLeagueClientReader::new((1..=7).map(high_kda_match).collect());
+
+    let result = search_player_profile(
+        &reader,
+        PlayerSearchInput {
+            query: "  Faker  ".to_string(),
+            match_limit: Some(7),
+        },
+    )
+    .expect("player search profile");
+
+    assert!(result.found);
+    assert_eq!(result.recent_matches.len(), 7);
+    // Performance summary caps at PERFORMANCE_MATCH_COUNT (6), same as the self snapshot.
+    assert_eq!(result.recent_performance.match_count, 6);
+    assert_eq!(result.recent_performance.kda_tag, KdaTag::High);
+    // No playstyle matches supplied by the fake → empty fingerprint, not an error.
+    assert_eq!(result.playstyle.games_analyzed, 0);
+    assert!(result.playstyle.tags.is_empty());
+}
+
+#[test]
+fn search_player_profile_reports_not_found_for_missing_summoner() {
+    let reader = FakeLeagueClientReader::new((1..=3).map(high_kda_match).collect());
+
+    let result = search_player_profile(
+        &reader,
+        PlayerSearchInput {
+            query: "missing".to_string(),
+            match_limit: None,
+        },
+    )
+    .expect("player search profile");
+
+    assert!(!result.found);
+    assert!(result.summoner.is_none());
+    assert!(result.recent_matches.is_empty());
+    assert!(result.ranked_queues.is_empty());
+}
+
+#[test]
+fn search_player_profile_rejects_empty_query() {
+    let reader = FakeLeagueClientReader::new(Vec::new());
+
+    let result = search_player_profile(
+        &reader,
+        PlayerSearchInput {
+            query: "   ".to_string(),
+            match_limit: None,
+        },
+    );
+
+    assert!(matches!(result, Err(ApplicationError::Validation(_))));
+}
+
+#[test]
 fn champ_select_snapshot_batches_recent_stats() {
     let mut champion_selections = HashMap::new();
     champion_selections.insert(1, 103);
@@ -1746,6 +1803,21 @@ impl LeagueClientReader for FakeLeagueClientReader {
                 .collect(),
             data_warnings: self.data.data_warnings.clone(),
         })
+    }
+
+    fn search_player(
+        &self,
+        query: &str,
+        match_limit: i64,
+    ) -> Result<Option<domain::PlayerSearchData>, LeagueClientReadError> {
+        // Sentinel for the "client reachable but no such summoner" path.
+        if query == "missing" {
+            return Ok(None);
+        }
+        Ok(Some(domain::PlayerSearchData {
+            self_data: self.self_data(match_limit)?,
+            playstyle_matches: Vec::new(),
+        }))
     }
 
     fn profile_icon(
