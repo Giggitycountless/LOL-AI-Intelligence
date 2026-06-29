@@ -447,6 +447,11 @@ const MIGRATIONS: &[Migration] = &[
         description: "startup_page_options",
         sql: MIGRATION_0013,
     },
+    Migration {
+        version: 14,
+        description: "auto_honor",
+        sql: MIGRATION_0014,
+    },
 ];
 
 fn run_migrations(connection: &mut Connection) -> StorageResult<()> {
@@ -506,7 +511,8 @@ fn read_settings(connection: &Connection) -> StorageResult<AppSettings> {
             "SELECT startup_page, language, theme, compact_mode, activity_limit,
                 auto_accept_enabled, auto_pick_enabled, auto_pick_champion_id,
                 auto_pick_delay_seconds, auto_ban_enabled, auto_ban_champion_id,
-                auto_ban_delay_seconds, ai_base_url, ai_api_key, ai_model, updated_at
+                auto_ban_delay_seconds, ai_base_url, ai_api_key, ai_model, updated_at,
+                auto_honor_enabled
             FROM app_settings
             WHERE id = 1",
             [],
@@ -532,6 +538,7 @@ fn read_settings(connection: &Connection) -> StorageResult<AppSettings> {
                     row.get::<_, Option<String>>(13)?,
                     row.get::<_, Option<String>>(14)?,
                     row.get::<_, String>(15)?,
+                    row.get::<_, i64>(16)?,
                 ))
             },
         )
@@ -554,6 +561,7 @@ fn read_settings(connection: &Connection) -> StorageResult<AppSettings> {
                 ai_api_key,
                 ai_model,
                 updated_at,
+                auto_honor_enabled,
             )| {
                 let startup_page = StartupPage::parse(startup_page.as_str())
                     .ok_or(StorageError::InvalidStartupPage(startup_page))?;
@@ -575,6 +583,7 @@ fn read_settings(connection: &Connection) -> StorageResult<AppSettings> {
                     auto_ban_enabled: int_to_bool(auto_ban_enabled),
                     auto_ban_champion_id,
                     auto_ban_delay_seconds,
+                    auto_honor_enabled: int_to_bool(auto_honor_enabled),
                     ai_base_url,
                     ai_api_key,
                     ai_model,
@@ -602,6 +611,7 @@ fn write_settings(connection: &Connection, settings: &SettingsValues) -> Storage
             ai_base_url = ?13,
             ai_api_key = ?14,
             ai_model = ?15,
+            auto_honor_enabled = ?16,
             updated_at = CURRENT_TIMESTAMP
         WHERE id = 1",
         (
@@ -620,6 +630,7 @@ fn write_settings(connection: &Connection, settings: &SettingsValues) -> Storage
             settings.ai_base_url.as_deref(),
             settings.ai_api_key.as_deref(),
             settings.ai_model.as_deref(),
+            bool_to_int(settings.auto_honor_enabled),
         ),
     )?;
 
@@ -1369,6 +1380,7 @@ mod tests {
                 auto_ban_enabled: true,
                 auto_ban_champion_id: Some(122),
                 auto_ban_delay_seconds: 0.5,
+                auto_honor_enabled: false,
                 ai_base_url: None,
                 ai_api_key: None,
                 ai_model: None,
@@ -1473,6 +1485,7 @@ mod tests {
                     auto_ban_enabled: false,
                     auto_ban_champion_id: None,
                     auto_ban_delay_seconds: 0.0,
+                    auto_honor_enabled: false,
                     ai_base_url: None,
                     ai_api_key: None,
                     ai_model: None,
