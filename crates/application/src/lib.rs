@@ -40,6 +40,10 @@ fn log_auto_accept_attempt(attempt: usize, message: &str) {
     eprintln!("[auto-accept] attempt {attempt}: {message}");
 }
 
+fn log_auto_honor_event(message: &str) {
+    eprintln!("[auto-honor] {message}");
+}
+
 use ranked_seeds::{RANKED_CHAMPION_SEEDS, RankedChampionSeed};
 
 pub trait AppStore {
@@ -175,6 +179,26 @@ pub trait LeagueClientReader {
     fn gameflow_phase(&self) -> Result<String, LeagueClientReadError>;
     fn live_overlay(&self) -> Result<LiveOverlaySnapshot, LeagueClientReadError>;
     fn accept_ready_check(&self) -> Result<(), LeagueClientReadError>;
+    /// Reads the post-game honor ballot. `Ok(None)` means the client is
+    /// reachable but no ballot is currently open. Defaults to `Ok(None)` so
+    /// non-LCU readers compile.
+    fn honor_ballot(&self) -> Result<Option<HonorBallot>, LeagueClientReadError> {
+        Ok(None)
+    }
+    /// Casts one honor vote for `puuid` under the given category
+    /// (e.g. `HEART`, `COOL`, `SHOTCALLER`).
+    fn honor_player(
+        &self,
+        honor_category: &str,
+        puuid: &str,
+    ) -> Result<(), LeagueClientReadError> {
+        let _ = (honor_category, puuid);
+        Ok(())
+    }
+    /// Finalizes the honor ballot so the end-of-game sequence advances.
+    fn submit_honor_ballot(&self) -> Result<(), LeagueClientReadError> {
+        Ok(())
+    }
     fn chat_me(&self) -> Result<domain::ChatMe, LeagueClientReadError>;
     fn set_chat_status(
         &self,
@@ -277,6 +301,16 @@ pub struct SummonerBatchEntry {
     pub summoner_level: Option<i64>,
 }
 
+/// A post-game honor ballot: the players the local player may honor plus how
+/// many votes are available. Bot players are already filtered out by the adapter.
+#[derive(Debug, Clone, Default)]
+pub struct HonorBallot {
+    pub game_id: i64,
+    pub votes: i64,
+    pub eligible_ally_puuids: Vec<String>,
+    pub eligible_opponent_puuids: Vec<String>,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct SettingsInput {
     pub startup_page: String,
@@ -291,6 +325,7 @@ pub struct SettingsInput {
     pub auto_ban_enabled: bool,
     pub auto_ban_champion_id: Option<i64>,
     pub auto_ban_delay_seconds: f64,
+    pub auto_honor_enabled: bool,
     pub ai_base_url: Option<String>,
     pub ai_api_key: Option<String>,
     pub ai_model: Option<String>,
@@ -597,6 +632,7 @@ pub fn settings_defaults() -> SettingsValues {
         auto_ban_enabled: false,
         auto_ban_champion_id: None,
         auto_ban_delay_seconds: 0.0,
+        auto_honor_enabled: false,
         ai_base_url: None,
         ai_api_key: None,
         ai_model: None,
@@ -2211,6 +2247,7 @@ fn validate_settings(input: SettingsInput) -> Result<SettingsValues, Application
         auto_ban_enabled: input.auto_ban_enabled,
         auto_ban_champion_id: input.auto_ban_champion_id,
         auto_ban_delay_seconds: normalize_delay_seconds(input.auto_ban_delay_seconds),
+        auto_honor_enabled: input.auto_honor_enabled,
         ai_base_url,
         ai_api_key,
         ai_model,
@@ -3484,6 +3521,127 @@ pub fn run_ready_check_automation(
     );
     log_auto_accept_event("failed because phase stayed ReadyCheck after retries");
     Err(ApplicationError::Integration(message))
+}
+
+/// Honor category cast by auto-honor. `HEART` (友善) is the least
+/// controversial of the three categories.
+pub const AUTO_HONOR_CATEGORY: &str = "HEART";
+
+/// How long to keep polling for the honor ballot to open after the end-of-game
+/// phase begins. The ballot is not always present the instant the phase changes.
+const HONOR_BALLOT_POLL_DELAYS_MS: [u64; 3] = [1000, 1500, 2000];
+
+/// Chooses which players to honor from the ballot. Allies are preferred; the
+/// starting ally is rotated by `game_id` so repeated games don't always honor
+/// the same cell. If votes remain after all allies, opponents are used.
+fn select_honor_candidates(ballot: &HonorBallot) -> Vec<String> {
+    let votes = ballot.votes.max(0) as usize;
+    if votes == 0 {
+        return Vec::new();
+    }
+
+    let mut ordered: Vec<String> = Vec::new();
+    let allies = &ballot.eligible_ally_puuids;
+    if !allies.is_empty() {
+        let start = (ballot.game_id.unsigned_abs() as usize) % allies.len();
+        for offset in 0..allies.len() {
+            ordered.push(allies[(start + offset) % allies.len()].clone());
+        }
+    }
+    ordered.extend(ballot.eligible_opponent_puuids.iter().cloned());
+
+    ordered.truncate(votes);
+    ordered
+}
+
+/// Auto-honors eligible players once the end-of-game ballot is available.
+///
+/// `last_honored_game_id` is the game the caller most recently honored; if it
+/// matches the current ballot the automation is a no-op, which keeps repeated
+/// phase events (PreEndOfGame then EndOfGame) from double-voting. Returns
+/// `Some(game_id)` when it actually cast votes so the caller can record it.
+pub fn run_honor_automation(
+    store: &impl AppStore,
+    reader: &impl LeagueClientReader,
+    last_honored_game_id: Option<i64>,
+) -> Result<Option<i64>, ApplicationError> {
+    let settings = store.get_settings().map_err(ApplicationError::Storage)?;
+
+    if !settings.auto_honor_enabled {
+        log_auto_honor_event("skipped because setting is disabled");
+        return Ok(None);
+    }
+
+    let mut ballot = None;
+    for (attempt, delay_ms) in std::iter::once(0)
+        .chain(HONOR_BALLOT_POLL_DELAYS_MS.iter().copied())
+        .enumerate()
+    {
+        if delay_ms > 0 {
+            thread::sleep(Duration::from_millis(delay_ms));
+        }
+
+        match reader.honor_ballot()? {
+            Some(current) if current.votes > 0 => {
+                ballot = Some(current);
+                break;
+            }
+            Some(_) => {
+                log_auto_honor_event("ballot present but no votes available");
+                return Ok(None);
+            }
+            None => {
+                log_auto_honor_event(&format!("ballot not ready yet (attempt {})", attempt + 1));
+            }
+        }
+    }
+
+    let Some(ballot) = ballot else {
+        log_auto_honor_event("gave up waiting for the honor ballot");
+        return Ok(None);
+    };
+
+    if ballot.game_id != 0 && Some(ballot.game_id) == last_honored_game_id {
+        log_auto_honor_event("skipped because this game was already honored");
+        return Ok(None);
+    }
+
+    let candidates = select_honor_candidates(&ballot);
+    if candidates.is_empty() {
+        log_auto_honor_event("skipped because no eligible players were found");
+        return Ok(None);
+    }
+
+    let mut honored = 0usize;
+    for puuid in &candidates {
+        match reader.honor_player(AUTO_HONOR_CATEGORY, puuid) {
+            Ok(()) => honored += 1,
+            Err(error) => {
+                log_auto_honor_event("honor request failed");
+                record_system_activity(
+                    store,
+                    "Auto-honor failed",
+                    format!("Auto-honor could not reach the League Client: {error}").as_str(),
+                );
+                return Err(error.into());
+            }
+        }
+    }
+
+    // Finalizing the ballot lets the honor screen dismiss itself. A failure
+    // here is non-fatal: the votes were already cast.
+    if let Err(error) = reader.submit_honor_ballot() {
+        log_auto_honor_event(&format!("ballot submit failed (non-fatal): {error}"));
+    }
+
+    log_auto_honor_event(&format!("honored {honored} player(s)"));
+    record_system_activity(
+        store,
+        "Auto-honor sent",
+        format!("Honored {honored} player(s) after the game.").as_str(),
+    );
+
+    Ok(Some(ballot.game_id))
 }
 
 pub fn run_champ_select_automation(
