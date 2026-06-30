@@ -242,6 +242,33 @@ pub(crate) struct LcuPlayer {
     pub(crate) puuid: Option<String>,
 }
 
+// ── Honor ballot types (GET /lol-honor-v2/v1/ballot) ──
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct LcuHonorBallot {
+    pub(crate) game_id: Option<i64>,
+    #[serde(default)]
+    pub(crate) eligible_allies: Vec<LcuHonorEligiblePlayer>,
+    #[serde(default)]
+    pub(crate) eligible_opponents: Vec<LcuHonorEligiblePlayer>,
+    pub(crate) vote_pool: Option<LcuHonorVotePool>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct LcuHonorEligiblePlayer {
+    pub(crate) puuid: Option<String>,
+    #[serde(default)]
+    pub(crate) bot_player: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct LcuHonorVotePool {
+    pub(crate) votes: Option<i64>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct LcuGameAssetMetadata {
     pub(crate) name: Option<String>,
