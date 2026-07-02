@@ -15,3 +15,4 @@ pub(crate) const MIGRATION_0011: &str = include_str!("../migrations/0011_ai_conf
 pub(crate) const MIGRATION_0012: &str = include_str!("../migrations/0012_chat_presets.sql");
 pub(crate) const MIGRATION_0013: &str =
     include_str!("../migrations/0013_startup_page_options.sql");
+pub(crate) const MIGRATION_0014: &str = include_str!("../migrations/0014_auto_honor.sql");

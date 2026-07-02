@@ -36,6 +36,7 @@ export function Settings({ onOpenActivity }: { onOpenActivity: () => void }) {
     autoBanEnabled: false,
     autoBanChampionId: null,
     autoBanDelaySeconds: 0,
+    autoHonorEnabled: false,
     aiBaseUrl: null,
     aiApiKey: null,
     aiModel: null,
@@ -69,6 +70,7 @@ export function Settings({ onOpenActivity }: { onOpenActivity: () => void }) {
         autoBanEnabled: persisted.autoBanEnabled,
         autoBanChampionId: persisted.autoBanChampionId,
         autoBanDelaySeconds: persisted.autoBanDelaySeconds,
+        autoHonorEnabled: persisted.autoHonorEnabled,
         aiBaseUrl: persisted.aiBaseUrl ?? null,
         aiApiKey: persisted.aiApiKey ?? null,
         aiModel: persisted.aiModel ?? null,
@@ -121,6 +123,7 @@ export function Settings({ onOpenActivity }: { onOpenActivity: () => void }) {
         draft.autoBanEnabled !== persisted.autoBanEnabled ||
         draft.autoBanChampionId !== persisted.autoBanChampionId ||
         draft.autoBanDelaySeconds !== persisted.autoBanDelaySeconds ||
+        draft.autoHonorEnabled !== persisted.autoHonorEnabled ||
         (draft.aiBaseUrl || null) !== (persisted.aiBaseUrl || null) ||
         (draft.aiApiKey || null) !== (persisted.aiApiKey || null) ||
         (draft.aiModel || null) !== (persisted.aiModel || null)),
@@ -358,6 +361,12 @@ export function Settings({ onOpenActivity }: { onOpenActivity: () => void }) {
                     autoBanDelaySeconds: seconds,
                   }))
                 }
+                onAutoHonorChange={(enabled) =>
+                  setDraft((current) => ({
+                    ...current,
+                    autoHonorEnabled: enabled,
+                  }))
+                }
                 t={t}
               />
 
@@ -544,6 +553,7 @@ function RoomAutomationPanel({
   onAutoBanEnabledChange,
   onAutoBanChampionChange,
   onAutoBanDelayChange,
+  onAutoHonorChange,
   t,
 }: {
   draft: SaveSettingsInput;
@@ -559,6 +569,7 @@ function RoomAutomationPanel({
   onAutoBanEnabledChange: (enabled: boolean) => void;
   onAutoBanChampionChange: (championId: number | null) => void;
   onAutoBanDelayChange: (seconds: number) => void;
+  onAutoHonorChange: (enabled: boolean) => void;
   t: Translator;
 }) {
   const statusItems = [
@@ -612,6 +623,13 @@ function RoomAutomationPanel({
         onEnabledChange={onAutoAcceptChange}
       />
 
+      <AutomationToggleRow
+        label={t("settings.autoHonor")}
+        description={t("settings.autoHonorDescription")}
+        enabled={draft.autoHonorEnabled}
+        onEnabledChange={onAutoHonorChange}
+      />
+
       <div className="grid gap-3 xl:grid-cols-2">
         <AutomationChampionPicker
           label={t("settings.autoPick")}
@@ -654,10 +672,12 @@ function RoomAutomationPanel({
 
 function AutomationToggleRow({
   label,
+  description,
   enabled,
   onEnabledChange,
 }: {
   label: string;
+  description?: string;
   enabled: boolean;
   onEnabledChange: (enabled: boolean) => void;
 }) {
@@ -665,6 +685,9 @@ function AutomationToggleRow({
     <div className="flex items-center justify-between gap-4 rounded-md border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-3">
       <div className="min-w-0">
         <div className="text-sm font-semibold text-zinc-900">{label}</div>
+        {description && (
+          <div className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">{description}</div>
+        )}
       </div>
       <ToggleSwitch checked={enabled} label={label} onChange={onEnabledChange} />
     </div>

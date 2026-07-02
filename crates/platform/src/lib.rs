@@ -159,6 +159,10 @@ pub struct AppState {
     pub league_phase: Arc<Mutex<Option<String>>>,
     pub auto_accept_status: Arc<Mutex<AutoAcceptStatus>>,
     pub auto_accept_in_progress: Arc<AtomicBool>,
+    /// Guards against concurrent auto-honor runs, and records the last game we
+    /// honored so repeated end-of-game phase events don't double-vote.
+    pub auto_honor_in_progress: Arc<AtomicBool>,
+    pub honored_game_id: Arc<Mutex<Option<i64>>>,
     pub hydration_thread_count: Arc<AtomicUsize>,
     pub shutdown_token: Arc<CancellationToken>,
     pub champ_select_ban_delay_token: Arc<Mutex<Option<CancellationToken>>>,
@@ -200,6 +204,8 @@ impl AppState {
                 Some("Auto-accept status has not started".to_string()),
             ))),
             auto_accept_in_progress: Arc::new(AtomicBool::new(false)),
+            auto_honor_in_progress: Arc::new(AtomicBool::new(false)),
+            honored_game_id: Arc::new(Mutex::new(None)),
             hydration_thread_count: Arc::new(AtomicUsize::new(0)),
             shutdown_token: Arc::new(CancellationToken::new()),
             champ_select_ban_delay_token: Arc::new(Mutex::new(None)),
@@ -227,6 +233,8 @@ impl Clone for AppState {
             league_phase: Arc::clone(&self.league_phase),
             auto_accept_status: Arc::clone(&self.auto_accept_status),
             auto_accept_in_progress: Arc::clone(&self.auto_accept_in_progress),
+            auto_honor_in_progress: Arc::clone(&self.auto_honor_in_progress),
+            honored_game_id: Arc::clone(&self.honored_game_id),
             hydration_thread_count: Arc::clone(&self.hydration_thread_count),
             shutdown_token: Arc::clone(&self.shutdown_token),
             champ_select_ban_delay_token: Arc::clone(&self.champ_select_ban_delay_token),
@@ -624,6 +632,8 @@ pub struct SettingsPayload {
     #[serde(default)]
     pub auto_ban_delay_seconds: f64,
     #[serde(default)]
+    pub auto_honor_enabled: bool,
+    #[serde(default)]
     pub ai_base_url: Option<String>,
     #[serde(default)]
     pub ai_api_key: Option<String>,
@@ -883,6 +893,61 @@ impl<'a> Drop for AutoAcceptGuard<'a> {
     }
 }
 
+fn auto_honor_enabled(state: &AppState) -> bool {
+    application::get_settings(&state.store)
+        .map(|settings| settings.auto_honor_enabled)
+        .unwrap_or(false)
+}
+
+fn mark_auto_honor_started(state: &AppState) -> bool {
+    !state.auto_honor_in_progress.swap(true, Ordering::SeqCst)
+}
+
+/// RAII guard that clears `auto_honor_in_progress` on drop, so a panic in the
+/// honor automation can't leave the feature wedged.
+struct AutoHonorGuard<'a> {
+    state: &'a AppState,
+}
+
+impl<'a> Drop for AutoHonorGuard<'a> {
+    fn drop(&mut self) {
+        self.state.auto_honor_in_progress.store(false, Ordering::SeqCst);
+    }
+}
+
+/// Runs auto-honor once the end-of-game ballot is available. Called on the
+/// PreEndOfGame and EndOfGame phases; the in-progress flag plus the recorded
+/// game id keep it from voting twice for the same game.
+fn run_honor_automation_guarded(state: &AppState) {
+    if !auto_honor_enabled(state) {
+        return;
+    }
+
+    // Claim the run on the event-loop thread so overlapping phase events don't
+    // spawn two honor attempts.
+    if !mark_auto_honor_started(state) {
+        return;
+    }
+
+    // The automation polls for the ballot for a few seconds, so run it off the
+    // event loop. The guard clears the in-progress flag when the thread ends.
+    let state = state.clone();
+    std::thread::spawn(move || {
+        let _guard = AutoHonorGuard { state: &state };
+        let last_honored = *lock_or_recover(&state.honored_game_id);
+
+        match application::run_honor_automation(&state.store, &state.league_client, last_honored) {
+            Ok(Some(game_id)) => {
+                *lock_or_recover(&state.honored_game_id) = Some(game_id);
+            }
+            Ok(None) => {}
+            Err(error) => {
+                tracing::warn!("auto-honor failed: {error}");
+            }
+        }
+    });
+}
+
 fn reset_league_event_session_state(state: &AppState, service_state: &mut LeagueEventServiceState) {
     service_state.phase = None;
     service_state.fingerprint.clear();
@@ -1126,7 +1191,12 @@ fn handle_league_phase_change<R: Runtime + 'static>(
             invalidate_anonymized_champ_select_cache(state);
             let _ = refresh_champ_select_from_event(app_handle, state);
         }
+        "PreEndOfGame" => {
+            // The honor ballot opens during the pre-end-of-game sequence.
+            run_honor_automation_guarded(state);
+        }
         "EndOfGame" => {
+            run_honor_automation_guarded(state);
             let _ = app_handle.emit("post-game-notes-open", ());
         }
         "ReadyCheck" => {
@@ -1739,6 +1809,7 @@ pub fn save_settings(
             auto_ban_enabled: command.settings.auto_ban_enabled,
             auto_ban_champion_id: command.settings.auto_ban_champion_id,
             auto_ban_delay_seconds: command.settings.auto_ban_delay_seconds,
+            auto_honor_enabled: command.settings.auto_honor_enabled,
             ai_base_url: command.settings.ai_base_url,
             ai_api_key: command.settings.ai_api_key,
             ai_model: command.settings.ai_model,
@@ -3706,6 +3777,7 @@ mod tests {
                     auto_ban_enabled: current_settings.auto_ban_enabled,
                     auto_ban_champion_id: current_settings.auto_ban_champion_id,
                     auto_ban_delay_seconds: current_settings.auto_ban_delay_seconds,
+                    auto_honor_enabled: current_settings.auto_honor_enabled,
                     ai_base_url: None,
                     ai_api_key: None,
                     ai_model: None,

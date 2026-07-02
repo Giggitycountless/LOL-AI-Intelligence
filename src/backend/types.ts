@@ -52,6 +52,7 @@ export type AppSettings = {
   autoBanEnabled: boolean;
   autoBanChampionId: number | null;
   autoBanDelaySeconds: number;
+  autoHonorEnabled: boolean;
   aiBaseUrl: string | null;
   aiApiKey: string | null;
   aiModel: string | null;
@@ -91,6 +92,7 @@ export type SaveSettingsInput = {
   autoBanEnabled: boolean;
   autoBanChampionId: number | null;
   autoBanDelaySeconds: number;
+  autoHonorEnabled: boolean;
   aiBaseUrl: string | null;
   aiApiKey: string | null;
   aiModel: string | null;

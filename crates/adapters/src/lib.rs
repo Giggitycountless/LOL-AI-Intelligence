@@ -7,7 +7,8 @@ use std::{
 
 use application::{
     ChampSelectSessionData, ChampSelectSessionPlayer,
-    ChampSelectSessionSource, LeagueClientReadError, LeagueClientReader, SummonerBatchEntry,
+    ChampSelectSessionSource, HonorBallot, LeagueClientReadError, LeagueClientReader,
+    SummonerBatchEntry,
 };
 use domain::{
     AdvisorNamedRef, ChampSelectTeam, LeagueChampionDetails, LeagueChampionSummary, LeagueClientConnection,
@@ -700,6 +701,53 @@ impl LocalLeagueClient {
             .map_err(read_error_from_request)
     }
 
+    fn read_honor_ballot(&self) -> Result<Option<HonorBallot>, LeagueClientReadError> {
+        let session = match self.open_session() {
+            SessionOpenResult::Ready(session) => session,
+            SessionOpenResult::Status(status) => return Err(read_error_from_status(status)),
+        };
+
+        match session.get_json::<LcuHonorBallot>("/lol-honor-v2/v1/ballot/") {
+            Ok(ballot) => Ok(Some(map_honor_ballot(ballot))),
+            // Outside the end-of-game honor window this endpoint 404s. A 404 here
+            // just means "no ballot open right now", not a login failure — mirror
+            // the LCU 404 handling used elsewhere and report it as no ballot.
+            Err(LcuRequestError::NotLoggedIn) => Ok(None),
+            Err(error) => Err(read_error_from_request(error)),
+        }
+    }
+
+    fn write_honor(
+        &self,
+        honor_category: &str,
+        puuid: &str,
+    ) -> Result<(), LeagueClientReadError> {
+        let session = match self.open_session() {
+            SessionOpenResult::Ready(session) => session,
+            SessionOpenResult::Status(status) => return Err(read_error_from_status(status)),
+        };
+
+        let body = serde_json::json!({
+            "honorType": honor_category,
+            "recipientPuuid": puuid,
+        });
+
+        session
+            .post_json("/lol-honor/v1/honor", &body)
+            .map_err(read_error_from_request)
+    }
+
+    fn write_honor_ballot_submit(&self) -> Result<(), LeagueClientReadError> {
+        let session = match self.open_session() {
+            SessionOpenResult::Ready(session) => session,
+            SessionOpenResult::Status(status) => return Err(read_error_from_status(status)),
+        };
+
+        session
+            .post_empty("/lol-honor/v1/ballot")
+            .map_err(read_error_from_request)
+    }
+
     fn read_gameflow_session(
         &self,
         session: &LcuSession,
@@ -1255,6 +1303,22 @@ impl LeagueClientReader for LocalLeagueClient {
         session
             .post_empty("/lol-matchmaking/v1/ready-check/accept")
             .map_err(read_error_from_request)
+    }
+
+    fn honor_ballot(&self) -> Result<Option<HonorBallot>, LeagueClientReadError> {
+        self.read_honor_ballot()
+    }
+
+    fn honor_player(
+        &self,
+        honor_category: &str,
+        puuid: &str,
+    ) -> Result<(), LeagueClientReadError> {
+        self.write_honor(honor_category, puuid)
+    }
+
+    fn submit_honor_ballot(&self) -> Result<(), LeagueClientReadError> {
+        self.write_honor_ballot_submit()
     }
 
     fn chat_me(&self) -> Result<domain::ChatMe, LeagueClientReadError> {
@@ -2194,6 +2258,24 @@ fn apply_champ_select_action(
             },
         )
         .map_err(read_error_from_request)
+}
+
+fn map_honor_ballot(ballot: LcuHonorBallot) -> HonorBallot {
+    fn puuids(players: Vec<LcuHonorEligiblePlayer>) -> Vec<String> {
+        players
+            .into_iter()
+            .filter(|player| !player.bot_player)
+            .filter_map(|player| player.puuid)
+            .filter(|puuid| !puuid.is_empty())
+            .collect()
+    }
+
+    HonorBallot {
+        game_id: ballot.game_id.unwrap_or(0),
+        votes: ballot.vote_pool.and_then(|pool| pool.votes).unwrap_or(0),
+        eligible_ally_puuids: puuids(ballot.eligible_allies),
+        eligible_opponent_puuids: puuids(ballot.eligible_opponents),
+    }
 }
 
 fn map_summoner_batch_entries(summoners: Vec<LcuSummonerBatch>) -> Vec<SummonerBatchEntry> {
