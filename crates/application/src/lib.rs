@@ -3259,7 +3259,7 @@ pub fn get_champ_select_snapshot(
         HashMap::new()
     };
 
-    let players = seeds
+    let players: Vec<domain::ChampSelectPlayer> = seeds
         .into_iter()
         .map(|seed| {
             let recent_stats_result = recent_stats_by_puuid.get(seed.puuid.as_str());
@@ -3299,10 +3299,122 @@ pub fn get_champ_select_snapshot(
         })
         .collect();
 
+    let premade_groups = infer_premade_groups(&players);
+
     Ok(domain::ChampSelectSnapshot {
         players,
         cached_at: unix_timestamp_seconds(),
+        premade_groups,
     })
+}
+
+/// Minimum number of distinct shared same-side games in two players' recent
+/// histories before they are considered a premade. League Akari defaults to
+/// 5 shared games out of ~20 loaded matches; we only load 6 recent matches
+/// per player, so the proportional threshold is 2.
+const PREMADE_MIN_SHARED_GAMES: usize = 2;
+
+/// Infer premade (queued-together) groups from the lobby players' recent
+/// match histories, League Akari-style: two players who appeared on the same
+/// side in at least [`PREMADE_MIN_SHARED_GAMES`] distinct recent games are
+/// linked, and linked players are merged into groups via union-find.
+///
+/// Groups never span the current ally/enemy divide: matchmaking cannot split
+/// a party across sides, so a cross-side link only means "played together
+/// before", not "premade now".
+pub fn infer_premade_groups(players: &[domain::ChampSelectPlayer]) -> Vec<Vec<i64>> {
+    let mut groups = Vec::new();
+
+    for team in [
+        domain::ChampSelectTeam::Ally,
+        domain::ChampSelectTeam::Enemy,
+    ] {
+        let members: Vec<&domain::ChampSelectPlayer> = players
+            .iter()
+            .filter(|player| player.team == team && !player.puuid.is_empty())
+            .collect();
+        if members.len() < 2 {
+            continue;
+        }
+
+        let index_by_puuid: HashMap<&str, usize> = members
+            .iter()
+            .enumerate()
+            .map(|(index, player)| (player.puuid.as_str(), index))
+            .collect();
+
+        // Count distinct shared games per member pair. Both players' histories
+        // contribute (their windows may cover different games), deduplicated
+        // by game id.
+        let mut shared_games: HashMap<(usize, usize), HashSet<i64>> = HashMap::new();
+        for (index, player) in members.iter().enumerate() {
+            let Some(stats) = player.recent_stats.as_ref() else {
+                continue;
+            };
+            for game in &stats.recent_matches {
+                if game.game_id <= 0 {
+                    continue;
+                }
+                for puuid in &game.team_puuids {
+                    let Some(&other) = index_by_puuid.get(puuid.as_str()) else {
+                        continue;
+                    };
+                    if other == index {
+                        continue;
+                    }
+                    shared_games
+                        .entry((index.min(other), index.max(other)))
+                        .or_default()
+                        .insert(game.game_id);
+                }
+            }
+        }
+
+        // Union-find over pairs that meet the threshold.
+        let mut parent: Vec<usize> = (0..members.len()).collect();
+        fn find(parent: &mut [usize], node: usize) -> usize {
+            let mut root = node;
+            while parent[root] != root {
+                root = parent[root];
+            }
+            let mut current = node;
+            while parent[current] != root {
+                let next = parent[current];
+                parent[current] = root;
+                current = next;
+            }
+            root
+        }
+        for (&(a, b), games) in &shared_games {
+            if games.len() >= PREMADE_MIN_SHARED_GAMES {
+                let root_a = find(&mut parent, a);
+                let root_b = find(&mut parent, b);
+                if root_a != root_b {
+                    parent[root_a] = root_b;
+                }
+            }
+        }
+
+        let mut by_root: HashMap<usize, Vec<i64>> = HashMap::new();
+        for index in 0..members.len() {
+            let root = find(&mut parent, index);
+            by_root
+                .entry(root)
+                .or_default()
+                .push(members[index].summoner_id);
+        }
+        let mut team_groups: Vec<Vec<i64>> = by_root
+            .into_values()
+            .filter(|group| group.len() >= 2)
+            .collect();
+        for group in &mut team_groups {
+            group.sort_unstable();
+        }
+        team_groups.sort();
+        groups.extend(team_groups);
+    }
+
+    groups
 }
 
 struct OverlayHistoryLogArgs {

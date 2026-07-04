@@ -25,6 +25,7 @@ import {
   formatSignedNumber,
   eventSummary,
   initialSnapshotMessage,
+  premadeGroupStyle,
   TEAM_SIZE,
 } from "./selfHistoryOverlayUtils";
 
@@ -60,6 +61,7 @@ export function SelfHistoryOverlay() {
   const isHistoryLoading = hasPlayers && !hasRecentStats && initialSnapshotStatus === "loading";
   const isHistoryUnavailable = hasPlayers && !hasRecentStats && initialSnapshotStatus === "error";
   const selectedChampionDetails = selectedChampionId ? championDetailsById[selectedChampionId] : undefined;
+  const premadeGroups = champSelectSnapshot?.premadeGroups;
   const model = useMemo(
     () =>
       createOverlayModel(
@@ -68,8 +70,9 @@ export function SelfHistoryOverlay() {
         leagueImages.championIcons,
         effectiveLanguage,
         t,
+        premadeGroups ?? [],
       ),
-    [champSelectAdvisorSnapshot?.players, effectiveLanguage, leagueImages.championIcons, players, t],
+    [champSelectAdvisorSnapshot?.players, effectiveLanguage, leagueImages.championIcons, players, premadeGroups, t],
   );
 
   useEffect(() => {
@@ -283,33 +286,38 @@ export function SelfHistoryOverlay() {
         </div>
       </header>
 
-      {/* Two teams sit side-by-side on wide displays. Below 2xl (1536px) — e.g. a
-          1366-wide laptop where clampToScreen can't open the window wide enough —
-          they stack vertically so each card keeps a legible width instead of the
-          rank/name fields being crushed into an unreadable sliver.
+      {/* League Akari's stacked layout: ally team (blue) on top, enemy team
+          (red) below, each row of five cards spanning the full width.
           Scrolls vertically so the boards are never cut off unreachably. */}
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-2 overflow-y-auto 2xl:grid-cols-2">
-        <TeamBoard
-          onChampionSelect={handleChampionSelect}
-          players={model.enemies}
-          rankTierIcons={leagueImages.rankTierIcons}
-          selectedChampionId={selectedChampionId}
-          t={t}
-          tone="enemy"
-        />
+      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto">
         <TeamBoard
           onChampionSelect={handleChampionSelect}
           players={model.allies}
           rankTierIcons={leagueImages.rankTierIcons}
           selectedChampionId={selectedChampionId}
           t={t}
+          team={model.allyTeam}
           tone="ally"
+        />
+        <TeamBoard
+          onChampionSelect={handleChampionSelect}
+          players={model.enemies}
+          rankTierIcons={leagueImages.rankTierIcons}
+          selectedChampionId={selectedChampionId}
+          t={t}
+          team={model.enemyTeam}
+          tone="enemy"
         />
       </div>
 
       {(players.length === 0 || isHistoryLoading || isHistoryUnavailable) && (
         <div className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-lg border border-zinc-700 bg-zinc-900 px-5 py-3 text-center text-sm font-semibold text-zinc-400 shadow-sm">
-          {initialSnapshotMessage(initialSnapshotStatus, t)}
+          {/* With an empty roster the snapshot fetch has finished but champ
+              select simply has no players yet — that is "waiting", not
+              "loading" (which would otherwise show forever). */}
+          {players.length === 0 && initialSnapshotStatus === "loading"
+            ? t("overlay.empty")
+            : initialSnapshotMessage(initialSnapshotStatus, t)}
         </div>
       )}
 
@@ -335,6 +343,7 @@ const TeamBoard = memo(function TeamBoard({
   rankTierIcons,
   selectedChampionId,
   t,
+  team,
   tone,
 }: {
   onChampionSelect: (event: MouseEvent, championId: number | null | undefined) => void;
@@ -342,27 +351,66 @@ const TeamBoard = memo(function TeamBoard({
   rankTierIcons: Record<string, string>;
   selectedChampionId: number | null;
   t: T;
+  team: OverlayModel["allyTeam"];
   tone: TeamTone;
 }) {
+  const premadeSizes = premadeGroupSizes(players);
+
+  // League Akari's team block: no framed box — a header line (team dot,
+  // name, win rate | KDA, premade chips) above the card grid. Sized by its
+  // content so the two boards stack without forcing a scroll each.
   return (
-    <section
-      className={[
-        "flex min-h-full flex-col gap-2 rounded-lg border bg-zinc-900 p-2 shadow-sm",
-        tone === "ally" ? "border-emerald-700" : "border-red-700",
-      ].join(" ")}
-    >
-      <div className="flex items-center gap-1.5 px-0.5">
-        <span className={["h-2 w-2 rounded-full", tone === "ally" ? "bg-emerald-400" : "bg-red-500"].join(" ")} />
+    <section className="flex shrink-0 flex-col gap-2">
+      <div className="flex items-end px-0.5">
         <span
           className={[
-            "text-[11px] font-bold uppercase tracking-wide",
-            tone === "ally" ? "text-emerald-400" : "text-red-400",
+            "mr-2 h-[10px] w-[10px] self-center rounded-full border border-white/20",
+            tone === "ally" ? "bg-emerald-500" : "bg-red-500",
           ].join(" ")}
-        >
+        />
+        <span className="mr-3 text-base font-bold leading-tight text-white/90">
           {tone === "ally" ? t("overlay.allyTeam") : t("overlay.enemyTeam")}
         </span>
+        {team.winRate !== null && (
+          <>
+            <span
+              className={[
+                "self-center text-sm font-bold tabular-nums",
+                team.winRate >= 50 ? "text-emerald-400" : "text-red-400",
+              ].join(" ")}
+              title={`${t("overlay.winRate")} ${team.wins}/${team.games}`}
+            >
+              {team.winRate}%
+            </span>
+            {team.kda !== null && (
+              <>
+                <span className="mx-2 h-[0.9em] w-px self-center bg-white/15" />
+                <span className="self-center text-sm tabular-nums text-white/80" title={t("overlay.teamKda")}>
+                  {team.kda.toFixed(2)}
+                </span>
+              </>
+            )}
+          </>
+        )}
+        {premadeSizes.length > 0 && (
+          <div className="ml-2 flex gap-2 self-center">
+            {premadeSizes.map(({ groupIndex, size }) => {
+              const style = premadeGroupStyle(groupIndex);
+              return (
+                <span
+                  className="rounded-sm px-1 py-0.5 text-xs leading-3"
+                  key={groupIndex}
+                  style={{ backgroundColor: style.background, color: style.color }}
+                  title={t("overlay.premadeGroupHint")}
+                >
+                  {t("overlay.premadeSize").replace("{n}", String(size))}
+                </span>
+              );
+            })}
+          </div>
+        )}
       </div>
-      <div className="grid flex-1 grid-cols-5 gap-2">
+      <div className="grid grid-cols-5 gap-1">
         {players.map((player) => (
           <PlayerTrack
             key={player.id}
@@ -378,6 +426,20 @@ const TeamBoard = memo(function TeamBoard({
     </section>
   );
 });
+
+/** Premade groups present on this board with their member counts. */
+function premadeGroupSizes(players: PlayerView[]): { groupIndex: number; size: number }[] {
+  const sizes = new Map<number, number>();
+  for (const player of players) {
+    if (player.premadeGroup !== null) {
+      sizes.set(player.premadeGroup, (sizes.get(player.premadeGroup) ?? 0) + 1);
+    }
+  }
+
+  return [...sizes.entries()]
+    .map(([groupIndex, size]) => ({ groupIndex, size }))
+    .sort((a, b) => a.groupIndex - b.groupIndex);
+}
 
 function SummaryBar({
   summary,

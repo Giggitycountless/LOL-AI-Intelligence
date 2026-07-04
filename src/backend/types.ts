@@ -748,6 +748,11 @@ export type ChampSelectPlayer = {
 export type ChampSelectSnapshot = {
   players: ChampSelectPlayer[];
   cachedAt: string;
+  /**
+   * Inferred premade (queued-together) groups; each inner array holds the
+   * summoner ids of players who shared several recent same-side games.
+   */
+  premadeGroups?: number[][];
 };
 
 export type ParticipantPublicProfileInput = {

@@ -1437,6 +1437,7 @@ fn hydrate_cached_champ_select_snapshot(
             player.recent_stats = Some(recent_stats.clone());
         }
     }
+    snapshot.premade_groups = application::infer_premade_groups(&snapshot.players);
 
     snapshot
 }
@@ -1737,6 +1738,10 @@ fn merge_recent_stats_from_cache(
             player.mastery_level = cached.mastery_level;
         }
     }
+
+    // Recent stats feed premade inference, so refresh the groups now that
+    // cached histories have been merged in.
+    snapshot.premade_groups = application::infer_premade_groups(&snapshot.players);
 }
 
 #[derive(Debug, Clone)]
@@ -3389,6 +3394,7 @@ mod tests {
                 deaths: 1,
                 assists: 9,
                 kda: Some(14.0),
+                team_puuids: Vec::new(),
             }],
         });
 
@@ -4166,6 +4172,7 @@ mod tests {
                 kda: Some(15.0),
                 played_at: Some("2026-04-19T12:00:00Z".to_string()),
                 game_duration_seconds: Some(1880),
+                team_puuids: Vec::new(),
             }],
             recent_performance: RecentPerformanceSummary {
                 match_count: 1,
@@ -4322,6 +4329,7 @@ mod tests {
                     kda: Some(6.0),
                     played_at: Some("2026-04-19T12:00:00Z".to_string()),
                     game_duration_seconds: Some(1800),
+                    team_puuids: Vec::new(),
                 }],
             }),
             note: Some(PlayerNoteView {
@@ -4392,6 +4400,7 @@ mod tests {
                 recent_stats_status: domain::ChampSelectRecentStatsStatus::MissingIdentity,
             }],
             cached_at: "1770000000".to_string(),
+            premade_groups: Vec::new(),
         }
     }
 
