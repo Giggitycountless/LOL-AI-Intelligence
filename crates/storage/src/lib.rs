@@ -466,21 +466,42 @@ fn run_migrations(connection: &mut Connection) -> StorageResult<()> {
     )?;
 
     for migration in MIGRATIONS {
-        let migration_is_applied = transaction
+        let applied_description: Option<String> = transaction
             .query_row(
-                "SELECT 1 FROM __app_migrations WHERE version = ?1",
+                "SELECT description FROM __app_migrations WHERE version = ?1",
                 [migration.version],
-                |_| Ok(()),
+                |row| row.get(0),
             )
-            .optional()?
-            .is_some();
+            .optional()?;
 
-        if !migration_is_applied {
-            transaction.execute_batch(migration.sql)?;
-            transaction.execute(
-                "INSERT INTO __app_migrations (version, description) VALUES (?1, ?2)",
-                (migration.version, migration.description),
-            )?;
+        match applied_description {
+            Some(description) if description == migration.description => {}
+            Some(description) => {
+                // The version number is recorded for a DIFFERENT migration —
+                // a development database that ran a since-abandoned branch's
+                // migration under the same number (e.g. 14 = "lp_history" vs
+                // 14 = "auto_honor"). Skipping silently would leave the
+                // schema diverged and crash later at query time, so apply
+                // this branch's migration and relabel the record.
+                eprintln!(
+                    "[storage] migration {} recorded as {description:?}, expected {:?}; applying {:?} over it",
+                    migration.version, migration.description, migration.description,
+                );
+                transaction.execute_batch(migration.sql)?;
+                transaction.execute(
+                    "UPDATE __app_migrations
+                     SET description = ?2, applied_at = CURRENT_TIMESTAMP
+                     WHERE version = ?1",
+                    (migration.version, migration.description),
+                )?;
+            }
+            None => {
+                transaction.execute_batch(migration.sql)?;
+                transaction.execute(
+                    "INSERT INTO __app_migrations (version, description) VALUES (?1, ?2)",
+                    (migration.version, migration.description),
+                )?;
+            }
         }
     }
 
@@ -1357,6 +1378,64 @@ mod tests {
             StartupPage::Dashboard
         );
         assert_eq!(store.health().expect("storage health").schema_version, latest_schema_version());
+
+        let _ = fs::remove_dir_all(data_dir);
+    }
+
+    #[test]
+    fn reapplies_migration_when_version_was_taken_by_a_different_branch() {
+        let data_dir = unique_temp_dir();
+        fs::create_dir_all(&data_dir).expect("create test data dir");
+        let database_path = data_dir.join(DATABASE_FILE_NAME);
+        let connection = Connection::open(&database_path).expect("open diverged database");
+
+        // Apply migrations 1..=13 normally, then record version 14 under a
+        // DIFFERENT description — the abandoned-branch scenario where 14 was
+        // "lp_history" on disk while this branch ships 14 = "auto_honor".
+        connection
+            .execute_batch(
+                "CREATE TABLE __app_migrations (
+                    version INTEGER PRIMARY KEY,
+                    description TEXT NOT NULL,
+                    applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );",
+            )
+            .expect("create migration table");
+        for migration in &MIGRATIONS[..13] {
+            connection
+                .execute_batch(migration.sql)
+                .expect("apply real migration");
+            connection
+                .execute(
+                    "INSERT INTO __app_migrations (version, description) VALUES (?1, ?2)",
+                    (migration.version, migration.description),
+                )
+                .expect("record real migration");
+        }
+        connection
+            .execute(
+                "INSERT INTO __app_migrations (version, description) VALUES (14, 'lp_history')",
+                [],
+            )
+            .expect("record stray branch migration");
+        drop(connection);
+
+        let store = SqliteStore::initialize(&data_dir).expect("initialize repairs the schema");
+
+        // The auto_honor column exists and settings load without error.
+        let settings = store.get_settings().expect("settings load after repair");
+        assert!(!settings.auto_honor_enabled);
+
+        // The migration record was relabeled to this branch's migration.
+        let connection = Connection::open(store.database_path()).expect("reopen database");
+        let description: String = connection
+            .query_row(
+                "SELECT description FROM __app_migrations WHERE version = 14",
+                [],
+                |row| row.get(0),
+            )
+            .expect("read relabeled migration");
+        assert_eq!(description, "auto_honor");
 
         let _ = fs::remove_dir_all(data_dir);
     }
