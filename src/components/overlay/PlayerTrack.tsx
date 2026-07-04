@@ -3,8 +3,16 @@ import { memo, type MouseEvent } from "react";
 import type { PlayerView, TeamTone } from "../../pages/selfHistoryOverlayUtils";
 import {
   advisorTagLabel,
+  formatMatchDate,
+  kdaToneClass,
+  matchResultLabel,
+  premadeGroupStyle,
   recentStatsStatusMessage,
+  winRateToneClass,
 } from "../../pages/selfHistoryOverlayUtils";
+import { initials, type T } from "../../utils/formatting";
+
+import type { RecentMatchSummary } from "../../backend/types";
 
 function advisorTagClassDark(tone: import("../../backend/types").AdvisorPlayerTag["tone"]) {
   switch (tone) {
@@ -14,14 +22,32 @@ function advisorTagClassDark(tone: import("../../backend/types").AdvisorPlayerTa
   }
 }
 
-function resultClassDark(result: import("../../backend/types").MatchResult) {
-  if (result === "win") return "border-emerald-800 bg-emerald-950 text-emerald-400";
-  if (result === "loss") return "border-red-800 bg-red-950 text-red-400";
-  return "border-zinc-800 bg-zinc-900 text-zinc-500";
-}
-import { initials, type T } from "../../utils/formatting";
+/**
+ * Match-row theme, League Akari's palette: wins are BLUE, losses red,
+ * remakes/unknown neutral gray — tinted backgrounds instead of borders.
+ */
+function matchRowTheme(result: RecentMatchSummary["result"] | null) {
+  if (result === "win") {
+    return {
+      row: "bg-[rgba(59,130,246,0.25)] text-white/80",
+      result: "text-blue-300",
+    };
+  }
+  if (result === "loss") {
+    return {
+      row: "bg-[rgba(243,73,72,0.25)] text-white/80",
+      result: "text-red-300",
+    };
+  }
+  if (result !== null) {
+    return {
+      row: "bg-white/15 text-white/80",
+      result: "text-white/80",
+    };
+  }
 
-import type { RecentMatchSummary } from "../../backend/types";
+  return { row: "bg-white/5 text-zinc-600", result: "text-zinc-600" };
+}
 
 export const PlayerTrack = memo(function PlayerTrack({
   onChampionSelect,
@@ -29,7 +55,7 @@ export const PlayerTrack = memo(function PlayerTrack({
   rankTierIcons,
   selectedChampionId,
   t,
-  tone,
+  tone: _tone,
 }: {
   onChampionSelect: (event: MouseEvent, championId: number | null | undefined) => void;
   player: PlayerView;
@@ -39,25 +65,36 @@ export const PlayerTrack = memo(function PlayerTrack({
   tone: TeamTone;
 }) {
   const isSelected = Boolean(player.championId && player.championId === selectedChampionId);
+  const premadeStyle = player.premadeGroup !== null ? premadeGroupStyle(player.premadeGroup) : null;
+  const hasTags =
+    !player.isEmpty &&
+    (premadeStyle !== null ||
+      player.winningStreak >= 3 ||
+      player.losingStreak >= 3 ||
+      player.advisorTags.length > 0);
 
   return (
+    // League Akari card frame: neutral surface, team color lives on the team
+    // header only; a premade group tints the border and the corner deco.
     <article
       className={[
-        "flex min-w-0 flex-col rounded-md border bg-zinc-900 p-2",
-        player.isEmpty ? "border-zinc-800 opacity-75" : tone === "ally" ? "border-emerald-700" : "border-red-700",
+        "relative flex min-w-0 flex-col overflow-hidden rounded border bg-zinc-900/90 p-2",
+        premadeStyle ? "" : "border-white/10",
+        player.isEmpty ? "opacity-60" : "",
       ].join(" ")}
       onClick={(event) => event.stopPropagation()}
+      style={premadeStyle ? { borderColor: `${premadeStyle.background}d0` } : undefined}
     >
-      <p
-        className={[
-          "mb-1.5 truncate text-[11px] font-semibold leading-tight",
-          player.isEmpty ? "text-zinc-600" : "text-zinc-100",
-        ].join(" ")}
-        title={player.displayName}
-      >
-        {player.displayName}
-      </p>
-      <div className="grid h-16 grid-cols-[4rem_minmax(0,1fr)] gap-2">
+      {premadeStyle && (
+        <div
+          className="absolute right-0 top-0 z-0 h-4 w-4 -translate-y-1/2 translate-x-1/2 rotate-45"
+          style={{ backgroundColor: premadeStyle.background }}
+          title={t("overlay.premadeGroupHint")}
+        />
+      )}
+
+      {/* ── Header: round portrait + name / ranks (Akari PlayerInfoCardHeader) ── */}
+      <div className="mb-1 flex">
         <ChampionPortrait
           championId={player.championId}
           displayName={player.displayName}
@@ -67,97 +104,125 @@ export const PlayerTrack = memo(function PlayerTrack({
           src={player.championUrl}
           summonerLevel={player.summonerLevel}
           t={t}
-          tone={tone}
         />
-        <div className="grid min-w-0 grid-rows-2 gap-1.5">
-          <RankPill
-            iconUrl={player.soloRankTier ? (rankTierIcons[player.soloRankTier] ?? null) : null}
-            label="S"
-            lp={player.soloRankLP}
-            prominent
-            title={t("overlay.rankUnavailable")}
-            value={player.soloRank}
-          />
-          <RankPill
-            iconUrl={player.flexRankTier ? (rankTierIcons[player.flexRankTier] ?? null) : null}
-            label="F"
-            lp={player.flexRankLP}
-            title={t("overlay.rankUnavailable")}
-            value={player.flexRank}
-          />
-        </div>
-      </div>
-
-      <SoloRankRecord losses={player.soloRankLosses} wins={player.soloRankWins} />
-
-      <div className="relative mt-2.5 rounded-md border border-zinc-700 bg-zinc-800 px-2 py-2">
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">{t("overlay.score")}</span>
-          <span className="truncate text-base font-bold tabular-nums text-zinc-100">{player.score ?? "--"}</span>
-        </div>
-        <div className="mt-1.5 h-2.5 overflow-hidden rounded-full bg-zinc-700">
-          <div
-            className={["h-full rounded-full", tone === "ally" ? "bg-emerald-400" : "bg-red-500"].join(" ")}
-            style={{ width: `${player.scorePct}%` }}
-          />
-        </div>
-        {player.badge && (
-          <span
+        <div className="flex w-0 flex-1 flex-col justify-center gap-1">
+          <p
             className={[
-              "absolute -right-px -top-2.5 flex h-5 min-w-7 items-center justify-center rounded-sm px-1 text-xs font-bold text-white shadow-sm",
-              tone === "ally" ? "bg-emerald-500" : "bg-red-600",
+              "truncate text-[13px] font-bold leading-tight",
+              player.isEmpty ? "text-zinc-600" : "text-white/80",
             ].join(" ")}
-            title={`${player.winCount}/${player.gameCount}`}
+            style={premadeStyle ? { color: premadeStyle.background } : undefined}
+            title={player.displayName}
           >
-            {player.badge}
-          </span>
-        )}
+            {player.displayName}
+          </p>
+          <div className="flex gap-1">
+            <RankEntry
+              iconUrl={player.soloRankTier ? (rankTierIcons[player.soloRankTier] ?? null) : null}
+              lp={player.soloRankLP}
+              title={rankTitle(player.soloRank, player.soloRankLP, player.soloRankWins, player.soloRankLosses, t)}
+              unrankedLabel={t("overlay.unranked")}
+              value={player.soloRank}
+            />
+            <RankEntry
+              iconUrl={player.flexRankTier ? (rankTierIcons[player.flexRankTier] ?? null) : null}
+              lp={player.flexRankLP}
+              title={rankTitle(player.flexRank, player.flexRankLP, 0, 0, t)}
+              unrankedLabel={t("overlay.unranked")}
+              value={player.flexRank}
+            />
+          </div>
+        </div>
       </div>
 
-      {!player.isEmpty && (player.advisorTags.length > 0 || player.advisorSummary) && (
-        <div className="mt-2 min-h-10 rounded-md border border-zinc-700 bg-zinc-800 px-2 py-2">
-          {player.advisorTags.length > 0 && (
-            <div className="flex flex-wrap gap-1">
-              {player.advisorTags.slice(0, 3).map((tag) => (
-                <span
-                  className={["rounded px-2 py-1 text-[11px] font-bold", advisorTagClassDark(tag.tone)].join(" ")}
-                  key={`${player.id}-${tag.kind}`}
-                >
-                  {advisorTagLabel(tag, t)}
-                </span>
-              ))}
-            </div>
-          )}
-          {player.advisorSummary && (
-            <p className="mt-1 line-clamp-2 text-[10px] font-medium leading-snug text-zinc-400" title={player.advisorSummary}>
-              {player.advisorSummary}
-            </p>
+      {/* ── Stats strip: three centered cells (Akari PlayerInfoCardStats) ── */}
+      <div className="mb-1 flex items-center">
+        <div
+          className={["flex-1 text-center text-[13px] font-bold tabular-nums", winRateToneClass(player.winRate)].join(" ")}
+          title={t("overlay.winRate")}
+        >
+          {player.winRate === null ? "— %" : `${player.winRate}%`}
+          {player.gameCount > 0 && (
+            <span className="text-[9px] font-normal text-white/60"> ({player.gameCount})</span>
           )}
         </div>
-      )}
+        <div
+          className={["flex-1 text-center text-[13px] font-bold tabular-nums", kdaToneClass(player.averageKda)].join(" ")}
+          title="KDA"
+        >
+          {player.averageKda === null ? "—" : player.averageKda.toFixed(2)}
+        </div>
+        <div
+          className="flex-1 text-center text-[13px] font-bold tabular-nums text-white/80"
+          title={t("overlay.score")}
+        >
+          {player.score === null ? "—" : player.score}
+        </div>
+      </div>
 
-      <div className="mt-auto pt-3">
-        <div className="flex items-center justify-between px-0.5 text-[11px] font-semibold tabular-nums text-zinc-500">
-          {player.gameCount > 0 ? (
-            <>
-              <span className="uppercase tracking-wide">{player.winCount}W / {player.gameCount}G</span>
-              {player.averageKda !== null && (
-                <span>KDA {player.averageKda.toFixed(1)}</span>
-              )}
-            </>
-          ) : (
-            <span className="uppercase tracking-wide">{recentStatsStatusMessage(player.recentStatsStatus, t)}</span>
+      {/* ── Tag chips (Akari PlayerCardTagsArea) ── */}
+      {hasTags && (
+        <div className="mb-1 flex flex-wrap gap-1">
+          {premadeStyle && (
+            <span
+              className="rounded-sm px-1 py-0.5 text-[11px] font-bold leading-[11px]"
+              style={{ backgroundColor: premadeStyle.background, color: premadeStyle.color }}
+              title={t("overlay.premadeGroupHint")}
+            >
+              {t("overlay.premadeGroup").replace("{letter}", premadeStyle.letter)}
+            </span>
           )}
-        </div>
-        <div className="mt-1.5 grid gap-1.5">
-          {player.rows.map((row) => (
-            <MatchRow key={row.id} row={row} />
+          {player.winningStreak >= 3 && (
+            <span className="rounded-sm bg-[#18571c] px-1 py-0.5 text-[11px] leading-[11px] text-white">
+              {t("overlay.winningStreak").replace("{n}", String(player.winningStreak))}
+            </span>
+          )}
+          {player.losingStreak >= 3 && (
+            <span className="rounded-sm bg-[#893b3b] px-1 py-0.5 text-[11px] leading-[11px] text-white">
+              {t("overlay.losingStreak").replace("{n}", String(player.losingStreak))}
+            </span>
+          )}
+          {player.advisorTags.slice(0, 3).map((tag) => (
+            <span
+              className={["rounded-sm px-1 py-0.5 text-[11px] leading-[11px]", advisorTagClassDark(tag.tone)].join(" ")}
+              key={`${player.id}-${tag.kind}`}
+            >
+              {advisorTagLabel(tag, t)}
+            </span>
           ))}
         </div>
+      )}
+      {!player.isEmpty && player.advisorSummary && (
+        <p className="mb-1 truncate text-[10px] leading-snug text-white/50" title={player.advisorSummary}>
+          {player.advisorSummary}
+        </p>
+      )}
+
+      {/* ── Match history list (Akari PlayerInfoCardMatchHistory) ── */}
+      <div className="mt-1 flex min-h-0 flex-1 flex-col gap-0.5">
+        {player.gameCount === 0 && (
+          <div className="flex flex-1 items-center justify-center rounded bg-white/5 text-xs text-white/60">
+            {recentStatsStatusMessage(player.recentStatsStatus, t)}
+          </div>
+        )}
+        {player.gameCount > 0 &&
+          player.rows.map((row) => <MatchRow key={row.id} row={row} t={t} />)}
       </div>
     </article>
   );
 });
+
+function rankTitle(value: string | null, lp: number | null, wins: number, losses: number, t: T) {
+  if (!value) {
+    return t("overlay.rankUnavailable");
+  }
+
+  const parts = [lp !== null ? `${value} · ${lp} LP` : value];
+  if (wins + losses > 0) {
+    parts.push(`${wins}W ${losses}L`);
+  }
+  return parts.join(" · ");
+}
 
 // ─── Internal sub-components ───
 
@@ -170,7 +235,6 @@ function ChampionPortrait({
   src,
   summonerLevel,
   t,
-  tone,
 }: {
   championId: number | null | undefined;
   displayName: string;
@@ -180,141 +244,123 @@ function ChampionPortrait({
   src: string | undefined;
   summonerLevel: number | null;
   t: T;
-  tone: TeamTone;
 }) {
-  const baseClass = [
-    "flex h-16 w-16 items-center justify-center rounded-md border object-cover shadow-sm transition",
-    championId ? "cursor-pointer hover:scale-[1.02]" : "cursor-default",
-    isSelected
-      ? tone === "ally"
-        ? "border-emerald-500 ring-2 ring-emerald-500/30"
-        : "border-red-500 ring-2 ring-red-500/30"
-      : "border-zinc-700",
+  // Akari's header portrait: round icon with a white/30 ring and the summoner
+  // level pill overflowing the bottom-right edge.
+  const iconClass = [
+    "h-full w-full rounded-full border border-white/30 object-cover",
+    isSelected ? "ring-2 ring-white/40" : "",
   ].join(" ");
 
   return (
-    <div className="relative h-16 w-16">
+    <div className="relative mr-2 h-[42px] w-[42px] shrink-0">
       <button
         aria-label={championId ? `${t("overlay.viewAbilities")} ${displayName}` : t("overlay.unselected")}
-        className="h-16 w-16 rounded-md"
+        className={[
+          "h-full w-full rounded-full transition-[filter]",
+          championId ? "cursor-pointer hover:brightness-110" : "cursor-default",
+        ].join(" ")}
         disabled={!championId}
         onClick={(event) => onSelect(event, championId)}
         title={displayName}
         type="button"
       >
         {src ? (
-          <img alt="" className={baseClass} src={src} />
+          <img alt="" className={iconClass} src={src} />
         ) : (
-          <span className={`${baseClass} bg-zinc-800 text-sm font-semibold text-zinc-500`}>{initials(displayName)}</span>
+          <span className={`${iconClass} flex items-center justify-center bg-zinc-800 text-xs font-semibold text-zinc-500`}>
+            {initials(displayName)}
+          </span>
         )}
       </button>
-      {masteryLevel !== null && masteryLevel >= 5 && (
-        <span className="absolute -right-1 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded bg-amber-500 px-0.5 text-[9px] font-bold leading-none text-white shadow-sm">
-          M{masteryLevel}
-        </span>
-      )}
       {summonerLevel !== null && (
-        <span className="absolute bottom-0 left-0 right-0 flex items-center justify-center rounded-b-md bg-black/50 py-0.5 text-[9px] font-semibold leading-none text-white">
+        <span className="absolute bottom-0 right-0 translate-x-[35%] rounded bg-black/50 px-1 text-[10px] leading-normal text-white">
           {summonerLevel}
         </span>
       )}
+      {masteryLevel !== null && masteryLevel >= 5 && (
+        <span className="absolute -top-1 right-0 flex h-4 min-w-4 items-center justify-center rounded bg-amber-500 px-0.5 text-[9px] font-bold leading-none text-white shadow-sm">
+          M{masteryLevel}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function RankEntry({
+  iconUrl,
+  lp,
+  title,
+  unrankedLabel,
+  value,
+}: {
+  iconUrl: string | null;
+  lp: number | null;
+  title: string;
+  unrankedLabel: string;
+  value: string | null;
+}) {
+  if (!value) {
+    return (
+      <div className="flex w-0 flex-1 items-center justify-center" title={title}>
+        <span className="text-[11px] text-white/60">{unrankedLabel}</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex w-0 flex-1 items-center justify-start" title={title}>
+      {iconUrl && <img alt="" className="mr-1 h-4 w-4 shrink-0 object-contain" src={iconUrl} />}
+      <span className="overflow-hidden text-ellipsis whitespace-nowrap text-[11px] text-white/80">
+        {lp !== null ? `${value} ${lp}` : value}
+      </span>
     </div>
   );
 }
 
 function SmallChampionIcon({ championName, src }: { championName: string; src: string | undefined }) {
   if (src) {
-    return <img alt="" className="h-6 w-6 rounded border border-zinc-700 object-cover shadow-sm" src={src} />;
+    return <img alt="" className="h-6 w-6 shrink-0 rounded bg-[#4b5b7d] object-cover" src={src} />;
   }
 
   return (
-    <div className="flex h-6 w-6 items-center justify-center rounded border border-zinc-700 bg-zinc-800 text-[10px] font-semibold text-zinc-500">
+    <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-[#4b5b7d] text-[10px] font-semibold text-white/70">
       {initials(championName)}
     </div>
   );
 }
 
-function RankPill({
-  iconUrl,
-  label,
-  lp,
-  prominent,
-  title,
-  value,
+function MatchRow({
+  row,
+  t,
 }: {
-  iconUrl: string | null;
-  label: string;
-  lp: number | null;
-  prominent?: boolean;
-  title: string;
-  value: string | null;
+  row: { id: string; imageUrl: string | undefined; match: RecentMatchSummary | null };
+  t: T;
 }) {
-  const fullTitle = value
-    ? lp !== null ? `${value} · ${lp} LP` : value
-    : title;
-
-  return (
-    <div
-      className={[
-        "flex min-w-0 items-center gap-1 rounded-md border px-1.5",
-        prominent ? "text-sm font-bold" : "text-[11px] font-semibold",
-        value ? "border-zinc-600 bg-zinc-800 text-zinc-100" : "border-zinc-800 bg-zinc-900 text-zinc-600",
-      ].join(" ")}
-      title={fullTitle}
-    >
-      {iconUrl ? (
-        <img
-          alt=""
-          className={["shrink-0 object-contain", prominent ? "h-5 w-5" : "h-4 w-4"].join(" ")}
-          src={iconUrl}
-        />
-      ) : (
-        <span className={["shrink-0", prominent ? "text-zinc-400" : "text-zinc-500"].join(" ")}>{label}</span>
-      )}
-      <span className="min-w-0 truncate">{value ?? "--"}</span>
-      {value && lp !== null && (
-        <span className="shrink-0 text-zinc-500">{lp}</span>
-      )}
-    </div>
-  );
-}
-
-function SoloRankRecord({ wins, losses }: { wins: number; losses: number }) {
-  const total = wins + losses;
-  if (total === 0) return null;
-
-  const winRate = Math.round((wins / total) * 100);
-
-  return (
-    <div className="mt-1.5 flex items-center gap-1.5 px-0.5 text-[10px] font-semibold tabular-nums text-zinc-500">
-      <span className="text-emerald-400">{wins}W</span>
-      <span className="text-red-400">{losses}L</span>
-      <span>·</span>
-      <span>{winRate}%</span>
-    </div>
-  );
-}
-
-function MatchRow({ row }: { row: { id: string; imageUrl: string | undefined; match: RecentMatchSummary | null } }) {
   const match = row.match;
+  const playedAt = match ? formatMatchDate(match.playedAt) : null;
+  const theme = matchRowTheme(match ? match.result : null);
 
+  // Akari's row: tinted background, 24px champion icon, queue name over
+  // date+result, K/D/A trailing.
   return (
-    <div
-      className={[
-        "flex items-center gap-1.5 rounded border px-1.5 py-1",
-        match ? resultClassDark(match.result) : "border-zinc-800 bg-zinc-900 text-zinc-500",
-      ].join(" ")}
-    >
+    <div className={["flex h-[34px] shrink-0 items-center rounded px-2 py-0.5", theme.row].join(" ")}>
       <SmallChampionIcon championName={match?.championName ?? "?"} src={row.imageUrl} />
-      <div className="min-w-0 flex-1">
-        <div className="truncate text-xs font-semibold tabular-nums leading-tight">
-          {match ? `${match.kills}/${match.deaths}/${match.assists}` : "--"}
+      <div className="ml-1 mr-1 w-0 flex-1">
+        <div className="overflow-hidden text-ellipsis whitespace-nowrap text-xs leading-tight">
+          {match?.queueName ?? (match ? match.championName : "--")}
         </div>
-        {match && (
-          <div className="text-[10px] font-semibold tabular-nums leading-tight opacity-70">
-            {match.kda === null || match.kda === undefined ? "" : `KDA ${match.kda.toFixed(1)}`}
-          </div>
-        )}
+        <div className="text-[10px] leading-tight">
+          {playedAt}
+          {match && (
+            <span className={["ml-1 font-bold", theme.result].join(" ")}>
+              {matchResultLabel(match.result, t)}
+            </span>
+          )}
+        </div>
+      </div>
+      <div className="shrink-0 text-xs tabular-nums leading-tight">
+        {match ? `${match.kills} / ${match.deaths} / ${match.assists}` : ""}
       </div>
     </div>
   );

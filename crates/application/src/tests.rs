@@ -2079,6 +2079,7 @@ fn sample_match(
         kda: None,
         played_at: Some("2026-04-19T12:00:00Z".to_string()),
         game_duration_seconds: Some(1800),
+        team_puuids: Vec::new(),
     }
 }
 
@@ -2097,6 +2098,7 @@ fn champion_records_aggregate_wins_losses_per_champion() {
         kda: None,
         played_at: None,
         game_duration_seconds: None,
+        team_puuids: Vec::new(),
     };
 
     let matches = vec![
@@ -2219,6 +2221,114 @@ fn sample_completed_match() -> LeagueCompletedMatch {
     }
 }
 
+// ─── premade group inference ─────────────────────────────────────────────────
+
+fn premade_player(
+    summoner_id: i64,
+    puuid: &str,
+    team: domain::ChampSelectTeam,
+    matches: Vec<RecentMatchSummary>,
+) -> domain::ChampSelectPlayer {
+    let recent_stats = if matches.is_empty() {
+        None
+    } else {
+        Some(ParticipantRecentStats {
+            match_count: matches.len(),
+            average_kda: None,
+            recent_champions: Vec::new(),
+            recent_matches: matches,
+        })
+    };
+
+    domain::ChampSelectPlayer {
+        summoner_id,
+        puuid: puuid.to_string(),
+        display_name: format!("Player {summoner_id}"),
+        champion_id: None,
+        champion_name: None,
+        team,
+        ranked_queues: Vec::new(),
+        summoner_level: None,
+        mastery_level: None,
+        recent_stats,
+        recent_stats_status: domain::ChampSelectRecentStatsStatus::Loaded,
+    }
+}
+
+fn premade_match(game_id: i64, team_puuids: &[&str]) -> RecentMatchSummary {
+    let mut summary = sample_match(game_id, "Ahri", 5, 2, 7);
+    summary.team_puuids = team_puuids.iter().map(|p| p.to_string()).collect();
+    summary
+}
+
+#[test]
+fn premade_groups_link_players_sharing_enough_recent_games() {
+    use domain::ChampSelectTeam::{Ally, Enemy};
+
+    let players = vec![
+        // A and B duo'd in games 1 and 2 -> premade.
+        premade_player(1, "puuid-1", Ally, vec![
+            premade_match(1, &["puuid-2"]),
+            premade_match(2, &["puuid-2"]),
+        ]),
+        premade_player(2, "puuid-2", Ally, vec![
+            premade_match(1, &["puuid-1"]),
+            premade_match(2, &["puuid-1"]),
+        ]),
+        // C shared only one game with A -> not premade.
+        premade_player(3, "puuid-3", Ally, vec![premade_match(1, &["puuid-1"])]),
+        // Enemies with no shared games.
+        premade_player(4, "puuid-4", Enemy, vec![premade_match(9, &[])]),
+        premade_player(5, "puuid-5", Enemy, Vec::new()),
+    ];
+
+    let groups = infer_premade_groups(&players);
+
+    assert_eq!(groups, vec![vec![1, 2]]);
+}
+
+#[test]
+fn premade_groups_merge_from_one_sided_histories_and_stay_within_side() {
+    use domain::ChampSelectTeam::{Ally, Enemy};
+
+    let players = vec![
+        // Only A's history records the shared games (B's window may differ);
+        // the pair still counts because either side's history contributes.
+        premade_player(1, "puuid-1", Ally, vec![
+            premade_match(1, &["puuid-2"]),
+            premade_match(2, &["puuid-2"]),
+            premade_match(3, &["puuid-9"]), // current enemy, ignored
+            premade_match(4, &["puuid-9"]),
+        ]),
+        premade_player(2, "puuid-2", Ally, Vec::new()),
+        // Enemy premade pair inferred independently.
+        premade_player(8, "puuid-8", Enemy, vec![
+            premade_match(5, &["puuid-9"]),
+            premade_match(6, &["puuid-9"]),
+        ]),
+        premade_player(9, "puuid-9", Enemy, Vec::new()),
+    ];
+
+    let groups = infer_premade_groups(&players);
+
+    assert_eq!(groups, vec![vec![1, 2], vec![8, 9]]);
+}
+
+#[test]
+fn premade_groups_dedupe_shared_game_ids_per_pair() {
+    use domain::ChampSelectTeam::Ally;
+
+    // The same game id appearing in both players' histories counts once.
+    let players = vec![
+        premade_player(1, "puuid-1", Ally, vec![premade_match(1, &["puuid-2"])]),
+        premade_player(2, "puuid-2", Ally, vec![premade_match(1, &["puuid-1"])]),
+    ];
+
+    let groups = infer_premade_groups(&players);
+
+    assert!(groups.is_empty(), "one shared game is not premade evidence");
+}
+
 // ─── recent_stats diagnosis ──────────────────────────────────────────────────
 //
 // These tests pin the per-player diagnostic behavior so future refactors don't
@@ -2240,6 +2350,7 @@ fn sample_recent_stats(match_count: usize) -> ParticipantRecentStats {
             kda: Some(6.0),
             played_at: None,
             game_duration_seconds: None,
+            team_puuids: Vec::new(),
         })
         .collect();
     ParticipantRecentStats {

@@ -984,6 +984,11 @@ pub struct RecentMatchSummary {
     pub kda: Option<f64>,
     pub played_at: Option<String>,
     pub game_duration_seconds: Option<i64>,
+    /// PUUIDs of the other players on this player's side in that game.
+    /// Backend-only input for premade-group inference; never shipped to the
+    /// frontend (the inferred groups on [`ChampSelectSnapshot`] are).
+    #[serde(default, skip_serializing)]
+    pub team_puuids: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize)]
@@ -1286,6 +1291,11 @@ pub enum ChampSelectTeam {
 pub struct ChampSelectSnapshot {
     pub players: Vec<ChampSelectPlayer>,
     pub cached_at: String,
+    /// Inferred premade (duo/flex) groups: each inner vec holds the
+    /// summoner ids of players who queued together, derived from shared
+    /// games in their recent match histories (League Akari-style inference).
+    #[serde(default)]
+    pub premade_groups: Vec<Vec<i64>>,
 }
 
 // ── Rune system ──────────────────────────────────────────────────────────────

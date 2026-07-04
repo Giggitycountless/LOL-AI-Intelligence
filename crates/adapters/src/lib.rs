@@ -2526,6 +2526,7 @@ fn map_recent_match(
         deaths,
         assists,
         kda: Some(round_to_tenth(calculate_kda(kills, deaths, assists))),
+        team_puuids: same_side_puuids(&game, participant),
         played_at: game
             .game_creation_date
             .or_else(|| value_to_string(game.game_creation)),
@@ -2594,7 +2595,67 @@ fn recent_match_from_participant(
             .clone()
             .or_else(|| value_to_string(game.game_creation.clone())),
         game_duration_seconds: game.game_duration,
+        team_puuids: same_side_puuids(game, participant),
     }
+}
+
+/// PUUIDs of the other players on `participant`'s side in `game`.
+///
+/// The per-puuid match-history payload lists every player in
+/// `participantIdentities` but often carries stats for the queried player
+/// only, so side membership falls back to the classic-queue convention
+/// (participant ids 1-5 = team 100, 6-10 = team 200) when the participants
+/// array has no entry for an identity. Games that do not fit that shape
+/// (e.g. 16-player Arena) yield an empty list rather than a wrong grouping.
+fn same_side_puuids(game: &LcuGame, participant: &LcuParticipant) -> Vec<String> {
+    fn conventional_team_id(participant_id: i64) -> Option<i64> {
+        match participant_id {
+            1..=5 => Some(100),
+            6..=10 => Some(200),
+            _ => None,
+        }
+    }
+
+    let team_by_participant_id: HashMap<i64, i64> = game
+        .participants
+        .iter()
+        .filter_map(|entry| Some((entry.participant_id?, entry.team_id?)))
+        .collect();
+    let convention_applies = game.participant_identities.len() <= 10;
+    let team_of = move |participant_id: i64| {
+        team_by_participant_id
+            .get(&participant_id)
+            .copied()
+            .or_else(|| {
+                if convention_applies {
+                    conventional_team_id(participant_id)
+                } else {
+                    None
+                }
+            })
+    };
+
+    let Some(self_id) = participant.participant_id else {
+        return Vec::new();
+    };
+    let Some(self_team) = participant.team_id.or_else(|| team_of(self_id)) else {
+        return Vec::new();
+    };
+
+    game.participant_identities
+        .iter()
+        .filter_map(|identity| {
+            let participant_id = identity.participant_id?;
+            if participant_id == self_id || team_of(participant_id)? != self_team {
+                return None;
+            }
+            identity
+                .player
+                .as_ref()
+                .and_then(|player| player.puuid.clone())
+                .filter(|puuid| !puuid.is_empty())
+        })
+        .collect()
 }
 
 fn map_completed_match(
@@ -3898,6 +3959,97 @@ mod tests {
         assert_eq!(matches[0].game_duration_seconds, Some(1880));
         assert_eq!(matches[0].kda, Some(15.0));
         assert_eq!(matches[0].result, MatchResult::Win);
+    }
+
+    #[test]
+    fn same_side_puuids_uses_participant_id_convention_when_team_ids_are_missing() {
+        fn identity(participant_id: i64, puuid: &str) -> LcuParticipantIdentity {
+            LcuParticipantIdentity {
+                participant_id: Some(participant_id),
+                player: Some(LcuPlayer {
+                    summoner_name: None,
+                    game_name: None,
+                    tag_line: None,
+                    summoner_id: None,
+                    account_id: None,
+                    current_account_id: None,
+                    profile_icon: None,
+                    profile_icon_id: None,
+                    puuid: Some(puuid.to_string()),
+                }),
+            }
+        }
+
+        // Per-puuid history payloads often carry only the queried player in
+        // `participants`; the other nine appear in `participantIdentities`.
+        let participant = LcuParticipant {
+            participant_id: Some(7),
+            team_id: Some(200),
+            champion_id: Some(103),
+            champion_name: None,
+            spell1_id: None,
+            spell2_id: None,
+            stats: None,
+            timeline: None,
+        };
+        let game = LcuGame {
+            game_id: Some(1),
+            game_creation_date: None,
+            game_creation: None,
+            game_duration: None,
+            queue_id: Some(420),
+            participants: vec![],
+            participant_identities: (1..=10)
+                .map(|id| identity(id, format!("puuid-{id}").as_str()))
+                .collect(),
+        };
+
+        let puuids = same_side_puuids(&game, &participant);
+
+        // Participant 7 is on team 200 -> ids 6..=10 minus self.
+        assert_eq!(puuids, vec!["puuid-6", "puuid-8", "puuid-9", "puuid-10"]);
+    }
+
+    #[test]
+    fn same_side_puuids_skips_games_where_sides_cannot_be_resolved() {
+        // 16-player Arena game: the 1-5/6-10 convention does not apply and no
+        // explicit team ids are available, so no grouping is produced.
+        let participant = LcuParticipant {
+            participant_id: Some(3),
+            team_id: None,
+            champion_id: Some(103),
+            champion_name: None,
+            spell1_id: None,
+            spell2_id: None,
+            stats: None,
+            timeline: None,
+        };
+        let game = LcuGame {
+            game_id: Some(2),
+            game_creation_date: None,
+            game_creation: None,
+            game_duration: None,
+            queue_id: Some(1700),
+            participants: vec![],
+            participant_identities: (1..=16)
+                .map(|id| LcuParticipantIdentity {
+                    participant_id: Some(id),
+                    player: Some(LcuPlayer {
+                        summoner_name: None,
+                        game_name: None,
+                        tag_line: None,
+                        summoner_id: None,
+                        account_id: None,
+                        current_account_id: None,
+                        profile_icon: None,
+                        profile_icon_id: None,
+                        puuid: Some(format!("puuid-{id}")),
+                    }),
+                })
+                .collect(),
+        };
+
+        assert!(same_side_puuids(&game, &participant).is_empty());
     }
 
     #[test]

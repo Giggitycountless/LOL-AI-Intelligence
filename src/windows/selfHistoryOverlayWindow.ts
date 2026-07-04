@@ -42,15 +42,17 @@ async function openSelfHistoryOverlayWindowOnce(devMode: boolean) {
       return true;
     }
 
-    const size = clampToScreen({ width: 1600, height: 800 }, { width: 1280, height: 560 });
+    // Stacked (top/bottom) team layout: tall window instead of the old
+    // side-by-side wide one — five cards per row, two team rows.
+    const size = clampToScreen({ width: 1280, height: 920 }, { width: 1080, height: 640 });
     const overlayWindow = new WebviewWindow(SELF_HISTORY_OVERLAY_WINDOW_LABEL, {
       alwaysOnTop: true,
       center: true,
       decorations: false,
       focus: false,
       height: size.height,
-      minHeight: 560,
-      minWidth: 1280,
+      minHeight: 640,
+      minWidth: 1080,
       resizable: true,
       title: "Self History",
       url: selfHistoryOverlayWindowUrl(devMode),
