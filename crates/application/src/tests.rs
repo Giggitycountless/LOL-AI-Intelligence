@@ -483,6 +483,47 @@ fn champ_select_recent_stats_failure_keeps_other_players() {
 }
 
 #[test]
+fn champ_select_snapshot_resolves_hidden_names_via_summoner_batch() {
+    // Champ select hides teammate names in the session payload; the snapshot
+    // must fall back to the summoner batch lookup instead of "Summoner {id}".
+    let reader = FakeLeagueClientReader::with_champ_select_data(
+        ChampSelectSessionData {
+            ally_ids: vec![1],
+            enemy_ids: Vec::new(),
+            champion_selections: HashMap::new(),
+            ally_names: Vec::new(),
+            enemy_names: Vec::new(),
+            champion_selections_by_name: HashMap::new(),
+            source: ChampSelectSessionSource::ChampSelect,
+            players: vec![ChampSelectSessionPlayer {
+                summoner_id: Some(1),
+                puuid: None,
+                display_name: String::new(),
+                champion_id: Some(103),
+                team: domain::ChampSelectTeam::Ally,
+            }],
+        },
+        vec![SummonerBatchEntry {
+            summoner_id: 1,
+            puuid: "puuid-1".to_string(),
+            display_name: "Player One#NA1".to_string(),
+            summoner_level: Some(120),
+        }],
+        Vec::new(),
+    );
+
+    let snapshot = get_champ_select_snapshot(&reader, 6).expect("champ select snapshot reads");
+
+    assert_eq!(snapshot.players.len(), 1);
+    assert_eq!(snapshot.players[0].display_name, "Player One#NA1");
+    // The batch puuid backfills the missing session puuid so recent stats load.
+    assert_eq!(
+        reader.recent_stats_batch_calls(),
+        vec![vec!["puuid-1".to_string()]]
+    );
+}
+
+#[test]
 fn champ_select_snapshot_matches_bare_names_to_riot_id_display_names() {
     let mut reader = FakeLeagueClientReader::with_champ_select_data(
         ChampSelectSessionData {

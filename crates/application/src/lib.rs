@@ -3026,10 +3026,17 @@ pub fn get_champ_select_snapshot(
     let mut seen_puuids = HashSet::new();
 
     for (index, player) in session.players.iter().enumerate() {
+        // Champ select hides teammate names in the session payload, so an empty
+        // name resolves through the summoner batch lookup before falling back
+        // to a placeholder.
+        let batch_entry = player
+            .summoner_id
+            .filter(|id| *id > 0)
+            .and_then(|id| summoners_by_id.get(&id));
         let display_name = if player.display_name.trim().is_empty() {
-            player
-                .summoner_id
-                .map(|id| format!("Summoner {id}"))
+            batch_entry
+                .map(|summoner| summoner.display_name.clone())
+                .or_else(|| player.summoner_id.map(|id| format!("Summoner {id}")))
                 .unwrap_or_else(|| format!("Player {}", index + 1))
         } else {
             player.display_name.clone()
@@ -3044,6 +3051,11 @@ pub fn get_champ_select_snapshot(
             .as_ref()
             .filter(|value| !value.trim().is_empty())
             .cloned()
+            .or_else(|| {
+                batch_entry
+                    .map(|summoner| summoner.puuid.clone())
+                    .filter(|value| !value.trim().is_empty())
+            })
             .unwrap_or_default();
 
         if !puuid.is_empty() && !seen_puuids.insert(puuid.clone()) {
