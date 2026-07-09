@@ -1437,6 +1437,46 @@ fn hydrate_cached_champ_select_snapshot(
             player.recent_stats = Some(recent_stats.clone());
         }
     }
+
+    // Light snapshots (recent_limit=0) skip ranked stats and mastery entirely,
+    // so a cache seeded by the InProgress rebuild has none of either. Backfill
+    // them here, otherwise the overlay never shows ranks for the whole game.
+    let mut ranked_missing: Vec<String> = snapshot
+        .players
+        .iter()
+        .filter(|player| !player.puuid.is_empty() && player.ranked_queues.is_empty())
+        .map(|player| player.puuid.clone())
+        .collect();
+    ranked_missing.sort_unstable();
+    ranked_missing.dedup();
+    if !ranked_missing.is_empty() {
+        let ranked_by_puuid = cached_reader.participant_ranked_stats_batch(&ranked_missing);
+        for player in &mut snapshot.players {
+            if player.ranked_queues.is_empty() {
+                if let Some(queues) = ranked_by_puuid.get(player.puuid.as_str()) {
+                    player.ranked_queues = queues.clone();
+                }
+            }
+        }
+    }
+
+    let mastery_missing: Vec<(String, i64)> = snapshot
+        .players
+        .iter()
+        .filter(|player| player.mastery_level.is_none() && !player.puuid.is_empty())
+        .filter_map(|player| player.champion_id.map(|cid| (player.puuid.clone(), cid)))
+        .collect();
+    if !mastery_missing.is_empty() {
+        let mastery_by_puuid = cached_reader.champion_mastery_batch(&mastery_missing);
+        for player in &mut snapshot.players {
+            if player.mastery_level.is_none() {
+                if let Some(level) = mastery_by_puuid.get(player.puuid.as_str()) {
+                    player.mastery_level = *level;
+                }
+            }
+        }
+    }
+
     snapshot.premade_groups = application::infer_premade_groups(&snapshot.players);
 
     snapshot
