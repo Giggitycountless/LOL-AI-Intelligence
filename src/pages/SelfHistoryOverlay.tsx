@@ -481,7 +481,7 @@ function LiveOverlayBar({ snapshot, t }: { snapshot: LiveOverlaySnapshot | null;
       <LiveInfoCard label={t("live.game")} value={snapshot.gameTimeSeconds === null ? "-" : formatGameTime(snapshot.gameTimeSeconds)} />
       <LiveInfoCard label={t("live.items")} value={formatSignedNumber(diff)} tone={diff >= 0 ? "ally" : "enemy"} />
       <LiveInfoCard label={t("live.gold")} value={activeGold === null || activeGold === undefined ? "-" : formatNumber(Math.round(activeGold))} />
-      <LiveInfoCard label={t("live.event")} value={lastEvent ? eventSummary(lastEvent) : "-"} />
+      <LiveInfoCard label={t("live.event")} value={lastEvent ? eventSummary(lastEvent, t) : "-"} />
     </div>
   );
 }

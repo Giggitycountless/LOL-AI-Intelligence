@@ -419,12 +419,29 @@ export function formatSignedNumber(value: number) {
   return `${prefix}${formatNumber(value)}`;
 }
 
-export function eventSummary(event: LiveOverlaySnapshot["events"][number]) {
+const LIVE_EVENT_LABEL_KEYS: Partial<Record<string, TranslationKey>> = {
+  ChampionKill: "live.eventChampionKill",
+  FirstBlood: "live.eventFirstBlood",
+  Multikill: "live.eventMultikill",
+  Ace: "live.eventAce",
+  TurretKilled: "live.eventTurretKilled",
+  InhibKilled: "live.eventInhibKilled",
+  DragonKill: "live.eventDragonKill",
+  HeraldKill: "live.eventHeraldKill",
+  BaronKill: "live.eventBaronKill",
+  GameStart: "live.eventGameStart",
+  MinionsSpawning: "live.eventMinionsSpawning",
+  FirstBrick: "live.eventFirstBrick",
+};
+
+export function eventSummary(event: LiveOverlaySnapshot["events"][number], t: T) {
+  const key = LIVE_EVENT_LABEL_KEYS[event.eventName];
+  const label = key ? t(key) : event.eventName;
   if (event.actor && event.victim) {
-    return `${event.eventName}: ${event.actor} -> ${event.victim}`;
+    return `${label}: ${event.actor} → ${event.victim}`;
   }
 
-  return event.eventName;
+  return label;
 }
 
 export function romanToNumber(value: string) {
