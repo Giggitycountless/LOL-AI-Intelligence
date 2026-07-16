@@ -473,22 +473,17 @@ impl LocalLeagueClient {
             .map(champion_name_map)
             .unwrap_or_default();
 
-        results.extend(
-            valid_puuids
-                .par_iter()
-                .map(|player_puuid| {
-                    (
-                        player_puuid.clone(),
-                        read_participant_recent_stats_with_session(
-                            &session,
-                            player_puuid,
-                            limit,
-                            &champion_names,
-                        ),
-                    )
-                })
-                .collect::<HashMap<_, _>>(),
-        );
+        results.extend(map_batch_limited(&valid_puuids, |player_puuid| {
+            (
+                player_puuid.clone(),
+                read_participant_recent_stats_with_session(
+                    &session,
+                    player_puuid,
+                    limit,
+                    &champion_names,
+                ),
+            )
+        }));
 
         results
     }
@@ -1053,19 +1048,21 @@ impl LeagueClientReader for LocalLeagueClient {
             SessionOpenResult::Ready(session) => session,
             SessionOpenResult::Status(_) => return HashMap::new(),
         };
-        puuids
-            .par_iter()
+        let safe_puuids: Vec<&String> = puuids
+            .iter()
             .filter(|puuid| is_safe_lcu_path_id(puuid))
-            .map(|puuid| {
-                let queues = session
-                    .get_json::<LcuPlayerRankedStats>(
-                        format!("/lol-ranked/v2/ranked-stats/{puuid}").as_str(),
-                    )
-                    .map(|stats| map_lcu_queues(stats.queues))
-                    .unwrap_or_default();
-                (puuid.clone(), queues)
-            })
-            .collect()
+            .collect();
+        map_batch_limited(&safe_puuids, |puuid| {
+            let queues = session
+                .get_json::<LcuPlayerRankedStats>(
+                    format!("/lol-ranked/v2/ranked-stats/{puuid}").as_str(),
+                )
+                .map(|stats| map_lcu_queues(stats.queues))
+                .unwrap_or_default();
+            ((*puuid).clone(), queues)
+        })
+        .into_iter()
+        .collect()
     }
 
     fn champion_mastery_batch(
@@ -1082,18 +1079,18 @@ impl LeagueClientReader for LocalLeagueClient {
         // The legacy /lol-collections/.../{summonerId}/champion-mastery/{id} path
         // 404s on current clients; the dedicated lol-champion-mastery plugin is
         // puuid-based. See fetch_champion_mastery_list for the same migration.
-        entries
-            .par_iter()
-            .map(|(puuid, champion_id)| {
-                let mastery_level = session
-                    .get_json::<LcuChampionMasteryEntry>(
-                        format!("/lol-champion-mastery/v1/{puuid}/champion-mastery/{champion_id}").as_str(),
-                    )
-                    .ok()
-                    .and_then(|entry| entry.champion_level);
-                (puuid.clone(), mastery_level)
-            })
-            .collect()
+        map_batch_limited(entries, |(puuid, champion_id)| {
+            let mastery_level = session
+                .get_json::<LcuChampionMasteryEntry>(
+                    format!("/lol-champion-mastery/v1/{puuid}/champion-mastery/{champion_id}")
+                        .as_str(),
+                )
+                .ok()
+                .and_then(|entry| entry.champion_level);
+            (puuid.clone(), mastery_level)
+        })
+        .into_iter()
+        .collect()
     }
 
     fn champ_select_session(&self) -> Result<ChampSelectSessionData, LeagueClientReadError> {
@@ -2814,6 +2811,18 @@ fn participant_champion_name(
         .unwrap_or_else(|| "Unknown champion".to_string())
 }
 
+/// Runs `fetch` over `items` in parallel, at most [`LCU_BATCH_CONCURRENCY`]
+/// at a time, preserving item order in the returned vec. Keeps the latency
+/// win of parallel lobby lookups while capping the in-flight request count
+/// so the LCU's upstream services don't shed a random subset of the batch.
+fn map_batch_limited<T: Sync, R: Send>(items: &[T], fetch: impl Fn(&T) -> R + Sync) -> Vec<R> {
+    let mut results = Vec::with_capacity(items.len());
+    for chunk in items.chunks(LCU_BATCH_CONCURRENCY) {
+        results.extend(chunk.par_iter().map(&fetch).collect::<Vec<R>>());
+    }
+    results
+}
+
 fn read_participant_recent_stats_with_session(
     session: &LcuSession,
     player_puuid: &str,
@@ -3268,6 +3277,29 @@ mod tests {
     use std::path::Path;
 
     const TEST_LOCKFILE_VALUE: &str = "not-a-real-test-value";
+
+    #[test]
+    fn map_batch_limited_caps_in_flight_work() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let in_flight = AtomicUsize::new(0);
+        let max_seen = AtomicUsize::new(0);
+        let items: Vec<usize> = (0..20).collect();
+        let results = map_batch_limited(&items, |item| {
+            let now = in_flight.fetch_add(1, Ordering::SeqCst) + 1;
+            max_seen.fetch_max(now, Ordering::SeqCst);
+            std::thread::sleep(std::time::Duration::from_millis(5));
+            in_flight.fetch_sub(1, Ordering::SeqCst);
+            item * 2
+        });
+
+        assert_eq!(results, items.iter().map(|i| i * 2).collect::<Vec<_>>());
+        assert!(
+            max_seen.load(Ordering::SeqCst) <= LCU_BATCH_CONCURRENCY,
+            "at most {LCU_BATCH_CONCURRENCY} lookups may be in flight, saw {}",
+            max_seen.load(Ordering::SeqCst)
+        );
+    }
 
     #[test]
     fn parses_ranked_champion_json_snapshot() {
