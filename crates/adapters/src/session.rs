@@ -151,34 +151,29 @@ impl LcuSession {
         path: &str,
     ) -> Result<T, LcuRequestError> {
         let url = format!("https://{LOCAL_LCU_HOST}:{}{}", self.credentials.port, path);
+        // Status classification happens INSIDE the retried closure: the LCU
+        // match-history/ranked plugins intermittently answer 500/429 under load
+        // even though an immediate re-request succeeds. Retrying only transport
+        // failures (the old behaviour) left those responses as hard errors, which
+        // is how random lobby players ended up with no stats in the overlay.
         let response = with_retry(
             || {
-                self.http_client
+                let response = self
+                    .http_client
                     .get(url.as_str())
                     .basic_auth("riot", Some(self.credentials.password.as_str()))
                     .send()
-                    .map_err(|_| LcuRequestError::Unavailable)
+                    .map_err(|_| LcuAttemptError::Retryable(LcuRequestError::Unavailable))?;
+
+                match classify_lcu_get_status(response.status()) {
+                    Ok(()) => Ok(response),
+                    Err(error) => Err(error),
+                }
             },
             3,
-            |e: &LcuRequestError| matches!(e, LcuRequestError::Unavailable),
-        )?;
-        let status = response.status();
-
-        if status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN {
-            return Err(LcuRequestError::Unauthorized);
-        }
-
-        if status == StatusCode::NOT_FOUND {
-            return Err(LcuRequestError::NotLoggedIn);
-        }
-
-        if status == StatusCode::SERVICE_UNAVAILABLE {
-            return Err(LcuRequestError::Patching);
-        }
-
-        if !status.is_success() {
-            return Err(LcuRequestError::Unavailable);
-        }
+            |e: &LcuAttemptError| matches!(e, LcuAttemptError::Retryable(_)),
+        )
+        .map_err(LcuAttemptError::into_inner)?;
 
         response
             .json::<T>()
@@ -383,6 +378,50 @@ pub(crate) enum LcuRequestError {
     Unexpected,
 }
 
+/// Wrapper distinguishing errors worth another attempt from terminal ones, so
+/// `with_retry`'s `is_retryable` can tell them apart while callers still get a
+/// plain [`LcuRequestError`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum LcuAttemptError {
+    Retryable(LcuRequestError),
+    Fatal(LcuRequestError),
+}
+
+impl LcuAttemptError {
+    pub(crate) fn into_inner(self) -> LcuRequestError {
+        match self {
+            Self::Retryable(error) | Self::Fatal(error) => error,
+        }
+    }
+}
+
+/// Maps a GET response status to the retry decision. 401/403/404 and 503
+/// (patching) describe a client state that another attempt cannot change;
+/// 429 and the remaining 5xx family are transient LCU plugin hiccups.
+pub(crate) fn classify_lcu_get_status(status: StatusCode) -> Result<(), LcuAttemptError> {
+    if status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN {
+        return Err(LcuAttemptError::Fatal(LcuRequestError::Unauthorized));
+    }
+
+    if status == StatusCode::NOT_FOUND {
+        return Err(LcuAttemptError::Fatal(LcuRequestError::NotLoggedIn));
+    }
+
+    if status == StatusCode::SERVICE_UNAVAILABLE {
+        return Err(LcuAttemptError::Fatal(LcuRequestError::Patching));
+    }
+
+    if status == StatusCode::TOO_MANY_REQUESTS || status.is_server_error() {
+        return Err(LcuAttemptError::Retryable(LcuRequestError::Unavailable));
+    }
+
+    if !status.is_success() {
+        return Err(LcuAttemptError::Fatal(LcuRequestError::Unavailable));
+    }
+
+    Ok(())
+}
+
 pub(crate) fn validate_lcu_status(status: StatusCode) -> Result<(), LcuRequestError> {
     if status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN {
         return Err(LcuRequestError::Unauthorized);
@@ -558,5 +597,49 @@ mod tests {
             elapsed >= std::time::Duration::from_millis(1200),
             "elapsed {elapsed:?} should be >= 1.2s"
         );
+    }
+
+    // ── classify_lcu_get_status ────────────────────────────────
+
+    #[test]
+    fn server_errors_and_rate_limits_are_retryable() {
+        for status in [
+            StatusCode::INTERNAL_SERVER_ERROR,
+            StatusCode::BAD_GATEWAY,
+            StatusCode::GATEWAY_TIMEOUT,
+            StatusCode::TOO_MANY_REQUESTS,
+        ] {
+            assert_eq!(
+                classify_lcu_get_status(status),
+                Err(LcuAttemptError::Retryable(LcuRequestError::Unavailable)),
+                "{status} should be retryable"
+            );
+        }
+    }
+
+    #[test]
+    fn client_state_errors_are_fatal() {
+        assert_eq!(
+            classify_lcu_get_status(StatusCode::UNAUTHORIZED),
+            Err(LcuAttemptError::Fatal(LcuRequestError::Unauthorized))
+        );
+        assert_eq!(
+            classify_lcu_get_status(StatusCode::NOT_FOUND),
+            Err(LcuAttemptError::Fatal(LcuRequestError::NotLoggedIn))
+        );
+        assert_eq!(
+            classify_lcu_get_status(StatusCode::SERVICE_UNAVAILABLE),
+            Err(LcuAttemptError::Fatal(LcuRequestError::Patching))
+        );
+        assert_eq!(
+            classify_lcu_get_status(StatusCode::BAD_REQUEST),
+            Err(LcuAttemptError::Fatal(LcuRequestError::Unavailable))
+        );
+    }
+
+    #[test]
+    fn success_statuses_pass_classification() {
+        assert_eq!(classify_lcu_get_status(StatusCode::OK), Ok(()));
+        assert_eq!(classify_lcu_get_status(StatusCode::NO_CONTENT), Ok(()));
     }
 }
