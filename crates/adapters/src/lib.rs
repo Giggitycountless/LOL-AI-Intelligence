@@ -2536,7 +2536,7 @@ fn map_recent_match_for_puuid(
     player_puuid: &str,
     champion_names: &HashMap<i64, String>,
 ) -> Option<RecentMatchSummary> {
-    let participant_id = game
+    let identity_participant = game
         .participant_identities
         .iter()
         .find_map(|identity| match &identity.player {
@@ -2544,11 +2544,14 @@ fn map_recent_match_for_puuid(
                 identity.participant_id
             }
             _ => None,
-        })?;
-    let participant = game
-        .participants
-        .iter()
-        .find(|participant| participant.participant_id == Some(participant_id))?;
+        })
+        .and_then(|participant_id| {
+            game.participants
+                .iter()
+                .find(|participant| participant.participant_id == Some(participant_id))
+        });
+
+    let participant = identity_participant.or_else(|| lone_participant_fallback(&game))?;
     let stats = participant.stats.as_ref()?;
 
     Some(recent_match_from_participant(
@@ -2557,6 +2560,33 @@ fn map_recent_match_for_puuid(
         stats,
         champion_names,
     ))
+}
+
+/// The per-puuid history endpoint is scoped to the queried player, but some
+/// client builds (notably Tencent) blank out `participantIdentities[].player
+/// .puuid` in the payload. The strict identity match then drops every game,
+/// rendering the player as having no history at all. When no identity in the
+/// game carries a puuid and the payload has exactly one participant — the
+/// shape those builds use for "stats of the queried player only" — that lone
+/// participant is the queried player. Games whose identities do carry puuids
+/// (just not the queried one) are left alone: something else is wrong there
+/// and guessing would attribute another player's stats.
+fn lone_participant_fallback(game: &LcuGame) -> Option<&LcuParticipant> {
+    let identities_carry_puuids = game.participant_identities.iter().any(|identity| {
+        identity
+            .player
+            .as_ref()
+            .and_then(|player| player.puuid.as_deref())
+            .is_some_and(|puuid| !puuid.trim().is_empty())
+    });
+    if identities_carry_puuids {
+        return None;
+    }
+
+    match game.participants.as_slice() {
+        [participant] => Some(participant),
+        _ => None,
+    }
 }
 
 fn recent_match_from_participant(
@@ -3277,6 +3307,70 @@ mod tests {
     use std::path::Path;
 
     const TEST_LOCKFILE_VALUE: &str = "not-a-real-test-value";
+
+    #[test]
+    fn recent_match_falls_back_to_lone_participant_when_identities_lack_puuids() {
+        let game: LcuGame = serde_json::from_value(serde_json::json!({
+            "gameId": 123,
+            "queueId": 420,
+            "gameDuration": 1800,
+            "participants": [{
+                "participantId": 1,
+                "teamId": 100,
+                "championId": 103,
+                "stats": {"kills": 5, "deaths": 2, "assists": 9, "win": true}
+            }],
+            "participantIdentities": [
+                {"participantId": 1, "player": {"summonerName": "queried", "puuid": ""}},
+                {"participantId": 2, "player": {"summonerName": "teammate"}}
+            ]
+        }))
+        .expect("game payload parses");
+
+        let summary = map_recent_match_for_puuid(game, "puuid-queried", &HashMap::new())
+            .expect("lone participant is attributed to the queried player");
+        assert_eq!(summary.game_id, 123);
+        assert_eq!(summary.kills, 5);
+        assert_eq!(summary.result, MatchResult::Win);
+    }
+
+    #[test]
+    fn recent_match_skips_lone_participant_when_identities_name_another_player() {
+        let game: LcuGame = serde_json::from_value(serde_json::json!({
+            "gameId": 124,
+            "participants": [{
+                "participantId": 1,
+                "stats": {"kills": 1, "deaths": 1, "assists": 1, "win": false}
+            }],
+            "participantIdentities": [
+                {"participantId": 1, "player": {"summonerName": "other", "puuid": "someone-else"}}
+            ]
+        }))
+        .expect("game payload parses");
+
+        assert!(map_recent_match_for_puuid(game, "puuid-queried", &HashMap::new()).is_none());
+    }
+
+    #[test]
+    fn recent_match_still_resolves_via_identity_puuid_match() {
+        let game: LcuGame = serde_json::from_value(serde_json::json!({
+            "gameId": 125,
+            "participants": [
+                {"participantId": 1, "stats": {"kills": 9, "deaths": 0, "assists": 3, "win": true}},
+                {"participantId": 2, "stats": {"kills": 0, "deaths": 9, "assists": 0, "win": false}}
+            ],
+            "participantIdentities": [
+                {"participantId": 1, "player": {"puuid": "puuid-queried"}},
+                {"participantId": 2, "player": {"puuid": "someone-else"}}
+            ]
+        }))
+        .expect("game payload parses");
+
+        let summary = map_recent_match_for_puuid(game, "puuid-queried", &HashMap::new())
+            .expect("identity match resolves the participant");
+        assert_eq!(summary.kills, 9);
+        assert_eq!(summary.result, MatchResult::Win);
+    }
 
     #[test]
     fn map_batch_limited_caps_in_flight_work() {
