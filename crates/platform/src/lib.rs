@@ -598,10 +598,15 @@ fn recent_stats_cache_key(player_puuid: &str, limit: i64) -> String {
 }
 
 fn recent_stats_cache_is_fresh(entry: &RecentStatsCacheEntry) -> bool {
-    let ttl = if entry.result.is_ok() {
-        RECENT_STATS_CACHE_TTL
-    } else {
-        RECENT_STATS_FAILURE_CACHE_TTL
+    // An Ok with zero matches is usually not a real empty history — it's what
+    // a degraded per-puuid payload parses to (identities without puuids, or a
+    // half-ready match-history plugin right after client start). Caching it
+    // with the 10-minute success TTL froze the player's row as blank for the
+    // whole champ select, so give it the short failure TTL and re-ask; a
+    // genuinely fresh account just costs one cheap re-request per window.
+    let ttl = match &entry.result {
+        Ok(stats) if !stats.recent_matches.is_empty() => RECENT_STATS_CACHE_TTL,
+        _ => RECENT_STATS_FAILURE_CACHE_TTL,
     };
 
     entry.cached_at.elapsed() < ttl
@@ -3727,6 +3732,58 @@ mod tests {
         merge_recent_stats_from_cache(&mut snapshot, &cached);
 
         assert!(snapshot.players[0].recent_stats.is_some());
+    }
+
+    #[test]
+    fn empty_recent_stats_expire_on_the_failure_ttl() {
+        let empty = ParticipantRecentStats {
+            match_count: 0,
+            average_kda: None,
+            recent_champions: Vec::new(),
+            recent_matches: Vec::new(),
+        };
+        let loaded = ParticipantRecentStats {
+            match_count: 1,
+            average_kda: Some(3.0),
+            recent_champions: vec!["Ahri".to_string()],
+            recent_matches: vec![RecentMatchSummary {
+                game_id: 100,
+                champion_id: Some(103),
+                champion_name: "Ahri".to_string(),
+                queue_name: Some("Ranked Solo/Duo".to_string()),
+                lane: None,
+                played_at: Some("2026-04-26 00:00:00".to_string()),
+                game_duration_seconds: Some(1800),
+                result: MatchResult::Win,
+                kills: 5,
+                deaths: 1,
+                assists: 9,
+                kda: Some(14.0),
+                team_puuids: Vec::new(),
+            }],
+        };
+        let past_failure_ttl = Instant::now()
+            .checked_sub(RECENT_STATS_FAILURE_CACHE_TTL + Duration::from_secs(1))
+            .expect("clock reaches past the failure ttl");
+
+        assert!(recent_stats_cache_is_fresh(&RecentStatsCacheEntry {
+            result: Ok(empty.clone()),
+            cached_at: Instant::now(),
+        }));
+        assert!(
+            !recent_stats_cache_is_fresh(&RecentStatsCacheEntry {
+                result: Ok(empty),
+                cached_at: past_failure_ttl,
+            }),
+            "empty histories must expire on the short failure ttl"
+        );
+        assert!(
+            recent_stats_cache_is_fresh(&RecentStatsCacheEntry {
+                result: Ok(loaded),
+                cached_at: past_failure_ttl,
+            }),
+            "loaded histories keep the long success ttl"
+        );
     }
 
     #[test]
