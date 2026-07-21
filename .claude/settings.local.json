@@ -146,7 +146,20 @@
       "Bash(sed -n '/pub struct RankedChampionStat/,/^}/p' crates/domain/src/lib.rs)",
       "Bash(echo \"=== exit: $? ===\")",
       "Bash(echo \"exit: $?\")",
-      "Bash(echo \"tsc exit: $?\")"
+      "Bash(echo \"tsc exit: $?\")",
+      "Bash(command -v uvx)",
+      "Bash(command -v pipx)",
+      "Bash(command -v pip)",
+      "Bash(uv tool *)",
+      "mcp__code-review-graph__get_architecture_overview_tool",
+      "mcp__code-review-graph__get_hub_nodes_tool",
+      "mcp__code-review-graph__find_large_functions_tool",
+      "mcp__code-review-graph__get_knowledge_gaps_tool",
+      "Bash(GIT_AUTHOR_DATE=\"2026-07-21T16:30:00\" GIT_COMMITTER_DATE=\"2026-07-21T16:30:00\" git commit -m \"chore: ignore code-review-graph output directory\")",
+      "Bash(GIT_AUTHOR_DATE=\"2026-07-21T17:05:00\" GIT_COMMITTER_DATE=\"2026-07-21T17:05:00\" git commit -m \"chore: allow code-review-graph MCP tool calls in local settings\")"
     ]
-  }
+  },
+  "enabledMcpjsonServers": [
+    "code-review-graph"
+  ]
 }
