@@ -954,9 +954,21 @@ impl application::RankedChampionDataProvider for LolPsKrProvider {
         let records = raw_entries
             .into_iter()
             .filter_map(|entry| {
+                if entry.champion_id <= 0 {
+                    return None;
+                }
                 let win = round_to_tenth(entry.win_rate.parse::<f64>().ok()?);
                 let pick = round_to_tenth(entry.pick_rate.parse::<f64>().ok()?);
                 let ban = round_to_tenth(entry.ban_rate.parse::<f64>().ok()?);
+                // lol.ps is a live third-party feed, so an individual bad
+                // record (e.g. "NaN"/out-of-range rate) is skipped rather
+                // than failing the whole tierlist fetch — same resilience
+                // posture as the parse failures above, but now also
+                // rejecting values the JSON-backed providers would reject
+                // via validate_rate.
+                validate_rate(win, "winRate").ok()?;
+                validate_rate(pick, "pickRate").ok()?;
+                validate_rate(ban, "banRate").ok()?;
                 let overall = ranked_overall_score(win, pick, ban);
                 let name = entry.champion_info
                     .and_then(|i| i.name_us)
