@@ -2364,7 +2364,7 @@ fn playstyle_match_from_game_for_puuid(
     game: &LcuGame,
     player_puuid: &str,
 ) -> Option<domain::PlaystyleMatchStat> {
-    let participant_id = game
+    let identity_participant = game
         .participant_identities
         .iter()
         .find_map(|identity| match &identity.player {
@@ -2372,11 +2372,14 @@ fn playstyle_match_from_game_for_puuid(
                 identity.participant_id
             }
             _ => None,
-        })?;
-    let participant = game
-        .participants
-        .iter()
-        .find(|participant| participant.participant_id == Some(participant_id))?;
+        })
+        .and_then(|participant_id| {
+            game.participants
+                .iter()
+                .find(|participant| participant.participant_id == Some(participant_id))
+        });
+
+    let participant = identity_participant.or_else(|| lone_participant_fallback(game))?;
     let stats = participant.stats.as_ref()?;
     Some(playstyle_stat_from_participant(game, participant, stats))
 }
