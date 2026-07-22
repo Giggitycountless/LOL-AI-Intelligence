@@ -167,6 +167,11 @@ export function AppStateProvider({ children, mode = "main" }: { children: ReactN
 
   // ── Champ select actions ──
   const champSelectFingerprintRef = useRef("");
+  // Bumped every time a snapshot with new content is applied, from any
+  // source (real-time push or manual refresh). Lets an in-flight manual
+  // refresh detect that a newer snapshot already landed while it was
+  // waiting, so it doesn't overwrite fresher data with a stale response.
+  const champSelectApplySeqRef = useRef(0);
 
   const applyChampSelectSnapshotAction = useCallback((snapshot: ChampSelectSnapshot) => {
     const nextFingerprint = _champSelectFingerprint(snapshot);
@@ -174,6 +179,7 @@ export function AppStateProvider({ children, mode = "main" }: { children: ReactN
       return;
     }
     champSelectFingerprintRef.current = nextFingerprint;
+    champSelectApplySeqRef.current += 1;
     startTransition(() => {
       setChampSelectSnapshot(snapshot);
     });
@@ -186,7 +192,11 @@ export function AppStateProvider({ children, mode = "main" }: { children: ReactN
   }, [assetLoader.loadLeagueChampionIcon]);
 
   const refreshChampSelectSnapshotAction = useCallback(async () => {
-    return run(() => fetchChampSelectSnapshot(6), undefined, applyChampSelectSnapshotAction);
+    const seqAtStart = champSelectApplySeqRef.current;
+    return run(() => fetchChampSelectSnapshot(6), undefined, (snapshot) => {
+      if (champSelectApplySeqRef.current !== seqAtStart) return;
+      applyChampSelectSnapshotAction(snapshot);
+    });
   }, [run, applyChampSelectSnapshotAction]);
 
   const refreshChampSelectAdvisorSnapshotAction = useCallback(async () => {
