@@ -1601,6 +1601,7 @@ fn start_champ_select_hydration<R: Runtime + 'static>(
     let count = Arc::clone(&state.hydration_thread_count);
     if count.fetch_add(1, Ordering::Relaxed) >= MAX_HYDRATION_THREADS {
         count.fetch_sub(1, Ordering::Relaxed);
+        clear_champ_select_hydration_if_current(&state, fingerprint.as_str());
         return;
     }
 
@@ -2286,8 +2287,10 @@ fn build_match_recap_prompt(
 
     let self_id = detail.self_participant_id.unwrap_or(-1);
 
-    let duration_seconds = detail.game_duration_seconds.unwrap_or(0).max(1);
-    let duration_minutes = duration_seconds as f64 / 60.0;
+    let duration_minutes: Option<f64> = detail
+        .game_duration_seconds
+        .filter(|seconds| *seconds > 0)
+        .map(|seconds| seconds as f64 / 60.0);
 
     let result_label = match detail.result {
         domain::MatchResult::Win => "胜利",
@@ -2327,12 +2330,18 @@ fn build_match_recap_prompt(
                 _ => "?",
             };
             let kda = p.kda.map(|v| format!("{v:.2}")).unwrap_or_else(|| "n/a".into());
-            let dpm = p.damage_to_champions as f64 / duration_minutes;
-            let cspm = p.cs as f64 / duration_minutes;
-            let gpm = p.gold_earned as f64 / duration_minutes;
+            let dpm = duration_minutes
+                .map(|m| format!("{:.0}/m", p.damage_to_champions as f64 / m))
+                .unwrap_or_else(|| "n/a".into());
+            let cspm = duration_minutes
+                .map(|m| format!("{:.1}/m", p.cs as f64 / m))
+                .unwrap_or_else(|| "n/a".into());
+            let gpm = duration_minutes
+                .map(|m| format!("{:.0}/m", p.gold_earned as f64 / m))
+                .unwrap_or_else(|| "n/a".into());
 
             let line = format!(
-"  - {marker}{champ}（{lane}）{r} {k}/{d}/{a} KDA={kda} | 伤害{dmg}({dpm:.0}/m) 物{phy}/魔{mag}/真{tru} | 对建筑{turret} 对野怪{obj} | 承伤{taken} | CS{cs}({cspm:.1}/m) 金{gold}({gpm:.0}/m) | 视野{vs}（眼{wp}/排{wk}/控{cw}） | 死亡时长{dead}s | 最长连杀{spree} 最大多杀{multi}（2={d2}/3={d3}/4={d4}/5={d5}） {fb}{ft}",
+"  - {marker}{champ}（{lane}）{r} {k}/{d}/{a} KDA={kda} | 伤害{dmg}({dpm}) 物{phy}/魔{mag}/真{tru} | 对建筑{turret} 对野怪{obj} | 承伤{taken} | CS{cs}({cspm}) 金{gold}({gpm}) | 视野{vs}（眼{wp}/排{wk}/控{cw}） | 死亡时长{dead}s | 最长连杀{spree} 最大多杀{multi}（2={d2}/3={d3}/4={d4}/5={d5}） {fb}{ft}",
                 marker = if is_self { "【你】" } else { "" },
                 champ = p.champion_name,
                 lane = lane,
@@ -2388,7 +2397,7 @@ fn build_match_recap_prompt(
 
 ## 本局元信息
 - 模式：{queue}
-- 时长：{minutes:.1} 分钟
+- 时长：{minutes}
 - 你的结果：{result_label}
 
 ## 你的数据（重点分析对象）
@@ -2419,7 +2428,9 @@ fn build_match_recap_prompt(
 
 **这一局最该改的一点**
 （1条具体可执行的建议）",
-        minutes = duration_minutes,
+        minutes = duration_minutes
+            .map(|m| format!("{m:.1} 分钟"))
+            .unwrap_or_else(|| "未知".into()),
     )
 }
 
