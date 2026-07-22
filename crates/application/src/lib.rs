@@ -3090,24 +3090,38 @@ pub fn get_champ_select_snapshot(
             continue;
         }
         let summoner = summoners_by_id.get(&summoner_id);
+        let puuid = summoner
+            .map(|value| value.puuid.clone())
+            .unwrap_or_default();
+        // Mirror the dedup guards from the loop above: a summoner_id not yet
+        // seen can still resolve to a puuid/name that's already claimed by a
+        // seed added there, which would otherwise produce a duplicate roster
+        // card for the same player.
+        if !puuid.is_empty() && seen_puuids.contains(&puuid) {
+            continue;
+        }
+        let display_name = summoner
+            .map(|value| value.display_name.clone())
+            .unwrap_or_else(|| format!("Summoner {summoner_id}"));
+        let normalized_name = normalize_player_name(display_name.as_str());
+        if !normalized_name.is_empty() && seen_names.contains(&normalized_name) {
+            continue;
+        }
+
         let team = if session.ally_ids.contains(&summoner_id) {
             domain::ChampSelectTeam::Ally
         } else {
             domain::ChampSelectTeam::Enemy
         };
         let champion_id = session.champion_selections.get(&summoner_id).copied();
-        let puuid = summoner
-            .map(|value| value.puuid.clone())
-            .unwrap_or_default();
-        let display_name = summoner
-            .map(|value| value.display_name.clone())
-            .unwrap_or_else(|| format!("Summoner {summoner_id}"));
 
         if !puuid.is_empty() {
             seen_puuids.insert(puuid.clone());
         }
         seen_ids.insert(summoner_id);
-        seen_names.insert(normalize_player_name(display_name.as_str()));
+        if !normalized_name.is_empty() {
+            seen_names.insert(normalized_name);
+        }
         let summoner_level = summoner.and_then(|s| s.summoner_level);
         seeds.push(PlayerSeed {
             summoner_id,
@@ -3182,8 +3196,16 @@ pub fn get_champ_select_snapshot(
         }
         for key in summoner_name_lookup_keys(seed.display_name.as_str()) {
             if let Some(summoner) = summoners_by_name.get(&key) {
-                if needs_puuid && !summoner.puuid.is_empty() {
+                // Guard against two seeds resolving to the same puuid through
+                // an ambiguous short lookup key (e.g. two Riot IDs sharing a
+                // game name but differing tag lines) — a stolen puuid would
+                // attribute one player's stats to another's card.
+                if needs_puuid
+                    && !summoner.puuid.is_empty()
+                    && !seen_puuids.contains(&summoner.puuid)
+                {
                     seed.puuid = summoner.puuid.clone();
+                    seen_puuids.insert(seed.puuid.clone());
                 }
                 if needs_level && summoner.summoner_level.is_some() {
                     seed.summoner_level = summoner.summoner_level;
