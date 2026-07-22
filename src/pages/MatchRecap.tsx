@@ -136,18 +136,23 @@ export function MatchRecap({ initialSelection }: { initialSelection: MatchRecapS
     setStreamingTone(tone);
     stopListeners();
 
+    // Scoped to this request so a still-running analysis from a previous
+    // match/tone (its backend task isn't cancelled, only its listeners are
+    // detached) can't land its late "done"/"chunk" payload on this run.
+    const requestId = crypto.randomUUID();
+
     try {
       const [chunkUnlisten, doneUnlisten, errorUnlisten] = await Promise.all([
-        listen<string>("match-recap-chunk", (event) => {
+        listen<string>(`match-recap-${requestId}-chunk`, (event) => {
           setStreaming((prev) => prev + event.payload);
         }),
-        listen<string>("match-recap-done", (event) => {
+        listen<string>(`match-recap-${requestId}-done`, (event) => {
           setCache((prev) => ({ ...prev, [tone]: event.payload }));
           setStreaming("");
           setStreamingTone(null);
           stopListeners();
         }),
-        listen<string>("match-recap-error", (event) => {
+        listen<string>(`match-recap-${requestId}-error`, (event) => {
           setAiError(event.payload);
           setStreaming("");
           setStreamingTone(null);
@@ -156,7 +161,7 @@ export function MatchRecap({ initialSelection }: { initialSelection: MatchRecapS
       ]);
 
       unlistenersRef.current = [chunkUnlisten, doneUnlisten, errorUnlisten];
-      await invoke("run_match_recap_analysis", { gameId: selection.gameId, tone });
+      await invoke("run_match_recap_analysis", { gameId: selection.gameId, tone, requestId });
     } catch (err: unknown) {
       const msg = isCommandError(err) ? err.message : err instanceof Error ? err.message : t("recap.aiStartFailed");
       setAiError(msg);

@@ -336,8 +336,9 @@ fn run_match_recap_analysis(
     state: State<'_, platform::AppState>,
     game_id: i64,
     tone: String,
+    request_id: String,
 ) -> Result<(), platform::CommandError> {
-    platform::run_match_recap_analysis(&app, state.inner(), game_id, tone)
+    platform::run_match_recap_analysis(&app, state.inner(), game_id, tone, request_id)
 }
 
 #[tauri::command(async)]

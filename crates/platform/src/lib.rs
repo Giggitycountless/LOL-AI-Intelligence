@@ -2223,6 +2223,7 @@ pub fn run_match_recap_analysis<R: tauri::Runtime>(
     state: &AppState,
     game_id: i64,
     tone: String,
+    request_id: String,
 ) -> Result<(), CommandError> {
     let settings = application::get_settings(&state.store).map_err(CommandError::from)?;
 
@@ -2250,6 +2251,11 @@ pub fn run_match_recap_analysis<R: tauri::Runtime>(
 
     let prompt = build_match_recap_prompt(&detail, &tone, language);
     let app_handle = app.clone();
+    // Scoping the event names to this request keeps a still-running analysis
+    // from a previous match/tone from landing on whichever listeners happen
+    // to be registered when it finally completes (see MatchRecap.tsx).
+    let event_prefix = format!("match-recap-{request_id}");
+    let error_event = format!("{event_prefix}-error");
 
     std::thread::spawn(move || {
         let result = stream_ai_chunks(
@@ -2258,11 +2264,11 @@ pub fn run_match_recap_analysis<R: tauri::Runtime>(
             &api_key,
             &model,
             &prompt,
-            "match-recap",
+            &event_prefix,
             None,
         );
         if let Err(e) = result {
-            let _ = app_handle.emit("match-recap-error", e);
+            let _ = app_handle.emit(error_event.as_str(), e);
         }
     });
 
