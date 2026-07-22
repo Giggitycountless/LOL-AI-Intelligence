@@ -8,13 +8,16 @@ import { imageAssetUrl } from "./utils";
 const ASSET_LOAD_CONCURRENCY = 4;
 const ASSET_LOAD_DELAY_MS = 16;
 
-const inFlightRankIcons = new Map<string, Promise<void>>();
-
 export function useAssetLoader(
   setLeagueImages: Dispatch<SetStateAction<LeagueImageUrls>>,
   setChampionDetailsById: Dispatch<SetStateAction<Record<number, LeagueChampionDetailsView>>>,
 ) {
   const imageUrlsRef = useRef<LeagueImageUrls>({ profileIcons: {}, championIcons: {}, gameAssets: {}, rankTierIcons: {} });
+  // Per-instance, unlike a module-level map: a module-level cache would be
+  // shared across concurrent useAssetLoader instances (e.g. HMR/remount),
+  // and a second instance's request would silently resolve into the first
+  // instance's imageUrlsRef instead of its own.
+  const inFlightRankIconsRef = useRef(new Map<string, Promise<void>>());
   const championDetailsRef = useRef<Record<number, LeagueChampionDetailsView>>({});
   const pendingImageKeysRef = useRef(new Set<string>());
   const assetQueueRef = useRef<Array<() => void>>([]);
@@ -207,7 +210,7 @@ export function useAssetLoader(
   const loadLeagueRankTierIconAction = useCallback((tier: string): Promise<void> => {
     const key = tier.toLowerCase();
     if (imageUrlsRef.current.rankTierIcons[key]) return Promise.resolve();
-    const existing = inFlightRankIcons.get(key);
+    const existing = inFlightRankIconsRef.current.get(key);
     if (existing) return existing;
     const promise = fetchRankTierIcon(key)
       .then((asset) => {
@@ -219,8 +222,8 @@ export function useAssetLoader(
         scheduleLeagueImagesUpdate();
       })
       .catch(() => { /* ignore — icon simply won't show */ })
-      .finally(() => { inFlightRankIcons.delete(key); });
-    inFlightRankIcons.set(key, promise);
+      .finally(() => { inFlightRankIconsRef.current.delete(key); });
+    inFlightRankIconsRef.current.set(key, promise);
     return promise;
   }, [scheduleLeagueImagesUpdate]);
 
