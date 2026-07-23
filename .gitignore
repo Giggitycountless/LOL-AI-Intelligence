@@ -19,6 +19,5 @@ Thumbs.db
 # Added by code-review-graph
 .code-review-graph/
 
-# Personal Claude Code permissions/session state — not meant to be shared
-.claude/settings.local.json
-.claude/commands/
+# Claude Code local state — not meant to be shared
+.claude/
