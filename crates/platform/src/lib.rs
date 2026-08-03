@@ -870,6 +870,34 @@ pub fn shutdown_league_event_service(state: &AppState) {
     log_auto_accept_monitor_event("league event service shutdown requested");
 }
 
+/// Periodically drops expired entries from the identity-keyed caches
+/// (`recent_stats_cache`, `summoner_id_cache`, `summoner_name_cache`).
+///
+/// These are keyed by puuid / summoner id / summoner name — an effectively
+/// unbounded space over a long-running process, since a fresh champ-select
+/// or match-history lookup is issued for every new player the user
+/// encounters. Reads already skip stale entries via the `*_is_fresh` checks,
+/// but nothing previously removed them, so the maps grew for the life of
+/// the process. This sweep bounds them to roughly the currently-fresh set.
+pub fn start_cache_maintenance_service(state: AppState) {
+    thread::spawn(move || loop {
+        if state.shutdown_token.is_cancelled() {
+            break;
+        }
+        thread::sleep(IDENTITY_CACHE_SWEEP_INTERVAL);
+        if state.shutdown_token.is_cancelled() {
+            break;
+        }
+        sweep_identity_caches(&state);
+    });
+}
+
+fn sweep_identity_caches(state: &AppState) {
+    lock_or_recover(&state.recent_stats_cache).retain(|_, entry| recent_stats_cache_is_fresh(entry));
+    lock_or_recover(&state.summoner_id_cache).retain(|_, entry| summoner_cache_is_fresh(entry));
+    lock_or_recover(&state.summoner_name_cache).retain(|_, entry| summoner_cache_is_fresh(entry));
+}
+
 fn mark_league_event_service_started(state: &AppState) -> bool {
     !state
         .league_event_service_started
@@ -3801,6 +3829,73 @@ mod tests {
             }),
             "loaded histories keep the long success ttl"
         );
+    }
+
+    #[test]
+    fn sweep_identity_caches_drops_only_stale_entries() {
+        let data_dir = unique_temp_dir();
+        let state = AppState::initialize(&data_dir).expect("app state initializes");
+
+        let stale = Instant::now()
+            .checked_sub(SUMMONER_CACHE_TTL + Duration::from_secs(1))
+            .expect("clock reaches past the summoner cache ttl");
+
+        lock_or_recover(&state.recent_stats_cache).insert(
+            "fresh-puuid:6".to_string(),
+            RecentStatsCacheEntry {
+                result: Ok(ParticipantRecentStats {
+                    match_count: 1,
+                    average_kda: Some(3.0),
+                    recent_champions: vec!["Ahri".to_string()],
+                    recent_matches: Vec::new(),
+                }),
+                cached_at: Instant::now(),
+            },
+        );
+        lock_or_recover(&state.recent_stats_cache).insert(
+            "stale-puuid:6".to_string(),
+            RecentStatsCacheEntry {
+                result: Ok(ParticipantRecentStats {
+                    match_count: 1,
+                    average_kda: Some(3.0),
+                    recent_champions: vec!["Ahri".to_string()],
+                    recent_matches: Vec::new(),
+                }),
+                cached_at: stale,
+            },
+        );
+        lock_or_recover(&state.summoner_id_cache).insert(
+            1,
+            SummonerCacheEntry { entry: None, cached_at: Instant::now() },
+        );
+        lock_or_recover(&state.summoner_id_cache).insert(
+            2,
+            SummonerCacheEntry { entry: None, cached_at: stale },
+        );
+        lock_or_recover(&state.summoner_name_cache).insert(
+            "fresh-name".to_string(),
+            SummonerCacheEntry { entry: None, cached_at: Instant::now() },
+        );
+        lock_or_recover(&state.summoner_name_cache).insert(
+            "stale-name".to_string(),
+            SummonerCacheEntry { entry: None, cached_at: stale },
+        );
+
+        sweep_identity_caches(&state);
+
+        let recent_stats = lock_or_recover(&state.recent_stats_cache);
+        assert!(recent_stats.contains_key("fresh-puuid:6"));
+        assert!(!recent_stats.contains_key("stale-puuid:6"));
+        drop(recent_stats);
+
+        let summoner_ids = lock_or_recover(&state.summoner_id_cache);
+        assert!(summoner_ids.contains_key(&1));
+        assert!(!summoner_ids.contains_key(&2));
+        drop(summoner_ids);
+
+        let summoner_names = lock_or_recover(&state.summoner_name_cache);
+        assert!(summoner_names.contains_key("fresh-name"));
+        assert!(!summoner_names.contains_key("stale-name"));
     }
 
     #[test]

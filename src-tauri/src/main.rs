@@ -726,6 +726,7 @@ fn main() {
             let app_handle = app.handle().clone();
             let state = app.state::<platform::AppState>().inner().clone();
             platform::refresh_advisor_data_in_background(state.clone());
+            platform::start_cache_maintenance_service(state.clone());
             platform::start_league_event_service(app_handle, state);
 
             Ok(())
