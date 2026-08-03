@@ -452,31 +452,27 @@ fn listen_for_overlay_hotkey(app: tauri::AppHandle) {
                 EventType::KeyRelease(Key::ControlLeft | Key::ControlRight) => {
                     ctrl_down = false;
                 }
-                EventType::KeyPress(Key::Tab) => {
-                    if shift_down && !ctrl_down {
+                EventType::KeyPress(Key::Tab)
+                    if shift_down && !ctrl_down => {
                         tab_armed = true;
                     }
-                }
-                EventType::KeyRelease(Key::Tab) => {
-                    if tab_armed {
+                EventType::KeyRelease(Key::Tab)
+                    if tab_armed => {
                         tab_armed = false;
                         let _ = overlay_tx.try_send(());
                     }
-                }
                 EventType::KeyPress(key) => {
-                    if ctrl_down && shift_down {
-                        if let Some(slot) = number_key_to_slot(key) {
+                    if ctrl_down && shift_down
+                        && let Some(slot) = number_key_to_slot(key) {
                             number_armed = Some(slot);
                         }
-                    }
                 }
                 EventType::KeyRelease(key) => {
-                    if let Some(slot) = number_armed {
-                        if number_key_to_slot(key) == Some(slot) {
+                    if let Some(slot) = number_armed
+                        && number_key_to_slot(key) == Some(slot) {
                             number_armed = None;
                             let _ = chat_tx.try_send(slot);
                         }
-                    }
                 }
                 _ => {}
             }

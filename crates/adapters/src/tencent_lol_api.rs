@@ -134,11 +134,10 @@ impl TencentLolClient {
     ) -> Option<TencentChampionData> {
         {
             let cache = self.cache.lock().unwrap_or_else(|p| p.into_inner());
-            if let Some((fetched_at, data)) = cache.get(&champion_id) {
-                if fetched_at.elapsed() < CACHE_TTL {
+            if let Some((fetched_at, data)) = cache.get(&champion_id)
+                && fetched_at.elapsed() < CACHE_TTL {
                     return Some(data.clone());
                 }
-            }
         }
 
         let url = format!("{}/{champion_id}.js", self.base_url);
@@ -169,8 +168,8 @@ impl TencentLolClient {
             }
         };
 
-        if let Some(expected) = expected_alias {
-            if !raw.hero.alias.eq_ignore_ascii_case(expected) {
+        if let Some(expected) = expected_alias
+            && !raw.hero.alias.eq_ignore_ascii_case(expected) {
                 crate::log_lcu_adapter_event(&format!(
                     "tencent-api alias mismatch champion_id={champion_id} \
                      expected={expected} got={}",
@@ -178,7 +177,6 @@ impl TencentLolClient {
                 ));
                 return None;
             }
-        }
 
         let spells = raw
             .spells
@@ -226,11 +224,10 @@ impl TencentLolClient {
     pub fn fetch_champion_rune_recommendations(&self, champion_id: i64) -> Vec<RuneRecommendation> {
         {
             let cache = self.rune_cache.lock().unwrap_or_else(|p| p.into_inner());
-            if let Some((fetched_at, recs)) = cache.get(&champion_id) {
-                if fetched_at.elapsed() < RUNE_CACHE_TTL {
+            if let Some((fetched_at, recs)) = cache.get(&champion_id)
+                && fetched_at.elapsed() < RUNE_CACHE_TTL {
                     return recs.clone();
                 }
-            }
         }
 
         let url = format!("{}/champDetail_{champion_id}.js", self.rune_base_url);
@@ -430,7 +427,7 @@ fn parse_rune_js(js_text: &str, champion_id: i64) -> Vec<RuneRecommendation> {
         }
 
         // Sort by igamecnt desc, take top 2 per lane
-        entries.sort_by(|a, b| b.0.cmp(&a.0));
+        entries.sort_by_key(|(igamecnt, _)| std::cmp::Reverse(*igamecnt));
         for (igamecnt, perk_ids) in entries.into_iter().take(2) {
             let Some((primary_style_id, sub_style_id)) = derive_style_ids(&perk_ids) else {
                 continue;
@@ -448,7 +445,7 @@ fn parse_rune_js(js_text: &str, champion_id: i64) -> Vec<RuneRecommendation> {
     }
 
     // Sort all recommendations by pick count desc
-    all_recs.sort_by(|a, b| b.pick_count.cmp(&a.pick_count));
+    all_recs.sort_by_key(|rec| std::cmp::Reverse(rec.pick_count));
     all_recs
 }
 

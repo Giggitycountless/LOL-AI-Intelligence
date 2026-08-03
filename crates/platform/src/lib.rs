@@ -1485,11 +1485,10 @@ fn hydrate_cached_champ_select_snapshot(
     if !ranked_missing.is_empty() {
         let ranked_by_puuid = cached_reader.participant_ranked_stats_batch(&ranked_missing);
         for player in &mut snapshot.players {
-            if player.ranked_queues.is_empty() {
-                if let Some(queues) = ranked_by_puuid.get(player.puuid.as_str()) {
+            if player.ranked_queues.is_empty()
+                && let Some(queues) = ranked_by_puuid.get(player.puuid.as_str()) {
                     player.ranked_queues = queues.clone();
                 }
-            }
         }
     }
 
@@ -1502,11 +1501,10 @@ fn hydrate_cached_champ_select_snapshot(
     if !mastery_missing.is_empty() {
         let mastery_by_puuid = cached_reader.champion_mastery_batch(&mastery_missing);
         for player in &mut snapshot.players {
-            if player.mastery_level.is_none() {
-                if let Some(level) = mastery_by_puuid.get(player.puuid.as_str()) {
+            if player.mastery_level.is_none()
+                && let Some(level) = mastery_by_puuid.get(player.puuid.as_str()) {
                     player.mastery_level = *level;
                 }
-            }
         }
     }
 
@@ -2016,17 +2014,15 @@ fn stream_ai_chunks<R: tauri::Runtime>(
         let delta = &value["choices"][0]["delta"];
         // Reasoning models (DeepSeek-R1 等) 把思考过程放在 reasoning_content，最终答案放在 content。
         // 思考内容只实时展示、不写入缓存，避免污染保存下来的分析结论。
-        if let Some(reasoning) = delta["reasoning_content"].as_str() {
-            if !reasoning.is_empty() {
+        if let Some(reasoning) = delta["reasoning_content"].as_str()
+            && !reasoning.is_empty() {
                 let _ = app.emit(chunk_event.as_str(), reasoning.to_string());
             }
-        }
-        if let Some(content) = delta["content"].as_str() {
-            if !content.is_empty() {
+        if let Some(content) = delta["content"].as_str()
+            && !content.is_empty() {
                 full_text.push_str(content);
                 let _ = app.emit(chunk_event.as_str(), content.to_string());
             }
-        }
     }
 
     if let Some((store, scope_key, game_count)) = persist {
@@ -2097,7 +2093,7 @@ fn build_ai_prompt(
     let mut champ_count: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
     for m in &ranked_matches { *champ_count.entry(m.champion_name.as_str()).or_default() += 1; }
     let mut champ_vec: Vec<_> = champ_count.into_iter().collect();
-    champ_vec.sort_by(|a, b| b.1.cmp(&a.1));
+    champ_vec.sort_by_key(|(_, count)| std::cmp::Reverse(*count));
     let top_champs: String = champ_vec.iter().take(5)
         .map(|(n, c)| if is_en { format!("{n} ({c} games)") } else { format!("{n}({c}场)") })
         .collect::<Vec<_>>().join(", ");
@@ -2698,8 +2694,8 @@ fn try_schedule_champ_select_automation(state: &AppState) {
         Err(_) => return,
     };
 
-    if settings.auto_ban_enabled {
-        if let Some(ban_champion_id) = settings.auto_ban_champion_id {
+    if settings.auto_ban_enabled
+        && let Some(ban_champion_id) = settings.auto_ban_champion_id {
             let mut guard = lock_or_recover(&state.champ_select_ban_delay_token);
             if guard.is_none() {
                 let token = CancellationToken::new();
@@ -2725,10 +2721,9 @@ fn try_schedule_champ_select_automation(state: &AppState) {
                 });
             }
         }
-    }
 
-    if settings.auto_pick_enabled {
-        if let Some(pick_champion_id) = settings.auto_pick_champion_id {
+    if settings.auto_pick_enabled
+        && let Some(pick_champion_id) = settings.auto_pick_champion_id {
             let mut guard = lock_or_recover(&state.champ_select_pick_delay_token);
             if guard.is_none() {
                 let token = CancellationToken::new();
@@ -2754,7 +2749,6 @@ fn try_schedule_champ_select_automation(state: &AppState) {
                 });
             }
         }
-    }
 }
 
 pub fn get_league_self_snapshot(
@@ -3007,11 +3001,10 @@ pub fn refresh_advisor_data_in_background(state: AppState) {
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|elapsed| elapsed.as_secs())
                 .unwrap_or(0);
-            if let Ok(imported) = existing.imported_at.parse::<u64>() {
-                if now.saturating_sub(imported) < ADVISOR_REFRESH_MAX_AGE_SECS {
+            if let Ok(imported) = existing.imported_at.parse::<u64>()
+                && now.saturating_sub(imported) < ADVISOR_REFRESH_MAX_AGE_SECS {
                     return;
                 }
-            }
         }
 
         match application::refresh_advisor_data(

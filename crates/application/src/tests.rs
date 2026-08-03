@@ -2036,11 +2036,10 @@ impl LeagueClientReader for FakeLeagueClientReader {
         let mut accept_count = self.ready_check_accepts.lock().unwrap();
         *accept_count += 1;
 
-        if let Some(target_accepts) = self.ready_check_clears_after {
-            if *accept_count >= target_accepts {
+        if let Some(target_accepts) = self.ready_check_clears_after
+            && *accept_count >= target_accepts {
                 *self.gameflow_phase.lock().unwrap() = self.ready_check_next_phase.clone();
             }
-        }
 
         if let Some(error) = &self.ready_check_accept_error {
             return Err(error.clone());

@@ -73,7 +73,6 @@ pub(crate) struct LcuGameflowChampionSelection {
 pub(crate) struct LcuChampSelectAction {
     pub(crate) id: Option<i64>,
     pub(crate) actor_cell_id: Option<i64>,
-    pub(crate) champion_id: Option<i64>,
     pub(crate) completed: Option<bool>,
     pub(crate) is_ally_action: Option<bool>,
     #[serde(rename = "type")]

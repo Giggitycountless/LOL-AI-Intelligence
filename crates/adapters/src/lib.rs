@@ -321,11 +321,10 @@ impl LocalLeagueClient {
         {
             let mut cache = lock_or_recover(&self.champion_aliases);
             for summary in &summaries {
-                if let Some(alias) = &summary.alias {
-                    if !alias.is_empty() {
+                if let Some(alias) = &summary.alias
+                    && !alias.is_empty() {
                         cache.insert(summary.id, alias.clone());
                     }
-                }
             }
             if let Some(alias) = cache.get(&champion_id) {
                 return Some(alias.clone());
@@ -4396,7 +4395,7 @@ mod tests {
 
     #[test]
     fn summoners_batch_failure_logs_before_individual_fallback() {
-        let ids = vec![1i64, 2, 3];
+        let ids = [1i64, 2, 3];
         eprintln!(
             "[summoners-by-ids] batch fetch failed for {} ids, trying individual",
             ids.len()

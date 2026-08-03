@@ -684,7 +684,7 @@ impl application::RankedChampionDataProvider for TencentRankedChampionProvider {
         }
 
         let lane = input.lane.unwrap_or(domain::RankedChampionLane::Top);
-        let lane_str = tencent_lane_str(lane.clone());
+        let lane_str = tencent_lane_str(lane);
         let date = yesterday_date();
         let tier = input.tier;
         let client = &self.http_client;
@@ -703,7 +703,7 @@ impl application::RankedChampionDataProvider for TencentRankedChampionProvider {
                     champion_id: hint.id,
                     champion_name: hint.name.clone(),
                     champion_alias: None,
-                    lane: lane.clone(),
+                    lane,
                     win_rate: win,
                     pick_rate: pick,
                     ban_rate: ban,
@@ -899,8 +899,8 @@ impl application::RankedChampionDataProvider for LolPsKrProvider {
         &self,
         input: application::RankedChampionRefreshInput,
     ) -> Result<domain::RankedChampionDataSnapshot, application::RankedChampionDataError> {
-        let lane = input.lane.clone().unwrap_or(domain::RankedChampionLane::Top);
-        let lane_str = lolps_lane_str(lane.clone());
+        let lane = input.lane.unwrap_or(domain::RankedChampionLane::Top);
+        let lane_str = lolps_lane_str(lane);
         let tier = input.tier;
 
         let version = self.find_current_version(lane_str, tier).ok_or_else(|| {
@@ -979,7 +979,7 @@ impl application::RankedChampionDataProvider for LolPsKrProvider {
                     champion_id: entry.champion_id,
                     champion_name: name,
                     champion_alias: None,
-                    lane: lane.clone(),
+                    lane,
                     win_rate: win,
                     pick_rate: pick,
                     ban_rate: ban,
