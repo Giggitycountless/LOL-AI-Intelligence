@@ -96,6 +96,11 @@ pub(crate) struct LcuChampSelectMember {
     pub(crate) display_name: Option<String>,
     pub(crate) game_name: Option<String>,
     pub(crate) tag_line: Option<String>,
+    // Diagnostic-only for now: not yet consumed. Added to confirm whether
+    // this LCU build (notably Tencent) even sends these fields on hidden
+    // members before any identity-resolution logic is built around them.
+    pub(crate) name_visibility_type: Option<String>,
+    pub(crate) obfuscated_puuid: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -466,6 +471,8 @@ mod tests {
             display_name: Some("Riot Display".into()),
             game_name: Some(game_name.into()),
             tag_line: Some(tag_line.into()),
+            name_visibility_type: None,
+            obfuscated_puuid: None,
         }
     }
 
@@ -509,6 +516,8 @@ mod tests {
             display_name: None,
             game_name: None,
             tag_line: None,
+            name_visibility_type: None,
+            obfuscated_puuid: None,
         };
         assert_eq!(member.display_name(), None);
     }

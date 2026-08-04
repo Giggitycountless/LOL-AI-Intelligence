@@ -750,6 +750,17 @@ impl LocalLeagueClient {
             .get_json::<LcuGameflowSession>("/lol-gameflow/v1/session")
             .map_err(read_error_from_request)?;
 
+        if let Some(data) = gameflow.game_data.as_ref() {
+            log_lcu_adapter_event(&format!(
+                "gameflow session: team_one={} team_two={} player_champion_selections={}",
+                data.team_one.len(),
+                data.team_two.len(),
+                data.player_champion_selections.len()
+            ));
+        } else {
+            log_lcu_adapter_event("gameflow session: game_data missing");
+        }
+
         map_gameflow_session(gameflow).ok_or_else(|| {
             LeagueClientReadError::Integration(
                 "League gameflow session did not include player identities".to_string(),
@@ -1109,6 +1120,27 @@ impl LeagueClientReader for LocalLeagueClient {
                         .map_err(|_| read_error_from_request(error));
                 }
             };
+
+        for (side, member) in champ_select
+            .my_team
+            .iter()
+            .map(|m| ("myTeam", m))
+            .chain(champ_select.their_team.iter().map(|m| ("theirTeam", m)))
+        {
+            if member.puuid.as_deref().unwrap_or_default().trim().is_empty()
+                || member.name_visibility_type.is_some()
+                || member.obfuscated_puuid.is_some()
+            {
+                log_lcu_adapter_event(&format!(
+                    "champ-select member ({side}, summoner_id={:?}): puuid_empty={} \
+                     name_visibility_type={:?} obfuscated_puuid_present={}",
+                    member.summoner_id,
+                    member.puuid.as_deref().unwrap_or_default().trim().is_empty(),
+                    member.name_visibility_type,
+                    member.obfuscated_puuid.is_some()
+                ));
+            }
+        }
 
         let mut champion_selections = HashMap::new();
         let mut champion_selections_by_name = HashMap::new();
@@ -2089,6 +2121,11 @@ fn map_gameflow_session(session: LcuGameflowSession) -> Option<ChampSelectSessio
     );
 
     if players.is_empty() {
+        log_lcu_adapter_event(&format!(
+            "gameflow session: team_one/team_two yielded no players, falling back to \
+             player_champion_selections ({} entries, no name fields available)",
+            data.player_champion_selections.len()
+        ));
         for (index, selection) in data.player_champion_selections.iter().enumerate() {
             let team = match selection.team_id {
                 Some(100) => ChampSelectTeam::Ally,
@@ -2096,9 +2133,14 @@ fn map_gameflow_session(session: LcuGameflowSession) -> Option<ChampSelectSessio
                 _ if index < 5 => ChampSelectTeam::Ally,
                 _ => ChampSelectTeam::Enemy,
             };
+            // Leave the name empty (rather than a "Summoner {id}" placeholder)
+            // when a real summoner_id is known: the application layer batch-
+            // resolves display names by summoner_id for exactly this case,
+            // but only kicks in when display_name is empty. A non-empty
+            // placeholder here would silently block that resolution.
             let display_name = selection
                 .summoner_id
-                .map(|id| format!("Summoner {id}"))
+                .map(|_| String::new())
                 .unwrap_or_else(|| format!("Player {}", index + 1));
             let champion_id = positive_id(selection.champion_id.or(selection.selected_champion_id));
 
@@ -2154,10 +2196,22 @@ fn collect_gameflow_team(
     players: &mut Vec<ChampSelectSessionPlayer>,
 ) {
     for (index, participant) in team_players.iter().enumerate() {
+        // Leave the name empty (rather than a "Summoner {id}" placeholder)
+        // when a real summoner_id is known: the application layer batch-
+        // resolves display names by summoner_id for exactly this case
+        // (some LCU builds, notably Tencent's, blank every name field here
+        // while still reporting real summoner_ids), but that resolution
+        // only kicks in when display_name is empty. A non-empty placeholder
+        // here would silently block it.
         let display_name = gameflow_participant_display_name(participant).unwrap_or_else(|| {
+            log_lcu_adapter_event(&format!(
+                "gameflow participant {index} (summoner_id={:?}) has no game_name/tag_line/\
+                 display_name/summoner_name; deferring to summoner_id batch lookup",
+                participant.summoner_id
+            ));
             participant
                 .summoner_id
-                .map(|id| format!("Summoner {id}"))
+                .map(|_| String::new())
                 .unwrap_or_else(|| format!("Player {}", index + 1))
         });
         let champion_id = gameflow_participant_champion_id(participant, selections);
@@ -2169,7 +2223,12 @@ fn collect_gameflow_team(
                 champion_selections.insert(summoner_id, champion_id);
             }
         }
-        if let Some(champion_id) = champion_id {
+        // Skip indexing by name when display_name is empty (deferred to
+        // summoner_id resolution above): every unnamed player in this batch
+        // would otherwise collide on the same "" key.
+        if !display_name.is_empty()
+            && let Some(champion_id) = champion_id
+        {
             champion_selections_by_name
                 .insert(normalize_player_name(display_name.as_str()), champion_id);
         }
