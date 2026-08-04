@@ -11,7 +11,10 @@ pub(crate) const MAX_COMPLETED_MATCH_SCAN: i64 = 20;
 /// proxies match-history/ranked/mastery reads to remote platform services
 /// that rate-limit bursts; a full ten-player lobby fired through the global
 /// rayon pool in one wave is exactly the shape that trips them into 429/500.
-pub(crate) const LCU_BATCH_CONCURRENCY: usize = 3;
+/// 5 stays well under that ~10-in-flight failure shape while halving the
+/// number of sequential chunks (and thus overlay load latency) for a full
+/// 5v5 lobby versus the original cap of 3.
+pub(crate) const LCU_BATCH_CONCURRENCY: usize = 5;
 pub(crate) const RANKED_CHAMPION_REMOTE_TIMEOUT: Duration = Duration::from_secs(5);
 pub(crate) const RANKED_CHAMPION_FORMAT_VERSION: i64 = 1;
 pub(crate) const ADVISOR_DATA_FORMAT_VERSION: i64 = 1;
