@@ -40,3 +40,18 @@ jobs:
           releaseBody: "Installer built automatically by CI. Release notes to follow."
           releaseDraft: true
           prerelease: false
+
+      - name: Upload checksums
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $installers = Get-ChildItem -Path "src-tauri/target/release/bundle/nsis" -Filter *.exe
+          foreach ($installer in $installers) {
+            $hash = Get-FileHash -Algorithm SHA256 -Path $installer.FullName
+            $line = "$($hash.Hash.ToLower())  $($installer.Name)"
+            $checksumPath = "$($installer.FullName).sha256"
+            Set-Content -Path $checksumPath -Value $line -Encoding ascii -NoNewline
+            Write-Output $line
+            gh release upload "${{ github.ref_name }}" $checksumPath --clobber
+          }
