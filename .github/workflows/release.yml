@@ -49,8 +49,13 @@ jobs:
           $installers = Get-ChildItem -Path "target/release/bundle/nsis" -Filter *.exe
           foreach ($installer in $installers) {
             $hash = Get-FileHash -Algorithm SHA256 -Path $installer.FullName
-            $line = "$($hash.Hash.ToLower())  $($installer.Name)"
-            $checksumPath = "$($installer.FullName).sha256"
+            # tauri-action publishes the installer with spaces replaced by dots
+            # (e.g. "LoL Desktop Assistant_0.3.4_x64-setup.exe" on disk becomes
+            # "LoL.Desktop.Assistant_0.3.4_x64-setup.exe" as the release asset)
+            # so the checksum's own filename label must match the published name.
+            $publishedName = $installer.Name -replace " ", "."
+            $line = "$($hash.Hash.ToLower())  $publishedName"
+            $checksumPath = Join-Path $installer.DirectoryName "$publishedName.sha256"
             Set-Content -Path $checksumPath -Value $line -Encoding ascii -NoNewline
             Write-Output $line
             gh release upload "${{ github.ref_name }}" $checksumPath --clobber
