@@ -46,7 +46,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          $installers = Get-ChildItem -Path "src-tauri/target/release/bundle/nsis" -Filter *.exe
+          $installers = Get-ChildItem -Path "target/release/bundle/nsis" -Filter *.exe
           foreach ($installer in $installers) {
             $hash = Get-FileHash -Algorithm SHA256 -Path $installer.FullName
             $line = "$($hash.Hash.ToLower())  $($installer.Name)"
