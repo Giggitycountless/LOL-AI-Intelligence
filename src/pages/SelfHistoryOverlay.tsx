@@ -10,10 +10,12 @@ import type { EffectiveLanguage } from "../i18n";
 import type { LeagueChampionAbilityView, LeagueChampionDetailsView } from "../state/AppStateProvider";
 import { useAdvisor, useAppCore, useChampSelect, useLeagueAssets } from "../state/AppStateProvider";
 import { canOpenSelfHistoryOverlayWindow, destroySelfHistoryOverlayWindow } from "../windows/selfHistoryOverlayWindow";
+import { openParticipantProfileWindow } from "../windows/participantProfileWindow";
 import { type T } from "../utils/formatting";
 import { HideIcon, RefreshIcon } from "../components/overlay/Icons";
 import { PlayerTrack } from "../components/overlay/PlayerTrack";
 import { ChampionDetailsPanel } from "../components/overlay/ChampionDetailsPanel";
+import { MatchDetailPanel } from "../components/overlay/MatchDetailPanel";
 import {
   createOverlayModel,
   type InitialSnapshotStatus,
@@ -38,7 +40,7 @@ function isDevModeOverlay() {
 }
 
 export function SelfHistoryOverlay() {
-  const { effectiveLanguage, t } = useAppCore();
+  const { effectiveLanguage, loadPostMatchDetail, postMatchDetails, t } = useAppCore();
   const { champSelectSnapshot, refreshChampSelectSnapshot } = useChampSelect();
   const {
     champSelectAdvisorSnapshot,
@@ -46,10 +48,20 @@ export function SelfHistoryOverlay() {
     refreshChampSelectAdvisorSnapshot,
     refreshLiveOverlaySnapshot,
   } = useAdvisor();
-  const { championDetailsById, leagueImages, loadLeagueChampionDetails, loadLeagueRankTierIcon } = useLeagueAssets();
+  const {
+    championDetailsById,
+    leagueImages,
+    loadLeagueChampionDetails,
+    loadLeagueChampionIcon,
+    loadLeagueGameAsset,
+    loadLeagueRankTierIcon,
+  } = useLeagueAssets();
   const [selectedChampionId, setSelectedChampionId] = useState<number | null>(null);
   const [isChampionDetailsLoading, setIsChampionDetailsLoading] = useState(false);
   const [championDetailsError, setChampionDetailsError] = useState(false);
+  const [selectedMatchGameId, setSelectedMatchGameId] = useState<number | null>(null);
+  const [isMatchDetailLoading, setIsMatchDetailLoading] = useState(false);
+  const [matchDetailError, setMatchDetailError] = useState(false);
   const [isRefreshingChampSelect, setIsRefreshingChampSelect] = useState(false);
   const [refreshFailed, setRefreshFailed] = useState(false);
   const devMode = isDevModeOverlay();
@@ -61,6 +73,7 @@ export function SelfHistoryOverlay() {
   const isHistoryLoading = hasPlayers && !hasRecentStats && initialSnapshotStatus === "loading";
   const isHistoryUnavailable = hasPlayers && !hasRecentStats && initialSnapshotStatus === "error";
   const selectedChampionDetails = selectedChampionId ? championDetailsById[selectedChampionId] : undefined;
+  const selectedMatchDetail = selectedMatchGameId ? postMatchDetails[selectedMatchGameId] : undefined;
   const premadeGroups = champSelectSnapshot?.premadeGroups;
   const model = useMemo(
     () =>
@@ -169,6 +182,7 @@ export function SelfHistoryOverlay() {
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
         setSelectedChampionId(null);
+        setSelectedMatchGameId(null);
       }
     }
 
@@ -176,9 +190,64 @@ export function SelfHistoryOverlay() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
+  // Load champion icons + item/rune/spell assets for whichever match detail is
+  // currently open, mirroring the same pattern used by MatchRecap and
+  // ParticipantProfilePanel.
+  useEffect(() => {
+    if (!selectedMatchDetail) {
+      return;
+    }
+
+    const championIds = new Set<number>();
+    const itemIds = new Set<number>();
+    const runeIds = new Set<number>();
+    const spellIds = new Set<number>();
+    for (const team of selectedMatchDetail.teams) {
+      for (const participant of team.participants) {
+        if (participant.championId) championIds.add(participant.championId);
+        participant.items.forEach((id) => itemIds.add(id));
+        participant.runes.forEach((id) => runeIds.add(id));
+        participant.spells.forEach((id) => spellIds.add(id));
+      }
+    }
+    championIds.forEach((id) => void loadLeagueChampionIcon(id));
+    itemIds.forEach((id) => void loadLeagueGameAsset("item", id));
+    runeIds.forEach((id) => void loadLeagueGameAsset("rune", id));
+    spellIds.forEach((id) => void loadLeagueGameAsset("spell", id));
+  }, [selectedMatchDetail, loadLeagueChampionIcon, loadLeagueGameAsset]);
+
   const closeChampionDetails = useCallback(() => {
     setSelectedChampionId(null);
   }, []);
+
+  const closeMatchDetails = useCallback(() => {
+    setSelectedMatchGameId(null);
+  }, []);
+
+  const handleMatchSelect = useCallback(
+    async (event: MouseEvent, gameId: number) => {
+      event.stopPropagation();
+      setSelectedChampionId(null);
+      setSelectedMatchGameId(gameId);
+      setMatchDetailError(false);
+      if (postMatchDetails[gameId]) {
+        return;
+      }
+
+      setIsMatchDetailLoading(true);
+      const didLoad = await loadPostMatchDetail(gameId);
+      setIsMatchDetailLoading(false);
+      setMatchDetailError(!didLoad);
+    },
+    [loadPostMatchDetail, postMatchDetails],
+  );
+
+  const handleParticipantSelect = useCallback((participantId: number) => {
+    if (!selectedMatchGameId) {
+      return;
+    }
+    void openParticipantProfileWindow({ gameId: selectedMatchGameId, participantId });
+  }, [selectedMatchGameId]);
 
   const handleChampionSelect = useCallback(
     async (event: MouseEvent, championId: number | null | undefined) => {
@@ -187,6 +256,7 @@ export function SelfHistoryOverlay() {
         return;
       }
 
+      setSelectedMatchGameId(null);
       setSelectedChampionId(championId);
       setChampionDetailsError(false);
       if (championDetailsById[championId]) {
@@ -243,7 +313,10 @@ export function SelfHistoryOverlay() {
   return (
     <main
       className="relative flex h-screen flex-col overflow-hidden bg-zinc-950 p-2 text-zinc-100"
-      onClick={closeChampionDetails}
+      onClick={() => {
+        closeChampionDetails();
+        closeMatchDetails();
+      }}
     >
       <header
         className="mb-2 flex h-10 shrink-0 items-center justify-between rounded-lg border border-zinc-700 bg-zinc-900 px-3 shadow-sm"
@@ -292,6 +365,7 @@ export function SelfHistoryOverlay() {
       <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto">
         <TeamBoard
           onChampionSelect={handleChampionSelect}
+          onMatchSelect={handleMatchSelect}
           players={model.allies}
           rankTierIcons={leagueImages.rankTierIcons}
           selectedChampionId={selectedChampionId}
@@ -301,6 +375,7 @@ export function SelfHistoryOverlay() {
         />
         <TeamBoard
           onChampionSelect={handleChampionSelect}
+          onMatchSelect={handleMatchSelect}
           players={model.enemies}
           rankTierIcons={leagueImages.rankTierIcons}
           selectedChampionId={selectedChampionId}
@@ -331,6 +406,19 @@ export function SelfHistoryOverlay() {
         />
       )}
 
+      {selectedMatchGameId && (
+        <MatchDetailPanel
+          detail={selectedMatchDetail}
+          gameAssets={leagueImages.gameAssets}
+          hasError={matchDetailError}
+          isLoading={isMatchDetailLoading && !selectedMatchDetail}
+          onClose={closeMatchDetails}
+          onParticipantSelect={handleParticipantSelect}
+          participantImages={leagueImages.championIcons}
+          t={t}
+        />
+      )}
+
       <LiveOverlayBar snapshot={liveOverlaySnapshot} t={t} />
       <SummaryBar summary={model.summary} t={t} />
     </main>
@@ -339,6 +427,7 @@ export function SelfHistoryOverlay() {
 
 const TeamBoard = memo(function TeamBoard({
   onChampionSelect,
+  onMatchSelect,
   players,
   rankTierIcons,
   selectedChampionId,
@@ -347,6 +436,7 @@ const TeamBoard = memo(function TeamBoard({
   tone,
 }: {
   onChampionSelect: (event: MouseEvent, championId: number | null | undefined) => void;
+  onMatchSelect: (event: MouseEvent, gameId: number) => void;
   players: PlayerView[];
   rankTierIcons: Record<string, string>;
   selectedChampionId: number | null;
@@ -415,6 +505,7 @@ const TeamBoard = memo(function TeamBoard({
           <PlayerTrack
             key={player.id}
             onChampionSelect={onChampionSelect}
+            onMatchSelect={onMatchSelect}
             player={player}
             rankTierIcons={rankTierIcons}
             selectedChampionId={selectedChampionId}

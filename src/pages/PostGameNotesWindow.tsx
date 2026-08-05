@@ -3,7 +3,8 @@ import { useEffect, useState } from "react";
 import { fetchLeagueSelfSnapshot, fetchPostMatchDetail, savePlayerNote, clearPlayerNote } from "../backend/leagueClient";
 import type { PostMatchDetail, PostMatchParticipant, PlayerNoteView } from "../backend/types";
 import { AppStateProvider } from "../state/AppStateProvider";
-import { useAppCore } from "../state/AppStateProvider";
+import { useAppCore, useLeagueAssets } from "../state/AppStateProvider";
+import { ChampionImage } from "../components/common";
 import type { TranslationKey } from "../i18n";
 
 // Standalone window — wraps in its own AppStateProvider
@@ -17,6 +18,7 @@ export function PostGameNotesWindowRoot() {
 
 function PostGameNotesWindow() {
   const { t, effectiveLanguage } = useAppCore();
+  const { leagueImages, loadLeagueChampionIcon } = useLeagueAssets();
   const [matchDetail, setMatchDetail] = useState<PostMatchDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -25,6 +27,20 @@ function PostGameNotesWindow() {
   useEffect(() => {
     void loadRecentMatch();
   }, []);
+
+  useEffect(() => {
+    if (!matchDetail) {
+      return;
+    }
+
+    const championIds = new Set<number>();
+    for (const team of matchDetail.teams) {
+      for (const participant of team.participants) {
+        if (participant.championId) championIds.add(participant.championId);
+      }
+    }
+    championIds.forEach((id) => void loadLeagueChampionIcon(id));
+  }, [matchDetail, loadLeagueChampionIcon]);
 
   async function loadRecentMatch() {
     setIsLoading(true);
@@ -114,6 +130,7 @@ function PostGameNotesWindow() {
               team.participants.map((participant) => (
                 <ParticipantNoteCard
                   key={participant.participantId}
+                  imageUrl={participant.championId ? leagueImages.championIcons[participant.championId] : undefined}
                   participant={participant}
                   savedNote={participant.noteSummary}
                   onSave={(note, tags) => void handleSaveNote(participant, note, tags)}
@@ -130,12 +147,14 @@ function PostGameNotesWindow() {
 }
 
 function ParticipantNoteCard({
+  imageUrl,
   participant,
   savedNote,
   onSave,
   onClear,
   t,
 }: {
+  imageUrl: string | undefined;
   participant: PostMatchParticipant;
   savedNote: { hasNote: boolean; note: string | null; tags: string[] };
   onSave: (note: string, tags: string[]) => void;
@@ -164,6 +183,7 @@ function ParticipantNoteCard({
     <div className="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-3 shadow-sm">
       <div className="flex items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2">
+          <ChampionImage championName={participant.championName} imageUrl={imageUrl} size="sm" />
           <span
             className={[
               "inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-xs font-bold",

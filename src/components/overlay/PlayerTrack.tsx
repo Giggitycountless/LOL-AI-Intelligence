@@ -51,6 +51,7 @@ function matchRowTheme(result: RecentMatchSummary["result"] | null) {
 
 export const PlayerTrack = memo(function PlayerTrack({
   onChampionSelect,
+  onMatchSelect,
   player,
   rankTierIcons,
   selectedChampionId,
@@ -58,6 +59,7 @@ export const PlayerTrack = memo(function PlayerTrack({
   tone: _tone,
 }: {
   onChampionSelect: (event: MouseEvent, championId: number | null | undefined) => void;
+  onMatchSelect: (event: MouseEvent, gameId: number) => void;
   player: PlayerView;
   rankTierIcons: Record<string, string>;
   selectedChampionId: number | null;
@@ -206,7 +208,9 @@ export const PlayerTrack = memo(function PlayerTrack({
           </div>
         )}
         {player.gameCount > 0 &&
-          player.rows.map((row) => <MatchRow key={row.id} row={row} t={t} />)}
+          player.rows.map((row) => (
+            <MatchRow key={row.id} onSelect={onMatchSelect} row={row} t={t} />
+          ))}
       </div>
     </article>
   );
@@ -331,9 +335,11 @@ function SmallChampionIcon({ championName, src }: { championName: string; src: s
 }
 
 function MatchRow({
+  onSelect,
   row,
   t,
 }: {
+  onSelect: (event: MouseEvent, gameId: number) => void;
   row: { id: string; imageUrl: string | undefined; match: RecentMatchSummary | null };
   t: T;
 }) {
@@ -342,9 +348,20 @@ function MatchRow({
   const theme = matchRowTheme(match ? match.result : null);
 
   // Akari's row: tinted background, 24px champion icon, queue name over
-  // date+result, K/D/A trailing.
+  // date+result, K/D/A trailing. Clickable when a match is present, to open
+  // the full post-match detail panel for that game.
   return (
-    <div className={["flex h-[34px] shrink-0 items-center rounded px-2 py-0.5", theme.row].join(" ")}>
+    <div
+      className={[
+        "flex h-[34px] shrink-0 items-center rounded px-2 py-0.5",
+        match ? "cursor-pointer transition hover:brightness-125" : "",
+        theme.row,
+      ].join(" ")}
+      onClick={match ? (event) => onSelect(event, match.gameId) : undefined}
+      role={match ? "button" : undefined}
+      tabIndex={match ? 0 : undefined}
+      title={match ? t("overlay.viewMatchDetails") : undefined}
+    >
       <SmallChampionIcon championName={match?.championName ?? "?"} src={row.imageUrl} />
       <div className="ml-1 mr-1 w-0 flex-1">
         <div className="overflow-hidden text-ellipsis whitespace-nowrap text-xs leading-tight">
