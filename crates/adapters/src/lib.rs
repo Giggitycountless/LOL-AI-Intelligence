@@ -390,19 +390,19 @@ impl LocalLeagueClient {
         let summary_match = history
             .games
             .and_then(|games| find_completed_game(games.games, game_id))
-            .and_then(|game| map_completed_match(game, &summoner, &champion_names))
-            .ok_or_else(|| {
-                LeagueClientReadError::Integration(
-                    "Completed match was not found in current user's recent history".to_string(),
-                )
-            })?;
+            .and_then(|game| map_completed_match(game, &summoner, &champion_names));
 
+        // The summary lookup only scans the *local* summoner's own match list,
+        // so it always misses when the requested game belongs to someone else
+        // (e.g. a teammate/enemy match opened from the in-game overlay). The
+        // by-id detail endpoint has no such restriction, so it must still be
+        // tried even when the summary lookup comes up empty.
         let detail_match = session
             .get_json::<LcuGame>(completed_match_path(game_id).as_str())
             .ok()
             .and_then(|game| map_completed_match(game, &summoner, &champion_names));
 
-        Ok(best_completed_match(summary_match, detail_match))
+        resolve_completed_match(summary_match, detail_match)
     }
 
     fn read_participant_recent_stats(
@@ -2809,6 +2809,24 @@ fn best_completed_match(
     }
 }
 
+/// Combines the two independent completed-match lookups: the summary comes
+/// from the local summoner's own match list (misses whenever the game
+/// belongs to someone else) and the detail comes from the unrestricted by-id
+/// endpoint. Either one alone is enough to answer the request; only report
+/// "not found" once both have failed.
+fn resolve_completed_match(
+    summary_match: Option<application::LeagueCompletedMatch>,
+    detail_match: Option<application::LeagueCompletedMatch>,
+) -> Result<application::LeagueCompletedMatch, LeagueClientReadError> {
+    match (summary_match, detail_match) {
+        (Some(summary_match), detail_match) => Ok(best_completed_match(summary_match, detail_match)),
+        (None, Some(detail_match)) => Ok(detail_match),
+        (None, None) => Err(LeagueClientReadError::Integration(
+            "Completed match was not found".to_string(),
+        )),
+    }
+}
+
 fn player_for_participant(game: &LcuGame, participant_id: i64) -> Option<&LcuPlayer> {
     game.participant_identities.iter().find_map(|identity| {
         if identity.participant_id == Some(participant_id) {
@@ -4265,6 +4283,26 @@ mod tests {
         let selected = best_completed_match(summary, Some(detail));
 
         assert_eq!(selected.participants.len(), 1);
+    }
+
+    #[test]
+    fn resolve_completed_match_falls_back_to_detail_when_summary_is_missing() {
+        // Regression test: a teammate/enemy's own past match (opened from the
+        // in-game overlay) never appears in the local summoner's own match
+        // list, so the summary lookup always misses. The by-id detail lookup
+        // must still resolve the match instead of the whole call failing.
+        let detail = completed_match_with_participant_count(10);
+
+        let resolved = resolve_completed_match(None, Some(detail)).expect("detail-only match should resolve");
+
+        assert_eq!(resolved.participants.len(), 10);
+    }
+
+    #[test]
+    fn resolve_completed_match_errors_when_both_lookups_miss() {
+        let result = resolve_completed_match(None, None);
+
+        assert!(result.is_err());
     }
 
     #[test]
