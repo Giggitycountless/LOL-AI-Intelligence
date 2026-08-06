@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useState, type MouseEvent, type ReactNode } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import type {
@@ -62,6 +62,8 @@ export function SelfHistoryOverlay() {
   const [selectedMatchGameId, setSelectedMatchGameId] = useState<number | null>(null);
   const [isMatchDetailLoading, setIsMatchDetailLoading] = useState(false);
   const [matchDetailError, setMatchDetailError] = useState(false);
+  const matchRequestIdRef = useRef(0);
+  const championRequestIdRef = useRef(0);
   const [isRefreshingChampSelect, setIsRefreshingChampSelect] = useState(false);
   const [refreshFailed, setRefreshFailed] = useState(false);
   const devMode = isDevModeOverlay();
@@ -230,12 +232,20 @@ export function SelfHistoryOverlay() {
       setSelectedChampionId(null);
       setSelectedMatchGameId(gameId);
       setMatchDetailError(false);
+      // Track which match this request is for — if the user clicks another
+      // match before this fetch resolves, a stale response must not clobber
+      // the loading/error state of the newer selection (it would otherwise
+      // leave the panel blank: not loading, not errored, no detail yet).
+      const requestId = ++matchRequestIdRef.current;
       if (postMatchDetails[gameId]) {
         return;
       }
 
       setIsMatchDetailLoading(true);
       const didLoad = await loadPostMatchDetail(gameId);
+      if (matchRequestIdRef.current !== requestId) {
+        return;
+      }
       setIsMatchDetailLoading(false);
       setMatchDetailError(!didLoad);
     },
@@ -259,12 +269,18 @@ export function SelfHistoryOverlay() {
       setSelectedMatchGameId(null);
       setSelectedChampionId(championId);
       setChampionDetailsError(false);
+      // Same stale-response guard as handleMatchSelect: ignore this fetch's
+      // result if a newer champion click has started since.
+      const requestId = ++championRequestIdRef.current;
       if (championDetailsById[championId]) {
         return;
       }
 
       setIsChampionDetailsLoading(true);
       const didLoad = await loadLeagueChampionDetails(championId);
+      if (championRequestIdRef.current !== requestId) {
+        return;
+      }
       setIsChampionDetailsLoading(false);
       setChampionDetailsError(!didLoad);
     },
