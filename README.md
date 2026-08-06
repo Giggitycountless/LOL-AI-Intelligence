@@ -24,6 +24,66 @@ Download `LoL Desktop Assistant_x.y.z_x64-setup.exe`, double-click to install. *
 
 ---
 
+## 📸 Screenshots
+
+<table>
+<tr>
+<td width="50%">
+
+**Summoner Overview** — client status, recent games at a glance
+<img src="docs/screenshots/overview.png" alt="Summoner overview">
+
+</td>
+<td width="50%">
+
+**Ranked Stats & Match History** — Solo/Duo & Flex rank, recent games
+<img src="docs/screenshots/ranked-stats.png" alt="Ranked stats and match history">
+
+</td>
+</tr>
+<tr>
+<td width="50%">
+
+**Playstyle & Champion Mastery** — AI-generated playstyle tags from recent games
+<img src="docs/screenshots/playstyle-mastery.png" alt="Playstyle tags and champion mastery">
+
+</td>
+<td width="50%">
+
+**Post-Game Review** — full scoreboard with damage, gold, items for both teams
+<img src="docs/screenshots/match-review.png" alt="Post-game match review scoreboard">
+
+</td>
+</tr>
+<tr>
+<td width="50%">
+
+**Champion Tier List** — win rate / pick rate / ban rate by role and rank
+<img src="docs/screenshots/champion-tier-list.png" alt="Champion tier list">
+
+</td>
+<td width="50%">
+
+**Chat Presets** — 9 hotkey-bound messages, `Ctrl+Shift+1` ~ `Ctrl+Shift+9`
+<img src="docs/screenshots/chat-presets.png" alt="Chat presets configuration">
+
+</td>
+</tr>
+<tr>
+<td width="50%">
+
+**Settings** — auto pick/ban, AI advisor API config
+<img src="docs/screenshots/settings.png" alt="Settings page">
+
+</td>
+<td width="50%">
+
+</td>
+</tr>
+</table>
+
+---
+
 ## ✨ Features
 
 ### 🤖 AI Coach

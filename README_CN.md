@@ -24,6 +24,66 @@
 
 ---
 
+## 📸 截图
+
+<table>
+<tr>
+<td width="50%">
+
+**个人总览** — 客户端连接状态、近期对局一览
+<img src="docs/screenshots/overview.png" alt="个人总览">
+
+</td>
+<td width="50%">
+
+**排位战绩** — 单双排 / 灵活组排段位、历史战绩列表
+<img src="docs/screenshots/ranked-stats.png" alt="排位战绩与历史对局">
+
+</td>
+</tr>
+<tr>
+<td width="50%">
+
+**打法画像 & 英雄熟练度** — 根据近期对局自动生成的打法标签
+<img src="docs/screenshots/playstyle-mastery.png" alt="打法画像与英雄熟练度">
+
+</td>
+<td width="50%">
+
+**赛后复盘** — 双方完整计分板，伤害、经济、出装全维度对比
+<img src="docs/screenshots/match-review.png" alt="赛后复盘计分板">
+
+</td>
+</tr>
+<tr>
+<td width="50%">
+
+**英雄排行** — 按位置 / 段位筛选的胜率、登场率、禁用率
+<img src="docs/screenshots/champion-tier-list.png" alt="英雄排行榜">
+
+</td>
+<td width="50%">
+
+**聊天预设** — 9 条热键消息，`Ctrl+Shift+1` ~ `Ctrl+Shift+9`
+<img src="docs/screenshots/chat-presets.png" alt="聊天预设配置">
+
+</td>
+</tr>
+<tr>
+<td width="50%">
+
+**设置** — 自动选/禁英雄、AI 顾问 API 配置
+<img src="docs/screenshots/settings.png" alt="设置页面">
+
+</td>
+<td width="50%">
+
+</td>
+</tr>
+</table>
+
+---
+
 ## ✨ 功能
 
 ### 🤖 AI 教练
