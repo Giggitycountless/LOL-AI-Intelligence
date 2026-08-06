@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { act, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import React from "react";
 import type { Mock } from "vitest";
 
@@ -53,6 +53,17 @@ const tMock = vi.fn((key: string) => {
   };
   return labels[key] ?? key;
 });
+
+// Resolves out of call order, so a request that started earlier can be made
+// to resolve after one that started later — reproducing the race the
+// matchRequestIdRef/championRequestIdRef guards protect against.
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((res) => {
+    resolve = res;
+  });
+  return { promise, resolve };
+}
 
 // Helper to create a mock player for champ select
 function createPlayer(overrides: Record<string, unknown> = {}) {
@@ -270,5 +281,140 @@ describe("SelfHistoryOverlay", () => {
     expect(await screen.findByText("Strong pick")).toBeDefined();
     expect(await screen.findByText("+900")).toBeDefined();
     expect(await screen.findByText("742")).toBeDefined();
+  });
+
+  it("ignores a stale match-detail response after a newer match was selected", async () => {
+    const matchA = {
+      gameId: 1001,
+      championId: 1,
+      championName: "Ahri",
+      queueName: "Ranked Solo",
+      result: "win" as const,
+      kills: 5,
+      deaths: 2,
+      assists: 7,
+      kda: 6,
+      playedAt: "2026-08-01T00:00:00Z",
+      gameDurationSeconds: 1800,
+    };
+    const matchB = { ...matchA, gameId: 1002, result: "loss" as const };
+    const player = createPlayer({
+      summonerId: 1,
+      displayName: "Ally One",
+      team: "ally",
+      championId: 1,
+      recentStats: { matchCount: 2, averageKda: 3, recentChampions: ["Ahri"], recentMatches: [matchA, matchB] },
+      recentStatsStatus: "loaded",
+    });
+
+    mockUseChampSelect.mockReturnValue({
+      ...defaultChampSelect(),
+      champSelectSnapshot: { players: [player] },
+    });
+
+    const deferredA = deferred<boolean>();
+    const deferredB = deferred<boolean>();
+    const loadPostMatchDetail = vi.fn((gameId: number) => (gameId === 1001 ? deferredA.promise : deferredB.promise));
+    mockUseAppCore.mockReturnValue({
+      ...defaultCore(),
+      postMatchDetails: {},
+      loadPostMatchDetail,
+    });
+
+    await mountOverlay();
+
+    const rows = await screen.findAllByTitle("overlay.viewMatchDetails");
+    expect(rows).toHaveLength(2);
+
+    // Select the older match, then the newer one before the older fetch resolves.
+    fireEvent.click(rows[0]);
+    fireEvent.click(rows[1]);
+
+    expect(loadPostMatchDetail).toHaveBeenCalledWith(1001);
+    expect(loadPostMatchDetail).toHaveBeenCalledWith(1002);
+    // The header subtitle and the body both fall back to this text whenever
+    // no detail has loaded yet, so two elements is the expected loading state.
+    expect(await screen.findAllByText("overlay.loadingMatchDetails")).toHaveLength(2);
+
+    // The older (1001) fetch resolves last-selection is now 1002 — it must
+    // be ignored, not clear the loading state for the still-pending newer fetch.
+    await act(async () => {
+      deferredA.resolve(true);
+      await Promise.resolve();
+    });
+    expect(screen.getAllByText("overlay.loadingMatchDetails")).toHaveLength(2);
+    expect(screen.queryByText("overlay.matchDetailsUnavailable")).toBeNull();
+
+    // The newer (1002) fetch resolves — this is the one that should drive the UI.
+    // Only the body's loading paragraph is gated on isLoading; the header
+    // subtitle has no detail to show either way, so one match remains.
+    await act(async () => {
+      deferredB.resolve(false);
+      await Promise.resolve();
+    });
+    expect(screen.getAllByText("overlay.loadingMatchDetails")).toHaveLength(1);
+    expect(await screen.findByText("overlay.matchDetailsUnavailable")).toBeDefined();
+  });
+
+  it("ignores a stale champion-detail response after a newer champion was selected", async () => {
+    const allyA = createPlayer({
+      summonerId: 1,
+      displayName: "Ally One",
+      team: "ally",
+      championId: 10,
+      recentStats: { matchCount: 0, averageKda: null, recentChampions: [], recentMatches: [] },
+      recentStatsStatus: "loaded",
+    });
+    const allyB = createPlayer({
+      summonerId: 2,
+      displayName: "Ally Two",
+      team: "ally",
+      championId: 20,
+      recentStats: { matchCount: 0, averageKda: null, recentChampions: [], recentMatches: [] },
+      recentStatsStatus: "loaded",
+    });
+
+    mockUseChampSelect.mockReturnValue({
+      ...defaultChampSelect(),
+      champSelectSnapshot: { players: [allyA, allyB] },
+    });
+
+    const deferredA = deferred<boolean>();
+    const deferredB = deferred<boolean>();
+    const loadLeagueChampionDetails = vi.fn((championId: number) => (championId === 10 ? deferredA.promise : deferredB.promise));
+    mockUseLeagueAssets.mockReturnValue({
+      ...defaultLeagueAssets(),
+      loadLeagueChampionDetails,
+    });
+
+    await mountOverlay();
+
+    const portraitA = screen.getByRole("button", { name: "overlay.viewAbilities Ally One" });
+    const portraitB = screen.getByRole("button", { name: "overlay.viewAbilities Ally Two" });
+
+    // Select the first champion, then the second before the first fetch resolves.
+    fireEvent.click(portraitA);
+    fireEvent.click(portraitB);
+
+    expect(loadLeagueChampionDetails).toHaveBeenCalledWith(10);
+    expect(loadLeagueChampionDetails).toHaveBeenCalledWith(20);
+    expect(await screen.findByText("overlay.loadingAbilities")).toBeDefined();
+
+    // The first (10) fetch resolves last-selection is now 20 — it must be
+    // ignored, not clear the loading state for the still-pending newer fetch.
+    await act(async () => {
+      deferredA.resolve(true);
+      await Promise.resolve();
+    });
+    expect(screen.getByText("overlay.loadingAbilities")).toBeDefined();
+    expect(screen.queryByText("overlay.abilitiesUnavailable")).toBeNull();
+
+    // The newer (20) fetch resolves — this is the one that should drive the UI.
+    await act(async () => {
+      deferredB.resolve(false);
+      await Promise.resolve();
+    });
+    expect(screen.queryByText("overlay.loadingAbilities")).toBeNull();
+    expect(await screen.findByText("overlay.abilitiesUnavailable")).toBeDefined();
   });
 });
