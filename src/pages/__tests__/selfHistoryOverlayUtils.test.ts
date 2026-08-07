@@ -7,6 +7,8 @@ import {
   kdaToneClass,
   matchStreaks,
   premadeGroupStyle,
+  scoreBarClass,
+  scoreToneClass,
   teamSummary,
   winRateToneClass,
 } from "../selfHistoryOverlayUtils";
@@ -103,15 +105,28 @@ describe("formatMatchDate", () => {
 describe("win rate and KDA tone classes", () => {
   it("uses League Akari's thresholds for win rate", () => {
     expect(winRateToneClass(53)).toContain("emerald");
-    expect(winRateToneClass(47)).toContain("red");
+    expect(winRateToneClass(47)).toContain("rose");
     expect(winRateToneClass(50)).toContain("zinc-200");
     expect(winRateToneClass(null)).toContain("zinc-500");
   });
 
   it("colors KDA extremes", () => {
     expect(kdaToneClass(4)).toContain("emerald");
-    expect(kdaToneClass(1.5)).toContain("red");
+    expect(kdaToneClass(1.5)).toContain("rose");
     expect(kdaToneClass(3)).toContain("zinc-200");
+  });
+});
+
+describe("score tone and bar classes", () => {
+  it("keeps the number and the bar on the same three tiers", () => {
+    expect(scoreToneClass(90)).toContain("amber");
+    expect(scoreBarClass(90)).toContain("amber");
+
+    expect(scoreToneClass(50)).toContain("white/80");
+    expect(scoreBarClass(50)).toContain("zinc-300");
+
+    expect(scoreToneClass(20)).toContain("zinc-500");
+    expect(scoreBarClass(20)).toContain("zinc-500");
   });
 });
 

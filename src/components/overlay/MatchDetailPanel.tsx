@@ -59,7 +59,7 @@ export function MatchDetailPanel({
           </p>
         )}
         {hasError && !detail && (
-          <p className="rounded-lg border border-red-700 bg-red-950 px-4 py-3 text-sm font-medium text-red-400">
+          <p className="rounded-lg border border-rose-700 bg-rose-950 px-4 py-3 text-sm font-medium text-rose-400">
             {t("overlay.matchDetailsUnavailable")}
           </p>
         )}

@@ -26,7 +26,6 @@ export type MatchRowView = {
 export type PlayerView = {
   id: string;
   averageKda: number | null;
-  badge: string;
   championId: number | null | undefined;
   championUrl: string | undefined;
   displayName: string;
@@ -155,7 +154,6 @@ export function playerView(
   return {
     id: player ? `${tone}-${player.summonerId}` : `${tone}-empty-${index}`,
     averageKda: stats?.averageKda ?? null,
-    badge: playerBadge(winCount, gameCount, tone),
     championId: player?.championId,
     championUrl: player?.championId ? imageUrls[player.championId] : undefined,
     displayName: player?.displayName ?? t("overlay.unselected"),
@@ -268,17 +266,6 @@ export function advisorTagLabel(tag: AdvisorPlayerTag, t: T): string {
   return tag.value ? label.replace("{n}", tag.value) : label;
 }
 
-export function advisorTagClass(tone: AdvisorPlayerTag["tone"]) {
-  switch (tone) {
-    case "good":
-      return "bg-emerald-100 text-emerald-800";
-    case "warn":
-      return "bg-amber-100 text-amber-800";
-    case "info":
-      return "bg-zinc-100 text-zinc-700";
-  }
-}
-
 export function fillTeam(players: ChampSelectPlayer[]) {
   return Array.from({ length: TEAM_SIZE }, (_, index) => players[index] ?? null);
 }
@@ -306,18 +293,6 @@ export function playerScore(player: ChampSelectPlayer | null) {
   const volume = stats.matchCount * 408;
 
   return Math.round(volume + wins * 777 + kda * 1200);
-}
-
-export function playerBadge(wins: number, games: number, tone: TeamTone) {
-  if (games === 0) {
-    return "";
-  }
-
-  if (tone === "ally") {
-    return String(Math.max(1, wins));
-  }
-
-  return String(Math.max(1, games - wins));
 }
 
 export function scoreWidth(score: number | null, maxScore: number) {
@@ -455,17 +430,6 @@ export function romanToNumber(value: string) {
   return labels[value.toUpperCase()] ?? value;
 }
 
-export function resultClass(result: MatchResult) {
-  if (result === "win") {
-    return "border-emerald-200 bg-emerald-50 text-emerald-800";
-  }
-  if (result === "loss") {
-    return "border-rose-200 bg-rose-50 text-rose-700";
-  }
-
-  return "border-zinc-200 bg-zinc-50 text-zinc-500";
-}
-
 export function matchResultLabel(result: MatchResult, t: T) {
   if (result === "win") {
     return t("overlay.matchWin");
@@ -508,7 +472,7 @@ export function winRateToneClass(winRate: number | null) {
     return "text-emerald-400";
   }
   if (winRate <= 47) {
-    return "text-red-400";
+    return "text-rose-400";
   }
 
   return "text-zinc-200";
@@ -522,10 +486,43 @@ export function kdaToneClass(kda: number | null) {
     return "text-emerald-400";
   }
   if (kda <= 2) {
-    return "text-red-400";
+    return "text-rose-400";
   }
 
   return "text-zinc-200";
+}
+
+/**
+ * Score tone is relative to this match's own top score (scorePct), not an
+ * absolute scale — reuses the mastery badge's amber hue rather than the
+ * emerald/rose win-loss pair, since Scout Score isn't a good/bad signal.
+ */
+export function scoreToneClass(scorePct: number) {
+  if (scorePct >= 66) {
+    return "text-amber-300";
+  }
+  if (scorePct <= 33) {
+    return "text-zinc-500";
+  }
+
+  return "text-white/80";
+}
+
+/**
+ * Fill color for the score intensity bar — same three tiers as
+ * scoreToneClass, so a dim (low-scorePct) number never sits above a
+ * full-brightness bar. No gradient: a flat fill reads its tier at a glance
+ * across ten simultaneous cards, which a stretched/squeezed gradient doesn't.
+ */
+export function scoreBarClass(scorePct: number) {
+  if (scorePct >= 66) {
+    return "bg-amber-300";
+  }
+  if (scorePct <= 33) {
+    return "bg-zinc-500";
+  }
+
+  return "bg-zinc-300";
 }
 
 /**

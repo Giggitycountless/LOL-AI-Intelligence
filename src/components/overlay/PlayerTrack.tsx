@@ -8,6 +8,8 @@ import {
   matchResultLabel,
   premadeGroupStyle,
   recentStatsStatusMessage,
+  scoreBarClass,
+  scoreToneClass,
   winRateToneClass,
 } from "../../pages/selfHistoryOverlayUtils";
 import { initials, type T } from "../../utils/formatting";
@@ -23,20 +25,21 @@ function advisorTagClassDark(tone: import("../../backend/types").AdvisorPlayerTa
 }
 
 /**
- * Match-row theme, League Akari's palette: wins are BLUE, losses red,
- * remakes/unknown neutral gray — tinted backgrounds instead of borders.
+ * Match-row theme: wins are emerald, losses rose (PRODUCT.md — emerald is
+ * always ally/win/positive, rose is always enemy/loss/alert), remakes/unknown
+ * neutral gray — tinted backgrounds instead of borders.
  */
 function matchRowTheme(result: RecentMatchSummary["result"] | null) {
   if (result === "win") {
     return {
-      row: "bg-[rgba(59,130,246,0.25)] text-white/80",
-      result: "text-blue-300",
+      row: "bg-[rgba(16,185,129,0.25)] text-white/80",
+      result: "text-emerald-300",
     };
   }
   if (result === "loss") {
     return {
-      row: "bg-[rgba(243,73,72,0.25)] text-white/80",
-      result: "text-red-300",
+      row: "bg-[rgba(244,63,94,0.25)] text-white/80",
+      result: "text-rose-300",
     };
   }
   if (result !== null) {
@@ -137,10 +140,32 @@ export const PlayerTrack = memo(function PlayerTrack({
         </div>
       </div>
 
-      {/* ── Stats strip: three centered cells (Akari PlayerInfoCardStats) ── */}
+      {/* ── Score: primary anchor alongside rank (PRODUCT.md design principle 1).
+          Its own row, visibly labeled, with an intensity bar driven by
+          scorePct (relative to this match's top score) — previously computed
+          but never rendered, leaving the anchor metric the same weight as
+          the secondary stats below it. ── */}
+      <div className="mb-1" title={t("overlay.scoreHint")}>
+        <div className="flex items-baseline justify-between">
+          <span className="text-[9px] font-semibold uppercase tracking-wide text-white/60">
+            {t("overlay.score")}
+          </span>
+          <span className={["text-[17px] font-extrabold leading-none tabular-nums", scoreToneClass(player.scorePct)].join(" ")}>
+            {player.score === null ? "—" : player.score}
+          </span>
+        </div>
+        <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-white/10">
+          <div
+            className={["h-full rounded-full", scoreBarClass(player.scorePct)].join(" ")}
+            style={{ width: `${player.scorePct}%` }}
+          />
+        </div>
+      </div>
+
+      {/* ── Secondary stats: win rate / KDA (Akari PlayerInfoCardStats) ── */}
       <div className="mb-1 flex items-center">
         <div
-          className={["flex-1 text-center text-[13px] font-bold tabular-nums", winRateToneClass(player.winRate)].join(" ")}
+          className={["flex-1 text-center text-[12px] font-semibold tabular-nums", winRateToneClass(player.winRate)].join(" ")}
           title={t("overlay.winRate")}
         >
           {player.winRate === null ? "— %" : `${player.winRate}%`}
@@ -149,16 +174,10 @@ export const PlayerTrack = memo(function PlayerTrack({
           )}
         </div>
         <div
-          className={["flex-1 text-center text-[13px] font-bold tabular-nums", kdaToneClass(player.averageKda)].join(" ")}
+          className={["flex-1 text-center text-[12px] font-semibold tabular-nums", kdaToneClass(player.averageKda)].join(" ")}
           title="KDA"
         >
           {player.averageKda === null ? "—" : player.averageKda.toFixed(2)}
-        </div>
-        <div
-          className="flex-1 text-center text-[13px] font-bold tabular-nums text-white/80"
-          title={t("overlay.score")}
-        >
-          {player.score === null ? "—" : player.score}
         </div>
       </div>
 
@@ -283,7 +302,10 @@ function ChampionPortrait({
         </span>
       )}
       {masteryLevel !== null && masteryLevel >= 5 && (
-        <span className="absolute -top-1 right-0 flex h-4 min-w-4 items-center justify-center rounded bg-amber-500 px-0.5 text-[9px] font-bold leading-none text-white shadow-sm">
+        <span
+          className="absolute -top-1 right-0 flex h-4 min-w-4 items-center justify-center rounded bg-amber-500 px-0.5 text-[9px] font-bold leading-none text-white shadow-sm"
+          title={`${t("profile.mastery")} ${masteryLevel}`}
+        >
           M{masteryLevel}
         </span>
       )}
@@ -307,15 +329,15 @@ function RankEntry({
   if (!value) {
     return (
       <div className="flex w-0 flex-1 items-center justify-center" title={title}>
-        <span className="text-[11px] text-white/60">{unrankedLabel}</span>
+        <span className="text-[12px] text-white/60">{unrankedLabel}</span>
       </div>
     );
   }
 
   return (
     <div className="flex w-0 flex-1 items-center justify-start" title={title}>
-      {iconUrl && <img alt="" className="mr-1 h-4 w-4 shrink-0 object-contain" src={iconUrl} />}
-      <span className="overflow-hidden text-ellipsis whitespace-nowrap text-[11px] text-white/80">
+      {iconUrl && <img alt="" className="mr-1 h-[18px] w-[18px] shrink-0 object-contain" src={iconUrl} />}
+      <span className="overflow-hidden text-ellipsis whitespace-nowrap text-[12px] font-semibold text-white/90">
         {lp !== null ? `${value} ${lp}` : value}
       </span>
     </div>

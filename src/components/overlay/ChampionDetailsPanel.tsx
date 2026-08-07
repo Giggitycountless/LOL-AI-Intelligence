@@ -68,7 +68,7 @@ export function ChampionDetailsPanel({
           </p>
         )}
         {hasError && !details && (
-          <p className="rounded-lg border border-red-700 bg-red-950 px-4 py-3 text-sm font-medium text-red-400">
+          <p className="rounded-lg border border-rose-700 bg-rose-950 px-4 py-3 text-sm font-medium text-rose-400">
             {t("overlay.abilitiesUnavailable")}
           </p>
         )}
@@ -85,14 +85,8 @@ export function ChampionDetailsPanel({
 }
 
 // ── Slot accent colors ────────────────────────────────────────────────────────
-
-const SLOT_BORDER: Record<string, string> = {
-  Passive: "border-l-zinc-300",
-  Q:       "border-l-sky-400",
-  W:       "border-l-emerald-400",
-  E:       "border-l-amber-400",
-  R:       "border-l-rose-500",
-};
+// Carried entirely by the slot badge chip (colored background + border) below —
+// no side-stripe on the card itself; the badge is the one accent signal per slot.
 
 const SLOT_BADGE: Record<string, string> = {
   Passive: "bg-zinc-700 text-zinc-400 border-zinc-600",
@@ -112,7 +106,7 @@ const SPAN_CLASS: Record<SpanKind, string> = {
   healing:    "font-semibold text-emerald-400",
   status:     "font-semibold text-violet-400",
   bold:       "font-semibold text-zinc-100",
-  unresolved: "font-semibold text-red-400",
+  unresolved: "font-semibold text-rose-400",
 };
 
 // ── Ability card ─────────────────────────────────────────────────────────────
@@ -125,7 +119,6 @@ const AbilityCard = memo(function AbilityCard({
   t: T;
 }) {
   const slot = ability.slot.toUpperCase();
-  const borderColor = SLOT_BORDER[slot] ?? SLOT_BORDER.Q;
   const badgeColor = SLOT_BADGE[slot] ?? SLOT_BADGE.Q;
 
   const cooldown = abilityStatText(ability.cooldownValues, ability.cooldown);
@@ -133,9 +126,7 @@ const AbilityCard = memo(function AbilityCard({
   const range = abilityStatText(ability.rangeValues, ability.range);
 
   return (
-    <section
-      className={`flex gap-3 rounded-lg border border-zinc-700 border-l-4 bg-zinc-800 px-3 py-3 shadow-sm transition hover:border-zinc-600 hover:shadow ${borderColor}`}
-    >
+    <section className="flex gap-3 rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-3 shadow-sm transition hover:border-zinc-600 hover:shadow">
       {/* Icon */}
       <div className="shrink-0">
         {ability.iconUrl ? (

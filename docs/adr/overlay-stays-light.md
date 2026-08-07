@@ -1,12 +1,18 @@
 # ADR: In-Game Overlay Stays Light (Ignores App Theme)
 
-**Status:** Active
+**Status:** Superseded by [`PRODUCT.md`](../../PRODUCT.md) § Design Principles (overlay theme)
 **Code:** `src/pages/SelfHistoryOverlay.tsx`
-**Last updated:** 2026-06-15
+**Last updated:** 2026-08-07
 
 ---
 
-## Background
+## Why this ADR is superseded
+
+The decision below (overlay stays light, ignores app theme) was never carried out — the shipped overlay has used a fixed dark theme (League Akari style: `zinc-900`/`zinc-950` surfaces, white/translucent text) since v0.3.0. `PRODUCT.md` now documents the current, intentional decision: the overlay is fixed-dark regardless of the desk-mode theme setting, for the same underlying reason this ADR argued for fixed-light — legibility over live gameplay shouldn't depend on the user's desktop theme preference. Only the color landed differently than this ADR predicted; industry-standard LoL overlay tools (OP.GG, Blitz, League Akari) all converged on dark, not light, for the same scene. The background/decision sections below are kept as the historical record of the original (superseded) reasoning.
+
+---
+
+## Background (historical)
 
 The main app supports a light/dark theme (the `dark` class is toggled on `<html>` in `AppShell`). The `In-Game Overlay` is a separate Tauri window that renders outside `AppShell`, so it never receives that class. Its styling is hardcoded light (`bg-zinc-100`, white cards). A reasonable instinct during UX review was to "fix" this by adding `dark:` variants and wiring the overlay to the theme.
 

@@ -353,7 +353,7 @@ export function SelfHistoryOverlay() {
         </div>
         <div className="flex items-center gap-2" onClick={(event) => event.stopPropagation()}>
           {refreshFailed && (
-            <span className="rounded-md border border-red-700 bg-red-950 px-2.5 py-1 text-xs font-semibold text-red-400">
+            <span className="rounded-md border border-rose-700 bg-rose-950 px-2.5 py-1 text-xs font-semibold text-rose-400">
               {t("overlay.refreshFailed")}
             </span>
           )}
@@ -471,7 +471,7 @@ const TeamBoard = memo(function TeamBoard({
         <span
           className={[
             "mr-2 h-[10px] w-[10px] self-center rounded-full border border-white/20",
-            tone === "ally" ? "bg-emerald-500" : "bg-red-500",
+            tone === "ally" ? "bg-emerald-500" : "bg-rose-500",
           ].join(" ")}
         />
         <span className="mr-3 text-base font-bold leading-tight text-white/90">
@@ -482,7 +482,7 @@ const TeamBoard = memo(function TeamBoard({
             <span
               className={[
                 "self-center text-sm font-bold tabular-nums",
-                team.winRate >= 50 ? "text-emerald-400" : "text-red-400",
+                team.winRate >= 50 ? "text-emerald-400" : "text-rose-400",
               ].join(" ")}
               title={`${t("overlay.winRate")} ${team.wins}/${team.games}`}
             >
@@ -567,7 +567,7 @@ function SummaryCard({ label, tone, value }: { label: string; tone: TeamTone; va
   return (
     <div className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-1.5 shadow-sm">
       <p className="text-xs font-medium text-zinc-500">{label}</p>
-      <p className={["mt-0.5 text-base font-semibold tabular-nums", tone === "ally" ? "text-emerald-400" : "text-red-400"].join(" ")}>
+      <p className={["mt-0.5 text-base font-semibold tabular-nums", tone === "ally" ? "text-emerald-400" : "text-rose-400"].join(" ")}>
         {tone === "ally" ? "+" : "-"} {value}
       </p>
     </div>
@@ -600,7 +600,7 @@ function LiveInfoCard({ label, tone, value }: { label: string; tone?: TeamTone; 
       <p
         className={[
           "mt-0.5 truncate text-sm font-semibold tabular-nums",
-          tone === "ally" ? "text-emerald-400" : tone === "enemy" ? "text-red-400" : "text-zinc-100",
+          tone === "ally" ? "text-emerald-400" : tone === "enemy" ? "text-rose-400" : "text-zinc-100",
         ].join(" ")}
         title={value}
       >
