@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import type { ChampSelectPlayer, RecentMatchSummary } from "../../backend/types";
+import type { ChampSelectPlayer, LiveOverlayPlayer, RecentMatchSummary } from "../../backend/types";
 import {
   createOverlayModel,
   formatMatchDate,
+  itemValueTotal,
   kdaToneClass,
   matchStreaks,
+  normalizePlayerName,
   premadeGroupStyle,
   scoreBarClass,
   scoreToneClass,
@@ -214,5 +216,62 @@ describe("teamSummary", () => {
 
     expect(model.allyTeam.winRate).toBeNull();
     expect(model.allyTeam.kda).toBeNull();
+  });
+});
+
+function makeLiveOverlayPlayer(overrides: Partial<LiveOverlayPlayer> = {}): LiveOverlayPlayer {
+  return {
+    displayName: "Player One",
+    championName: "Ahri",
+    team: "ORDER",
+    level: 6,
+    position: "MIDDLE",
+    isDead: false,
+    respawnTimer: null,
+    items: [],
+    scores: null,
+    summonerSpells: [],
+    ...overrides,
+  };
+}
+
+describe("itemValueTotal", () => {
+  it("sums price times count across a player's items", () => {
+    const player = makeLiveOverlayPlayer({
+      items: [
+        { itemId: 1, displayName: "Boots", price: 300, count: 1, slot: 0 },
+        { itemId: 2, displayName: "Pink Ward", price: 75, count: 2, slot: 1 },
+      ],
+    });
+
+    expect(itemValueTotal(player)).toBe(450);
+  });
+});
+
+describe("normalizePlayerName", () => {
+  it("trims and lowercases so names match across data sources", () => {
+    expect(normalizePlayerName("  Player One  ")).toBe("player one");
+  });
+});
+
+describe("createOverlayModel item values", () => {
+  it("matches a live overlay player to the roster by normalized display name", () => {
+    const players = [makePlayer({ displayName: "Player One" })];
+    const liveOverlayPlayers = [
+      makeLiveOverlayPlayer({
+        displayName: " player one ",
+        items: [{ itemId: 1, displayName: "Boots", price: 300, count: 1, slot: 0 }],
+      }),
+    ];
+
+    const model = createOverlayModel(players, [], {}, "en", t, [], liveOverlayPlayers);
+
+    expect(model.allies[0].itemValue).toBe(300);
+  });
+
+  it("leaves itemValue null when no live overlay data is available", () => {
+    const model = createOverlayModel([makePlayer()], [], {}, "en", t);
+
+    expect(model.allies[0].itemValue).toBeNull();
   });
 });

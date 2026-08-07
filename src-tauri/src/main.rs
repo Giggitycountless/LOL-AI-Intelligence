@@ -261,6 +261,30 @@ fn clear_player_note(
 }
 
 #[tauri::command(async)]
+fn list_player_notes(
+    state: State<'_, platform::AppState>,
+    input: platform::ListPlayerNotesCommand,
+) -> Result<platform::PlayerNoteRecordsResponse, platform::CommandError> {
+    platform::list_player_notes(state.inner(), input)
+}
+
+#[tauri::command(async)]
+fn update_player_note(
+    state: State<'_, platform::AppState>,
+    input: platform::UpdatePlayerNoteCommand,
+) -> Result<domain::PlayerNoteRecord, platform::CommandError> {
+    platform::update_player_note(state.inner(), input)
+}
+
+#[tauri::command(async)]
+fn delete_player_note(
+    state: State<'_, platform::AppState>,
+    input: platform::DeletePlayerNoteCommand,
+) -> Result<domain::ClearPlayerNoteResult, platform::CommandError> {
+    platform::delete_player_note(state.inner(), input)
+}
+
+#[tauri::command(async)]
 fn get_rune_recommendations(
     state: State<'_, platform::AppState>,
     input: platform::GetRuneRecommendationsCommand,
@@ -761,6 +785,9 @@ fn main() {
             get_post_match_participant_profile,
             save_player_note,
             clear_player_note,
+            list_player_notes,
+            update_player_note,
+            delete_player_note,
             run_ai_analysis,
             run_match_recap_analysis,
             list_chat_presets,

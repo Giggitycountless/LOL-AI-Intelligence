@@ -50,6 +50,9 @@ const tMock = vi.fn((key: string) => {
     "overlay.allyWins": "Ally Wins",
     "overlay.enemyWins": "Enemy Wins",
     "advisorTag.strongPick": "Strong pick",
+    "playerNotes.eyebrow": "Player Notes",
+    "participant.note": "Note",
+    "participant.tags": "Tags",
   };
   return labels[key] ?? key;
 });
@@ -281,6 +284,77 @@ describe("SelfHistoryOverlay", () => {
     expect(await screen.findByText("Strong pick")).toBeDefined();
     expect(await screen.findByText("+900")).toBeDefined();
     expect(await screen.findByText("742")).toBeDefined();
+  });
+
+  it("shows a note badge for a champ-select player with a saved note", async () => {
+    const ally = createPlayer({
+      summonerId: 1,
+      displayName: "Ally One",
+      team: "ally",
+      championId: 86,
+      recentStats: {
+        matchCount: 1,
+        averageKda: 2.5,
+        recentChampions: ["Garen"],
+        recentMatches: [],
+      },
+      recentStatsStatus: "loaded",
+    });
+    const enemy = createPlayer({
+      summonerId: 2,
+      displayName: "Enemy One",
+      team: "enemy",
+      championId: 122,
+      recentStats: null,
+      recentStatsStatus: "notRequested",
+    });
+
+    mockUseChampSelect.mockReturnValue({
+      ...defaultChampSelect(),
+      champSelectSnapshot: { players: [ally, enemy] },
+    });
+    mockUseAdvisor.mockReturnValue({
+      ...defaultAdvisor(),
+      champSelectAdvisorSnapshot: {
+        cachedAt: "1",
+        advisorSource: "fixture",
+        advisorPatch: "26.08",
+        dataStatus: "cached",
+        players: [
+          {
+            summonerId: 1,
+            displayName: "Ally One",
+            championId: 86,
+            championName: "Garen",
+            team: "ally",
+            recentStats: ally.recentStats,
+            recentStatsStatus: "loaded",
+            tags: [],
+            advisor: null,
+            matchupAdvice: null,
+            noteSummary: { hasNote: true, note: "Strong laner", tags: ["lane"] },
+          },
+          {
+            summonerId: 2,
+            displayName: "Enemy One",
+            championId: 122,
+            championName: "Darius",
+            team: "enemy",
+            recentStats: null,
+            recentStatsStatus: "notRequested",
+            tags: [],
+            advisor: null,
+            matchupAdvice: null,
+            noteSummary: { hasNote: false, note: null, tags: [] },
+          },
+        ],
+      },
+    });
+
+    await mountOverlay();
+
+    const badge = await screen.findByLabelText("Player Notes");
+    expect(badge.getAttribute("title")).toBe("Note: Strong laner · Tags: lane");
   });
 
   it("ignores a stale match-detail response after a newer match was selected", async () => {

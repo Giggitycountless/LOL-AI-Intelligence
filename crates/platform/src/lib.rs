@@ -18,8 +18,8 @@ use application::{
     ActivityListInput, ActivityNoteInput, AdvisorDataInput, AdvisorDataRefreshInput,
     ApplicationError, LeagueChampionDetailsInput, LeagueChampionIconInput, LeagueClientReadError,
     LeagueClientReader, LeagueGameAssetInput, LeagueProfileIconInput, LeagueSelfSnapshotInput,
-    ParticipantPublicProfileInput, PostMatchDetailInput,
-    RankedChampionStatsInput, SettingsInput, normalize_player_name,
+    ParticipantPublicProfileInput, PlayerNoteListInput, PostMatchDetailInput,
+    RankedChampionStatsInput, SettingsInput, UpdatePlayerNoteInput, normalize_player_name,
 };
 use domain::{
     ActivityEntry, ActivityKind, AdvisorDataResponse, AppSettings, AppSnapshot, AutoAcceptStatus,
@@ -27,8 +27,9 @@ use domain::{
     DatabaseStatus, HealthReport, ImportLocalDataResult, LeagueChampionDetails,
     LeagueChampionSummary, LeagueClientStatus, LeagueGameAsset, LeagueGameAssetKind,
     LeagueImageAsset, LeagueSelfData, LeagueSelfSnapshot, LiveOverlaySnapshot, LocalDataExport,
-    ParticipantPublicProfile, ParticipantRecentStats, PlayerNoteView, PostMatchDetail,
-    RankedChampionLane, RankedChampionSort, RankedChampionStatsResponse, SettingsValues,
+    ParticipantPublicProfile, ParticipantRecentStats, PlayerNoteRecord, PlayerNoteView,
+    PostMatchDetail, RankedChampionLane, RankedChampionSort, RankedChampionStatsResponse,
+    SettingsValues,
 };
 use serde::{Deserialize, Serialize};
 use storage::SqliteStore;
@@ -795,6 +796,34 @@ pub struct SavePlayerNoteCommand {
 pub struct ClearPlayerNoteCommand {
     pub game_id: i64,
     pub participant_id: i64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ListPlayerNotesCommand {
+    pub limit: Option<i64>,
+    pub search: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdatePlayerNoteCommand {
+    pub player_puuid: String,
+    pub last_display_name: String,
+    pub note: Option<String>,
+    pub tags: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeletePlayerNoteCommand {
+    pub player_puuid: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlayerNoteRecordsResponse {
+    pub records: Vec<PlayerNoteRecord>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -3188,6 +3217,61 @@ pub fn clear_player_note(
         },
     )
     .map_err(CommandError::from)
+}
+
+pub fn list_player_notes(
+    state: &AppState,
+    command: ListPlayerNotesCommand,
+) -> Result<PlayerNoteRecordsResponse, CommandError> {
+    let records = application::list_player_notes(
+        &state.store,
+        PlayerNoteListInput {
+            limit: command.limit,
+            search: command.search,
+        },
+    )
+    .map_err(CommandError::from)?
+    .into_iter()
+    .map(player_note_record)
+    .collect();
+
+    Ok(PlayerNoteRecordsResponse { records })
+}
+
+pub fn update_player_note(
+    state: &AppState,
+    command: UpdatePlayerNoteCommand,
+) -> Result<PlayerNoteRecord, CommandError> {
+    let note = application::update_player_note(
+        &state.store,
+        UpdatePlayerNoteInput {
+            player_puuid: command.player_puuid,
+            last_display_name: command.last_display_name,
+            note: command.note,
+            tags: command.tags,
+        },
+    )
+    .map_err(CommandError::from)?;
+
+    Ok(player_note_record(note))
+}
+
+pub fn delete_player_note(
+    state: &AppState,
+    command: DeletePlayerNoteCommand,
+) -> Result<ClearPlayerNoteResult, CommandError> {
+    application::delete_player_note(&state.store, command.player_puuid.as_str())
+        .map_err(CommandError::from)
+}
+
+fn player_note_record(note: application::StoredPlayerNote) -> PlayerNoteRecord {
+    PlayerNoteRecord {
+        player_puuid: note.player_puuid,
+        display_name: note.last_display_name,
+        note: note.note,
+        tags: note.tags,
+        updated_at: note.updated_at,
+    }
 }
 
 // ── Rune system commands ──────────────────────────────────────────────────────

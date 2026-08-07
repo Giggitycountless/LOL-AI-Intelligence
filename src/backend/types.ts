@@ -412,6 +412,7 @@ export type ChampSelectAdvisorPlayer = {
   tags: AdvisorPlayerTag[];
   advisor: AdvisorRecord | null;
   matchupAdvice: string | null;
+  noteSummary: PlayerNoteSummary;
 };
 
 export type ChampSelectAdvisorSnapshot = {
@@ -771,6 +772,34 @@ export type SavePlayerNoteInput = {
 export type ClearPlayerNoteInput = {
   gameId: number;
   participantId: number;
+};
+
+export type PlayerNoteRecord = {
+  playerPuuid: string;
+  displayName: string;
+  note: string | null;
+  tags: string[];
+  updatedAt: string;
+};
+
+export type PlayerNoteRecordsResponse = {
+  records: PlayerNoteRecord[];
+};
+
+export type ListPlayerNotesInput = {
+  limit?: number;
+  search?: string | null;
+};
+
+export type UpdatePlayerNoteInput = {
+  playerPuuid: string;
+  lastDisplayName: string;
+  note: string | null;
+  tags: string[];
+};
+
+export type DeletePlayerNoteInput = {
+  playerPuuid: string;
 };
 
 export type LocalDataExport = {

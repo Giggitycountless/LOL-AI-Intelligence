@@ -32,3 +32,17 @@ export function CloseIcon() {
     </svg>
   );
 }
+
+export function NoteIcon() {
+  return (
+    <svg aria-hidden="true" className="h-2.5 w-2.5" fill="none" viewBox="0 0 24 24">
+      <path
+        d="M6 3h9l5 5v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z"
+        stroke="currentColor"
+        strokeLinejoin="round"
+        strokeWidth="2.4"
+      />
+      <path d="M8 12h8M8 16h5" stroke="currentColor" strokeLinecap="round" strokeWidth="2.4" />
+    </svg>
+  );
+}

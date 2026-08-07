@@ -309,7 +309,7 @@ pub struct ClearActivityResult {
     pub deleted_count: i64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PlayerNoteSummary {
     pub has_note: bool,
@@ -331,6 +331,16 @@ pub struct PlayerNoteView {
 #[serde(rename_all = "camelCase")]
 pub struct ClearPlayerNoteResult {
     pub cleared: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlayerNoteRecord {
+    pub player_puuid: String,
+    pub display_name: String,
+    pub note: Option<String>,
+    pub tags: Vec<String>,
+    pub updated_at: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -790,6 +800,7 @@ pub struct ChampSelectAdvisorPlayer {
     pub tags: Vec<AdvisorPlayerTag>,
     pub advisor: Option<AdvisorRecord>,
     pub matchup_advice: Option<String>,
+    pub note_summary: PlayerNoteSummary,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]

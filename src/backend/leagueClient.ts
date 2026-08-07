@@ -10,6 +10,7 @@ import type {
   ChampSelectAdvisorSnapshot,
   ClearPlayerNoteInput,
   ClearPlayerNoteResult,
+  DeletePlayerNoteInput,
   AutoAcceptStatus,
   ChatAvailability,
   ChatMe,
@@ -21,9 +22,12 @@ import type {
   LeagueImageAsset,
   LeagueSelfSnapshot,
   LeagueSelfSnapshotInput,
+  ListPlayerNotesInput,
   LiveOverlaySnapshot,
   ParticipantPublicProfile,
   ParticipantPublicProfileInput,
+  PlayerNoteRecord,
+  PlayerNoteRecordsResponse,
   PlayerNoteView,
   PlayerProfileSnapshot,
   PlayerSearchInput,
@@ -34,6 +38,7 @@ import type {
   RankedChampionStatsInput,
   RankedChampionStatsResponse,
   SavePlayerNoteInput,
+  UpdatePlayerNoteInput,
 } from "./types";
 
 export function fetchLeagueClientStatus(): Promise<LeagueClientStatus> {
@@ -154,6 +159,24 @@ export function savePlayerNote(input: SavePlayerNoteInput): Promise<PlayerNoteVi
 
 export function clearPlayerNote(input: ClearPlayerNoteInput): Promise<ClearPlayerNoteResult> {
   return callBackend<ClearPlayerNoteResult>("clear_player_note", {
+    input,
+  });
+}
+
+export function listPlayerNotes(input: ListPlayerNotesInput = {}): Promise<PlayerNoteRecordsResponse> {
+  return callBackend<PlayerNoteRecordsResponse>("list_player_notes", {
+    input,
+  });
+}
+
+export function updatePlayerNote(input: UpdatePlayerNoteInput): Promise<PlayerNoteRecord> {
+  return callBackend<PlayerNoteRecord>("update_player_note", {
+    input,
+  });
+}
+
+export function deletePlayerNote(input: DeletePlayerNoteInput): Promise<ClearPlayerNoteResult> {
+  return callBackend<ClearPlayerNoteResult>("delete_player_note", {
     input,
   });
 }

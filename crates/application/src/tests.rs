@@ -826,6 +826,68 @@ fn champ_select_advisor_snapshot_adds_tags_and_matchup_advice() {
 }
 
 #[test]
+fn champ_select_advisor_snapshot_flags_players_with_notes() {
+    let store = FakeStore::new(default_settings());
+    store
+        .advisor_snapshot
+        .replace(Some(sample_advisor_fixture("cached-advisor")));
+    store
+        .save_player_note(StoredPlayerNoteInput {
+            player_puuid: "puuid-1".to_string(),
+            last_display_name: "Ally".to_string(),
+            note: Some("Strong laner".to_string()),
+            tags: vec!["lane".to_string()],
+        })
+        .expect("player note saves");
+    let reader = FakeLeagueClientReader::with_champ_select_data(
+        ChampSelectSessionData {
+            ally_ids: vec![1],
+            enemy_ids: vec![2],
+            champion_selections: HashMap::from([(1, 86), (2, 122)]),
+            ally_names: Vec::new(),
+            enemy_names: Vec::new(),
+            champion_selections_by_name: HashMap::new(),
+            source: ChampSelectSessionSource::ChampSelect,
+            players: Vec::new(),
+        },
+        vec![
+            SummonerBatchEntry {
+                summoner_id: 1,
+                puuid: "puuid-1".to_string(),
+                display_name: "Ally".to_string(),
+                summoner_level: None,
+            },
+            SummonerBatchEntry {
+                summoner_id: 2,
+                puuid: "puuid-2".to_string(),
+                display_name: "Enemy".to_string(),
+                summoner_level: None,
+            },
+        ],
+        Vec::new(),
+    );
+
+    let snapshot =
+        get_champ_select_advisor_snapshot(&store, &reader, 6).expect("advisor snapshot reads");
+    let ally = snapshot
+        .players
+        .iter()
+        .find(|player| player.display_name == "Ally")
+        .expect("ally player exists");
+    let enemy = snapshot
+        .players
+        .iter()
+        .find(|player| player.display_name == "Enemy")
+        .expect("enemy player exists");
+
+    assert!(ally.note_summary.has_note);
+    assert_eq!(ally.note_summary.note.as_deref(), Some("Strong laner"));
+    assert_eq!(ally.note_summary.tags, vec!["lane".to_string()]);
+    assert!(!enemy.note_summary.has_note);
+    assert!(enemy.note_summary.note.is_none());
+}
+
+#[test]
 fn player_advisor_tags_detect_one_trick_and_loss_streak() {
     let mut recent_matches = Vec::new();
     for game_id in 1..=4 {
@@ -1327,6 +1389,49 @@ impl AppStore for FakeStore {
         notes.retain(|note| note.player_puuid != player_puuid);
 
         Ok(before != notes.len())
+    }
+
+    fn list_player_notes(
+        &self,
+        limit: Option<i64>,
+        search: Option<String>,
+    ) -> Result<Vec<StoredPlayerNote>, String> {
+        let mut notes: Vec<StoredPlayerNote> = self
+            .player_notes
+            .borrow()
+            .iter()
+            .filter(|note| match &search {
+                Some(term) => {
+                    note.last_display_name.contains(term.as_str())
+                        || note
+                            .note
+                            .as_deref()
+                            .is_some_and(|value| value.contains(term.as_str()))
+                }
+                None => true,
+            })
+            .cloned()
+            .collect();
+        notes.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+
+        if let Some(limit) = limit {
+            notes.truncate(limit as usize);
+        }
+
+        Ok(notes)
+    }
+
+    fn get_player_notes_by_puuids(
+        &self,
+        puuids: &[String],
+    ) -> Result<Vec<StoredPlayerNote>, String> {
+        Ok(self
+            .player_notes
+            .borrow()
+            .iter()
+            .filter(|note| puuids.iter().any(|puuid| puuid == &note.player_puuid))
+            .cloned()
+            .collect())
     }
 
     fn latest_ranked_champion_snapshot(

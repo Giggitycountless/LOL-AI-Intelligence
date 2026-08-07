@@ -4,6 +4,7 @@ import type {
   ChampSelectPlayer,
   ChampSelectAdvisorPlayer,
   ChampSelectRecentStatsStatus,
+  LiveOverlayPlayer,
   LiveOverlaySnapshot,
   MatchResult,
   RankedQueueSummary,
@@ -36,6 +37,11 @@ export type PlayerView = {
   advisorTags: AdvisorPlayerTag[];
   advisorSummary: string | null;
   isEmpty: boolean;
+  hasNote: boolean;
+  noteText: string | null;
+  noteTags: string[];
+  /** Sum of this player's current item prices, from the in-game Live Client Data feed. Null before the game starts / no match by name. */
+  itemValue: number | null;
   masteryLevel: number | null;
   /** 0-based index into the snapshot's premadeGroups, or null when solo. */
   premadeGroup: number | null;
@@ -90,6 +96,7 @@ export function createOverlayModel(
   effectiveLanguage: EffectiveLanguage,
   t: T,
   premadeGroups: number[][] = [],
+  liveOverlayPlayers: LiveOverlayPlayer[] = [],
 ): OverlayModel {
   const advisorBySummonerId = new Map(advisorPlayers.map((player) => [player.summonerId, player]));
   const premadeGroupBySummonerId = new Map<number, number>();
@@ -98,11 +105,14 @@ export function createOverlayModel(
       premadeGroupBySummonerId.set(summonerId, groupIndex);
     }
   });
+  const itemValueByName = new Map(
+    liveOverlayPlayers.map((player) => [normalizePlayerName(player.displayName), itemValueTotal(player)]),
+  );
   const rawAllies = fillTeam(players.filter((player) => player.team === "ally")).map((player, index) =>
-    playerView(player, advisorBySummonerId, premadeGroupBySummonerId, index, "ally", imageUrls, effectiveLanguage, t),
+    playerView(player, advisorBySummonerId, premadeGroupBySummonerId, itemValueByName, index, "ally", imageUrls, effectiveLanguage, t),
   );
   const rawEnemies = fillTeam(players.filter((player) => player.team === "enemy")).map((player, index) =>
-    playerView(player, advisorBySummonerId, premadeGroupBySummonerId, index, "enemy", imageUrls, effectiveLanguage, t),
+    playerView(player, advisorBySummonerId, premadeGroupBySummonerId, itemValueByName, index, "enemy", imageUrls, effectiveLanguage, t),
   );
 
   // Scout Score only carries meaning relative to the other players in this match
@@ -132,6 +142,7 @@ export function playerView(
   player: ChampSelectPlayer | null,
   advisorBySummonerId: Map<number, ChampSelectAdvisorPlayer>,
   premadeGroupBySummonerId: Map<number, number>,
+  itemValueByName: Map<string, number>,
   index: number,
   tone: TeamTone,
   imageUrls: Record<number, string>,
@@ -139,6 +150,7 @@ export function playerView(
   t: T,
 ): PlayerView {
   const advisorPlayer = player ? advisorBySummonerId.get(player.summonerId) : undefined;
+  const itemValue = player ? (itemValueByName.get(normalizePlayerName(player.displayName)) ?? null) : null;
   const rows = fillMatches(player?.recentStats?.recentMatches ?? []).map((match, matchIndex) => ({
     id: match ? `${match.gameId}` : `${tone}-${index}-empty-${matchIndex}`,
     imageUrl: match?.championId ? imageUrls[match.championId] : undefined,
@@ -164,6 +176,10 @@ export function playerView(
     advisorTags: advisorPlayer?.tags ?? [],
     advisorSummary: advisorSummaryText(advisorPlayer),
     isEmpty: !player,
+    hasNote: advisorPlayer?.noteSummary?.hasNote ?? false,
+    noteText: advisorPlayer?.noteSummary?.note ?? null,
+    noteTags: advisorPlayer?.noteSummary?.tags ?? [],
+    itemValue,
     masteryLevel: player?.masteryLevel ?? null,
     premadeGroup: player ? (premadeGroupBySummonerId.get(player.summonerId) ?? null) : null,
     rows,
@@ -244,6 +260,25 @@ export function advisorSummaryText(player: ChampSelectAdvisorPlayer | undefined)
   }
 
   return player.matchupAdvice ?? player.advisor?.laneAdvice ?? player.advisor?.powerSpikes[0]?.description ?? null;
+}
+
+/** Matches the backend's `normalize_player_name` (trim + lowercase) so champ-select
+ * roster names line up with the in-game Live Client Data feed's display names. */
+export function normalizePlayerName(name: string): string {
+  return name.trim().toLowerCase();
+}
+
+export function itemValueTotal(player: LiveOverlayPlayer): number {
+  return player.items.reduce((total, item) => total + item.price * item.count, 0);
+}
+
+export function noteTooltip(player: PlayerView, t: T): string {
+  const parts = [`${t("participant.note")}: ${player.noteText ?? ""}`.trim()];
+  if (player.noteTags.length > 0) {
+    parts.push(`${t("participant.tags")}: ${player.noteTags.join(", ")}`);
+  }
+
+  return parts.join(" · ");
 }
 
 const ADVISOR_TAG_KEY: Record<AdvisorPlayerTagKind, TranslationKey> = {

@@ -293,6 +293,45 @@ impl SqliteStore {
         Ok(deleted_count > 0)
     }
 
+    pub fn list_player_notes(
+        &self,
+        limit: Option<i64>,
+        search: Option<&str>,
+    ) -> StorageResult<Vec<application::StoredPlayerNote>> {
+        let connection = Connection::open(&self.database_path)?;
+        configure_connection(&connection)?;
+        list_player_notes(&connection, limit, search)
+    }
+
+    /// Batch lookup for a fixed, small set of puuids (e.g. a champ-select roster).
+    /// `player_puuid` is the table's primary key, so each entry resolves via an
+    /// index seek — one query with an `IN (...)` list costs O(k log n) regardless
+    /// of how many notes have accumulated, versus k separate round trips.
+    pub fn get_player_notes_by_puuids(
+        &self,
+        puuids: &[String],
+    ) -> StorageResult<Vec<application::StoredPlayerNote>> {
+        if puuids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let connection = Connection::open(&self.database_path)?;
+        configure_connection(&connection)?;
+
+        let placeholders = vec!["?"; puuids.len()].join(", ");
+        let sql = format!(
+            "SELECT player_puuid, last_display_name, note, tags_json, updated_at
+            FROM player_notes
+            WHERE player_puuid IN ({placeholders})"
+        );
+        let mut statement = connection.prepare(&sql)?;
+        let rows = statement
+            .query_map(rusqlite::params_from_iter(puuids), read_player_note_row)?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        stored_notes_from_rows(rows)
+    }
+
     pub fn latest_ranked_champion_snapshot(
         &self,
     ) -> StorageResult<Option<RankedChampionDataSnapshot>> {
@@ -850,6 +889,90 @@ fn write_player_note(
     Ok(())
 }
 
+fn list_player_notes(
+    connection: &Connection,
+    limit: Option<i64>,
+    search: Option<&str>,
+) -> StorageResult<Vec<application::StoredPlayerNote>> {
+    let like_pattern = search.map(|value| format!("%{value}%"));
+
+    let rows: Vec<(String, String, Option<String>, String, String)> = match (&like_pattern, limit) {
+        (Some(pattern), Some(limit)) => {
+            let mut statement = connection.prepare(
+                "SELECT player_puuid, last_display_name, note, tags_json, updated_at
+                FROM player_notes
+                WHERE last_display_name LIKE ?1 OR note LIKE ?1
+                ORDER BY updated_at DESC
+                LIMIT ?2",
+            )?;
+            statement
+                .query_map((pattern.as_str(), limit), read_player_note_row)?
+                .collect::<Result<Vec<_>, _>>()?
+        }
+        (Some(pattern), None) => {
+            let mut statement = connection.prepare(
+                "SELECT player_puuid, last_display_name, note, tags_json, updated_at
+                FROM player_notes
+                WHERE last_display_name LIKE ?1 OR note LIKE ?1
+                ORDER BY updated_at DESC",
+            )?;
+            statement
+                .query_map([pattern.as_str()], read_player_note_row)?
+                .collect::<Result<Vec<_>, _>>()?
+        }
+        (None, Some(limit)) => {
+            let mut statement = connection.prepare(
+                "SELECT player_puuid, last_display_name, note, tags_json, updated_at
+                FROM player_notes
+                ORDER BY updated_at DESC
+                LIMIT ?1",
+            )?;
+            statement
+                .query_map([limit], read_player_note_row)?
+                .collect::<Result<Vec<_>, _>>()?
+        }
+        (None, None) => {
+            let mut statement = connection.prepare(
+                "SELECT player_puuid, last_display_name, note, tags_json, updated_at
+                FROM player_notes
+                ORDER BY updated_at DESC",
+            )?;
+            statement
+                .query_map([], read_player_note_row)?
+                .collect::<Result<Vec<_>, _>>()?
+        }
+    };
+
+    stored_notes_from_rows(rows)
+}
+
+fn stored_notes_from_rows(
+    rows: Vec<(String, String, Option<String>, String, String)>,
+) -> StorageResult<Vec<application::StoredPlayerNote>> {
+    rows.into_iter()
+        .map(
+            |(player_puuid, last_display_name, note, tags_json, updated_at)| {
+                let tags: Vec<String> = serde_json::from_str(tags_json.as_str())
+                    .map_err(|error| StorageError::InvalidPlayerTags(error.to_string()))?;
+
+                Ok(application::StoredPlayerNote {
+                    player_puuid,
+                    last_display_name,
+                    note,
+                    tags,
+                    updated_at,
+                })
+            },
+        )
+        .collect()
+}
+
+fn read_player_note_row(
+    row: &rusqlite::Row<'_>,
+) -> rusqlite::Result<(String, String, Option<String>, String, String)> {
+    Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?))
+}
+
 fn read_latest_ranked_champion_snapshot(
     connection: &Connection,
 ) -> StorageResult<Option<RankedChampionDataSnapshot>> {
@@ -1184,6 +1307,22 @@ impl application::AppStore for SqliteStore {
 
     fn clear_player_note(&self, player_puuid: &str) -> Result<bool, String> {
         SqliteStore::clear_player_note(self, player_puuid).map_err(|error| error.to_string())
+    }
+
+    fn list_player_notes(
+        &self,
+        limit: Option<i64>,
+        search: Option<String>,
+    ) -> Result<Vec<application::StoredPlayerNote>, String> {
+        SqliteStore::list_player_notes(self, limit, search.as_deref())
+            .map_err(|error| error.to_string())
+    }
+
+    fn get_player_notes_by_puuids(
+        &self,
+        puuids: &[String],
+    ) -> Result<Vec<application::StoredPlayerNote>, String> {
+        SqliteStore::get_player_notes_by_puuids(self, puuids).map_err(|error| error.to_string())
     }
 
     fn latest_ranked_champion_snapshot(
@@ -1651,6 +1790,96 @@ mod tests {
                 .expect("player note reads")
                 .is_none()
         );
+
+        let _ = fs::remove_dir_all(data_dir);
+    }
+
+    #[test]
+    fn lists_player_notes_filtered_and_limited() {
+        let data_dir = unique_temp_dir();
+        let store = SqliteStore::initialize(&data_dir).expect("storage initializes");
+
+        store
+            .save_player_note(&application::StoredPlayerNoteInput {
+                player_puuid: "puuid-a".to_string(),
+                last_display_name: "Faker".to_string(),
+                note: Some("Strong laner".to_string()),
+                tags: vec![],
+            })
+            .expect("player note saves");
+        store
+            .save_player_note(&application::StoredPlayerNoteInput {
+                player_puuid: "puuid-b".to_string(),
+                last_display_name: "Other Player".to_string(),
+                note: Some("Passive early".to_string()),
+                tags: vec![],
+            })
+            .expect("player note saves");
+
+        let all_notes = store
+            .list_player_notes(None, None)
+            .expect("player notes list");
+        assert_eq!(all_notes.len(), 2);
+        assert!(
+            all_notes
+                .iter()
+                .any(|note| note.player_puuid == "puuid-a")
+        );
+        assert!(
+            all_notes
+                .iter()
+                .any(|note| note.player_puuid == "puuid-b")
+        );
+
+        let filtered = store
+            .list_player_notes(None, Some("fak"))
+            .expect("player notes filter");
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].player_puuid, "puuid-a");
+
+        let limited = store
+            .list_player_notes(Some(1), None)
+            .expect("player notes limit");
+        assert_eq!(limited.len(), 1);
+
+        let _ = fs::remove_dir_all(data_dir);
+    }
+
+    #[test]
+    fn gets_player_notes_by_puuids_batch() {
+        let data_dir = unique_temp_dir();
+        let store = SqliteStore::initialize(&data_dir).expect("storage initializes");
+
+        store
+            .save_player_note(&application::StoredPlayerNoteInput {
+                player_puuid: "puuid-a".to_string(),
+                last_display_name: "Faker".to_string(),
+                note: Some("Strong laner".to_string()),
+                tags: vec![],
+            })
+            .expect("player note saves");
+        store
+            .save_player_note(&application::StoredPlayerNoteInput {
+                player_puuid: "puuid-b".to_string(),
+                last_display_name: "Other Player".to_string(),
+                note: Some("Passive early".to_string()),
+                tags: vec![],
+            })
+            .expect("player note saves");
+
+        let empty = store
+            .get_player_notes_by_puuids(&[])
+            .expect("empty batch lookup");
+        assert!(empty.is_empty());
+
+        let found = store
+            .get_player_notes_by_puuids(&[
+                "puuid-a".to_string(),
+                "puuid-missing".to_string(),
+            ])
+            .expect("batch lookup reads");
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].player_puuid, "puuid-a");
 
         let _ = fs::remove_dir_all(data_dir);
     }

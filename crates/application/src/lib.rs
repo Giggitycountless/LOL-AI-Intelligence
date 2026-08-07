@@ -66,6 +66,15 @@ pub trait AppStore {
     fn get_player_note(&self, player_puuid: &str) -> Result<Option<StoredPlayerNote>, String>;
     fn save_player_note(&self, note: StoredPlayerNoteInput) -> Result<StoredPlayerNote, String>;
     fn clear_player_note(&self, player_puuid: &str) -> Result<bool, String>;
+    fn list_player_notes(
+        &self,
+        limit: Option<i64>,
+        search: Option<String>,
+    ) -> Result<Vec<StoredPlayerNote>, String>;
+    fn get_player_notes_by_puuids(
+        &self,
+        puuids: &[String],
+    ) -> Result<Vec<StoredPlayerNote>, String>;
     fn latest_ranked_champion_snapshot(&self)
     -> Result<Option<RankedChampionDataSnapshot>, String>;
     fn replace_ranked_champion_snapshot(
@@ -496,6 +505,20 @@ pub struct StoredPlayerNote {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StoredPlayerNoteInput {
+    pub player_puuid: String,
+    pub last_display_name: String,
+    pub note: Option<String>,
+    pub tags: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PlayerNoteListInput {
+    pub limit: Option<i64>,
+    pub search: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UpdatePlayerNoteInput {
     pub player_puuid: String,
     pub last_display_name: String,
     pub note: Option<String>,
@@ -1648,6 +1671,27 @@ pub fn get_champ_select_advisor_snapshot(
         .iter()
         .map(|record| (record.champion_id, record.clone()))
         .collect();
+
+    // Roster is bounded (10 players max), and player_puuid is the notes table's
+    // primary key — one batched IN-query resolves the whole roster via index
+    // seeks, so this stays cheap no matter how many notes have accumulated.
+    let roster_puuids: Vec<String> = snapshot
+        .players
+        .iter()
+        .map(|player| player.puuid.clone())
+        .filter(|puuid| !puuid.is_empty())
+        .collect();
+    let notes_by_puuid: HashMap<String, StoredPlayerNote> = if roster_puuids.is_empty() {
+        HashMap::new()
+    } else {
+        store
+            .get_player_notes_by_puuids(&roster_puuids)
+            .map_err(|error| storage_failure("load player notes for champ select roster", error))?
+            .into_iter()
+            .map(|note| (note.player_puuid.clone(), note))
+            .collect()
+    };
+
     let mut advisor_players: Vec<ChampSelectAdvisorPlayer> = snapshot
         .players
         .into_iter()
@@ -1656,6 +1700,18 @@ pub fn get_champ_select_advisor_snapshot(
                 .champion_id
                 .and_then(|champion_id| advisors_by_champion.get(&champion_id).cloned());
             let tags = player_advisor_tags(&player.recent_stats, advisor.as_ref());
+            let note_summary = notes_by_puuid
+                .get(&player.puuid)
+                .map(|note| PlayerNoteSummary {
+                    has_note: note.note.is_some(),
+                    note: note.note.clone(),
+                    tags: note.tags.clone(),
+                })
+                .unwrap_or(PlayerNoteSummary {
+                    has_note: false,
+                    note: None,
+                    tags: Vec::new(),
+                });
 
             ChampSelectAdvisorPlayer {
                 summoner_id: player.summoner_id,
@@ -1668,6 +1724,7 @@ pub fn get_champ_select_advisor_snapshot(
                 tags,
                 advisor,
                 matchup_advice: None,
+                note_summary,
             }
         })
         .collect();
@@ -1879,6 +1936,57 @@ pub fn clear_player_note_for_resolved_player(
     player_puuid: &str,
 ) -> Result<ClearPlayerNoteResult, ApplicationError> {
     validate_game_and_participant_ids(input.game_id, input.participant_id)?;
+    let cleared = store
+        .clear_player_note(player_puuid)
+        .map_err(ApplicationError::Storage)?;
+
+    Ok(ClearPlayerNoteResult { cleared })
+}
+
+pub fn list_player_notes(
+    store: &impl AppStore,
+    input: PlayerNoteListInput,
+) -> Result<Vec<StoredPlayerNote>, ApplicationError> {
+    let limit = normalize_player_note_limit(input.limit.unwrap_or(DEFAULT_PLAYER_NOTE_LIMIT))?;
+    let search = normalize_optional_string(input.search);
+
+    store
+        .list_player_notes(Some(limit), search)
+        .map_err(|error| storage_failure("list player notes", error))
+}
+
+pub fn update_player_note(
+    store: &impl AppStore,
+    input: UpdatePlayerNoteInput,
+) -> Result<StoredPlayerNote, ApplicationError> {
+    let player_puuid = normalize_optional_string(Some(input.player_puuid)).ok_or_else(|| {
+        ApplicationError::Validation("Player puuid must not be empty".to_string())
+    })?;
+    let last_display_name = normalize_optional_string(Some(input.last_display_name))
+        .unwrap_or_else(|| "Unknown Summoner".to_string());
+    let note = normalize_player_note(input.note)?;
+    let tags = normalize_player_tags(input.tags)?;
+
+    store
+        .save_player_note(StoredPlayerNoteInput {
+            player_puuid,
+            last_display_name,
+            note,
+            tags,
+        })
+        .map_err(ApplicationError::Storage)
+}
+
+pub fn delete_player_note(
+    store: &impl AppStore,
+    player_puuid: &str,
+) -> Result<ClearPlayerNoteResult, ApplicationError> {
+    if player_puuid.trim().is_empty() {
+        return Err(ApplicationError::Validation(
+            "Player puuid must not be empty".to_string(),
+        ));
+    }
+
     let cleared = store
         .clear_player_note(player_puuid)
         .map_err(ApplicationError::Storage)?;
@@ -2307,6 +2415,16 @@ fn normalize_activity_limit(limit: i64) -> Result<i64, ApplicationError> {
     } else {
         Err(ApplicationError::Validation(format!(
             "Activity limit must be between {MIN_ACTIVITY_LIMIT} and {MAX_ACTIVITY_LIMIT}"
+        )))
+    }
+}
+
+fn normalize_player_note_limit(limit: i64) -> Result<i64, ApplicationError> {
+    if (MIN_PLAYER_NOTE_LIMIT..=MAX_PLAYER_NOTE_LIMIT).contains(&limit) {
+        Ok(limit)
+    } else {
+        Err(ApplicationError::Validation(format!(
+            "Player note limit must be between {MIN_PLAYER_NOTE_LIMIT} and {MAX_PLAYER_NOTE_LIMIT}"
         )))
     }
 }

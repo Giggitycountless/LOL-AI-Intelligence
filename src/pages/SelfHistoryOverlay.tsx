@@ -86,8 +86,17 @@ export function SelfHistoryOverlay() {
         effectiveLanguage,
         t,
         premadeGroups ?? [],
+        liveOverlaySnapshot?.players ?? [],
       ),
-    [champSelectAdvisorSnapshot?.players, effectiveLanguage, leagueImages.championIcons, players, premadeGroups, t],
+    [
+      champSelectAdvisorSnapshot?.players,
+      effectiveLanguage,
+      leagueImages.championIcons,
+      liveOverlaySnapshot?.players,
+      players,
+      premadeGroups,
+      t,
+    ],
   );
 
   useEffect(() => {

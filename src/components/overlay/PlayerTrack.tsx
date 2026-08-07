@@ -6,6 +6,7 @@ import {
   formatMatchDate,
   kdaToneClass,
   matchResultLabel,
+  noteTooltip,
   premadeGroupStyle,
   recentStatsStatusMessage,
   scoreBarClass,
@@ -13,6 +14,7 @@ import {
   winRateToneClass,
 } from "../../pages/selfHistoryOverlayUtils";
 import { initials, type T } from "../../utils/formatting";
+import { NoteIcon } from "./Icons";
 
 import type { RecentMatchSummary } from "../../backend/types";
 
@@ -111,16 +113,27 @@ export const PlayerTrack = memo(function PlayerTrack({
           t={t}
         />
         <div className="flex w-0 flex-1 flex-col justify-center gap-1">
-          <p
-            className={[
-              "truncate text-[13px] font-bold leading-tight",
-              player.isEmpty ? "text-zinc-600" : "text-white/80",
-            ].join(" ")}
-            style={premadeStyle ? { color: premadeStyle.background } : undefined}
-            title={player.displayName}
-          >
-            {player.displayName}
-          </p>
+          <div className="flex min-w-0 items-center gap-1">
+            <p
+              className={[
+                "truncate text-[13px] font-bold leading-tight",
+                player.isEmpty ? "text-zinc-600" : "text-white/80",
+              ].join(" ")}
+              style={premadeStyle ? { color: premadeStyle.background } : undefined}
+              title={player.displayName}
+            >
+              {player.displayName}
+            </p>
+            {player.hasNote && (
+              <span
+                aria-label={t("playerNotes.eyebrow")}
+                className="inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-sm bg-amber-500 text-black"
+                title={noteTooltip(player, t)}
+              >
+                <NoteIcon />
+              </span>
+            )}
+          </div>
           <div className="flex gap-1">
             <RankEntry
               iconUrl={player.soloRankTier ? (rankTierIcons[player.soloRankTier] ?? null) : null}
@@ -178,6 +191,12 @@ export const PlayerTrack = memo(function PlayerTrack({
           title="KDA"
         >
           {player.averageKda === null ? "—" : player.averageKda.toFixed(2)}
+        </div>
+        <div
+          className="flex-1 text-center text-[12px] font-semibold tabular-nums text-amber-300"
+          title={t("overlay.playerItems")}
+        >
+          {player.itemValue === null ? "—" : player.itemValue}
         </div>
       </div>
 
