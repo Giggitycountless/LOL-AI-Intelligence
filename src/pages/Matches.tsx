@@ -6,6 +6,10 @@ import { openMatchRecapWindow } from "../windows/matchRecapWindow";
 import type { RecentMatchSummary } from "../backend/types";
 import { formatTimestamp, type T } from "../utils/formatting";
 
+// Match history page shows a wider window than the app-wide default snapshot
+// (which stays small elsewhere for fast startup).
+const MATCH_HISTORY_WINDOW = 20;
+
 export function Matches() {
   const {
     leagueSelfSnapshot,
@@ -15,6 +19,12 @@ export function Matches() {
   } = useAppCore();
   const { leagueImages, loadLeagueChampionIcon } = useLeagueAssets();
   const matches = leagueSelfSnapshot?.recentMatches ?? [];
+
+  useEffect(() => {
+    // The app-wide default snapshot is fetched with a smaller window
+    // elsewhere for fast startup, so this page loads its own wider one.
+    void refreshLeagueClient({ matchLimit: MATCH_HISTORY_WINDOW });
+  }, [refreshLeagueClient]);
 
   useEffect(() => {
     const championIds = new Set<number>();
@@ -39,7 +49,7 @@ export function Matches() {
             <button
               className="inline-flex h-10 items-center gap-2 rounded-md border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-900 px-3 text-sm font-medium text-zinc-800 dark:text-zinc-200 transition hover:border-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60"
               disabled={isLeagueClientLoading}
-              onClick={() => refreshLeagueClient({ matchLimit: 12 })}
+              onClick={() => refreshLeagueClient({ matchLimit: MATCH_HISTORY_WINDOW })}
               type="button"
             >
               <RefreshIcon />

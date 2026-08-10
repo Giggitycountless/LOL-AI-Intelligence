@@ -3289,8 +3289,13 @@ fn champion_details_path(champion_id: i64) -> String {
 }
 
 fn current_matches_path(limit: i64) -> String {
+    // begIndex/endIndex are both inclusive on the LCU match-history endpoint, so
+    // requesting `limit` games means endIndex = limit - 1 (e.g. limit=20 ->
+    // indices 0..=19, the client's own default page). Off by one here silently
+    // over-fetches one extra game versus what callers asked for.
+    let end_index = (limit - 1).max(0);
     format!(
-        "/lol-match-history/v1/products/lol/current-summoner/matches?begIndex=0&endIndex={limit}"
+        "/lol-match-history/v1/products/lol/current-summoner/matches?begIndex=0&endIndex={end_index}"
     )
 }
 
@@ -3299,7 +3304,8 @@ fn completed_match_path(game_id: i64) -> String {
 }
 
 fn puuid_matches_path(player_puuid: &str, limit: i64) -> String {
-    format!("/lol-match-history/v1/products/lol/{player_puuid}/matches?begIndex=0&endIndex={limit}")
+    let end_index = (limit - 1).max(0);
+    format!("/lol-match-history/v1/products/lol/{player_puuid}/matches?begIndex=0&endIndex={end_index}")
 }
 
 fn calculate_kda(kills: i64, deaths: i64, assists: i64) -> f64 {
