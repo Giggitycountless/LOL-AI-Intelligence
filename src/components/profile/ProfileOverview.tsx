@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { ChampionImage, Metric, ResultBadge } from "../common";
 import { PlaystyleTags } from "../PlaystyleTags";
+import { openMatchRecapWindow } from "../../windows/matchRecapWindow";
 import { formatDuration, formatTimestamp, formatLeaguePhase, type T } from "../../utils/formatting";
 import type {
   ChampionMasteryEntry,
@@ -179,9 +180,10 @@ export function ProfileOverview({
           <div className="mt-4 flex flex-col gap-2">
             {recentMatches.slice(0, 20).map((match) => (
               <MatchRow
-                key={match.gameId}
                 imageUrl={match.championId ? leagueImages.championIcons[match.championId] : undefined}
+                key={match.gameId}
                 match={match}
+                onOpen={() => void openMatchRecapWindow({ gameId: match.gameId }, t("recap.title"))}
                 t={t}
               />
             ))}
@@ -308,10 +310,14 @@ function MasteryCard({ entry, imageUrl, record, t }: { entry: ChampionMasteryEnt
   );
 }
 
-function MatchRow({ imageUrl, match, t }: { imageUrl: string | undefined; match: RecentMatchSummary; t: T }) {
+function MatchRow({ imageUrl, match, onOpen, t }: { imageUrl: string | undefined; match: RecentMatchSummary; onOpen: () => void; t: T }) {
   const kdaRatio = match.kda !== null ? match.kda.toFixed(1) : "—";
   return (
-    <div className="flex items-center gap-3 rounded-md border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 p-3">
+    <button
+      className="flex w-full items-center gap-3 rounded-md border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 p-3 text-left transition hover:border-rose-300 hover:bg-white dark:hover:bg-zinc-900"
+      onClick={onOpen}
+      type="button"
+    >
       <ChampionImage championName={match.championName} imageUrl={imageUrl} size="sm" />
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
@@ -326,7 +332,7 @@ function MatchRow({ imageUrl, match, t }: { imageUrl: string | undefined; match:
         <p className="text-sm font-semibold text-zinc-950 dark:text-zinc-50">{match.kills}/{match.deaths}/{match.assists}</p>
         <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">{kdaRatio} KDA</p>
       </div>
-    </div>
+    </button>
   );
 }
 
