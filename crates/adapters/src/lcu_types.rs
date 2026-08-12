@@ -132,18 +132,18 @@ pub(crate) struct LcuChampionMasteryEntry {
 
 // ── Match history / participant types ──
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub(crate) struct LcuMatchHistoryResponse {
     pub(crate) games: Option<LcuGames>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub(crate) struct LcuGames {
     #[serde(default)]
     pub(crate) games: Vec<LcuGame>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct LcuGame {
     pub(crate) game_id: Option<i64>,
@@ -158,7 +158,7 @@ pub(crate) struct LcuGame {
     pub(crate) participant_identities: Vec<LcuParticipantIdentity>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct LcuParticipant {
     pub(crate) participant_id: Option<i64>,
@@ -171,7 +171,7 @@ pub(crate) struct LcuParticipant {
     pub(crate) timeline: Option<LcuParticipantTimeline>,
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Default, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct LcuParticipantStats {
     pub(crate) kills: Option<i64>,
@@ -218,21 +218,21 @@ pub(crate) struct LcuParticipantStats {
     pub(crate) perk5: Option<i64>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct LcuParticipantTimeline {
     pub(crate) role: Option<String>,
     pub(crate) lane: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct LcuParticipantIdentity {
     pub(crate) participant_id: Option<i64>,
     pub(crate) player: Option<LcuPlayer>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct LcuPlayer {
     pub(crate) summoner_name: Option<String>,

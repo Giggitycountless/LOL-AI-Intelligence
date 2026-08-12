@@ -1035,9 +1035,8 @@ impl LeagueClientReader for LocalLeagueClient {
             return Ok(None);
         };
 
-        let self_data = build_player_data(&session, &summoner, match_limit);
-        let playstyle_matches = session
-            .get_json::<LcuMatchHistoryResponse>(puuid_matches_path(&puuid, match_limit).as_str())
+        let (self_data, matches_result) = build_player_data(&session, &summoner, match_limit);
+        let playstyle_matches = matches_result
             .map(|history| map_playstyle_matches_for_puuid(history, &puuid))
             .unwrap_or_default();
 
@@ -1595,30 +1594,57 @@ fn resolve_summoner_by_name(session: &LcuSession, query: &str) -> Option<LcuSumm
     None
 }
 
-fn build_player_data(session: &LcuSession, summoner: &LcuSummoner, match_limit: i64) -> LeagueSelfData {
-    let champion_names_result = session
-        .get_json::<Vec<LcuChampionSummary>>("/lol-game-data/assets/v1/champion-summary.json");
+/// Fetches the four independent sections needed for a searched player's
+/// profile in parallel (rather than one-after-another) and hands back the raw
+/// match-history result alongside the composed profile, so callers that also
+/// need the match list (e.g. to derive playstyle stats) don't have to issue a
+/// second, identical `puuid_matches_path` request.
+fn build_player_data(
+    session: &LcuSession,
+    summoner: &LcuSummoner,
+    match_limit: i64,
+) -> (LeagueSelfData, Result<LcuMatchHistoryResponse, LcuRequestError>) {
     let puuid = summoner.puuid.clone().unwrap_or_default();
-    let ranked_result = fetch_player_ranked_queues(session, &puuid);
     let matches_path = puuid_matches_path(&puuid, match_limit);
-    let matches_result = session.get_json::<LcuMatchHistoryResponse>(matches_path.as_str());
-    // Use the puuid-scoped mastery endpoint directly. fetch_champion_mastery_list
-    // tries `/lol-champion-mastery/v1/local-player/...` first, which would return
-    // the *local* user's mastery, not the searched player's.
-    let mastery_result = (!puuid.is_empty()).then(|| {
-        session.get_json::<Vec<LcuChampionMastery>>(
-            format!("/lol-champion-mastery/v1/{puuid}/champion-mastery").as_str(),
-        )
-    });
 
-    compose_player_data(
+    let ((champion_names_result, ranked_result), (matches_result, mastery_result)) = rayon::join(
+        || {
+            rayon::join(
+                || {
+                    session.get_json::<Vec<LcuChampionSummary>>(
+                        "/lol-game-data/assets/v1/champion-summary.json",
+                    )
+                },
+                || fetch_player_ranked_queues(session, &puuid),
+            )
+        },
+        || {
+            rayon::join(
+                || session.get_json::<LcuMatchHistoryResponse>(matches_path.as_str()),
+                // Use the puuid-scoped mastery endpoint directly. fetch_champion_mastery_list
+                // tries `/lol-champion-mastery/v1/local-player/...` first, which would return
+                // the *local* user's mastery, not the searched player's.
+                || {
+                    (!puuid.is_empty()).then(|| {
+                        session.get_json::<Vec<LcuChampionMastery>>(
+                            format!("/lol-champion-mastery/v1/{puuid}/champion-mastery").as_str(),
+                        )
+                    })
+                },
+            )
+        },
+    );
+
+    let self_data = compose_player_data(
         summoner.clone(),
         &puuid,
         champion_names_result,
         ranked_result,
-        matches_result,
+        matches_result.clone(),
         mastery_result,
-    )
+    );
+
+    (self_data, matches_result)
 }
 
 /// Best-effort ranked-queue lookup for an arbitrary player. The by-puuid ranked
