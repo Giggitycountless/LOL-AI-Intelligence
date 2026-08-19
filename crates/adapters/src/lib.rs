@@ -1062,11 +1062,8 @@ impl LeagueClientReader for LocalLeagueClient {
             .filter(|puuid| is_safe_lcu_path_id(puuid))
             .collect();
         map_batch_limited(&safe_puuids, |puuid| {
-            let queues = session
-                .get_json::<LcuPlayerRankedStats>(
-                    format!("/lol-ranked/v2/ranked-stats/{puuid}").as_str(),
-                )
-                .map(|stats| map_lcu_queues(stats.queues))
+            let queues = fetch_player_ranked_queues(&session, puuid)
+                .map(map_lcu_queues)
                 .unwrap_or_default();
             ((*puuid).clone(), queues)
         })
